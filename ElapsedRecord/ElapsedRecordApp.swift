@@ -5,15 +5,14 @@
 //  Created by KrLite on 2026/6/18.
 //
 
-import SwiftUI
+import ComposableArchitecture
 import SwiftData
+import SwiftUI
 
 @main
 struct ElapsedRecordApp: App {
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
+        let schema = Schema.elapsedRecord
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
@@ -25,7 +24,13 @@ struct ElapsedRecordApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(
+                store: Store(initialState: ViewerFeature.State()) {
+                    ViewerFeature()
+                } withDependencies: {
+                    $0.persistenceClient = .live(modelContainer: sharedModelContainer)
+                }
+            )
         }
         .modelContainer(sharedModelContainer)
     }

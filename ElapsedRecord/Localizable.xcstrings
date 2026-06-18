@@ -1,14 +1,172 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Add Item" : {
+    "%lld screenshots" : {
 
     },
-    "Item at %@" : {
-
+    "%lld sessions • %lld screenshots" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld sessions • %2$lld screenshots"
+          }
+        }
+      }
     },
-    "Select an item" : {
-
+    "ScreenshotGrid.capturedFramesWillAppearHere" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Captured frames will appear here."
+          }
+        }
+      }
+    },
+    "ScreenshotGrid.noScreenshots" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No screenshots"
+          }
+        }
+      }
+    },
+    "ViewerView.AppList.apps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Apps"
+          }
+        }
+      }
+    },
+    "ViewerView.DetailPane.allScreenshots" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "All screenshots"
+          }
+        }
+      }
+    },
+    "ViewerView.DetailPane.chooseASession" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose a session"
+          }
+        }
+      }
+    },
+    "ViewerView.DetailPane.windows" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Windows"
+          }
+        }
+      }
+    },
+    "ViewerView.DetailPane.windowsAndScreenshotsWillAppearHere" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Windows and screenshots will appear here."
+          }
+        }
+      }
+    },
+    "ViewerView.elapsedRecord" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Elapsed Record"
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.allScreenshots" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "All screenshots"
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.capturedSessionsWillAppearHere" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Captured sessions will appear here."
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.chooseAnApp" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose an app"
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.sessions" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sessions"
+          }
+        }
+      }
+    },
+    "ViewerView.WindowTitle.windowWindowDisplayNumber" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Window %lld"
+          }
+        }
+      }
+    },
+    "ViewerView.WindowTitle.windowWindowDisplayNumberLabel" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Window %1$lld: %2$@"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

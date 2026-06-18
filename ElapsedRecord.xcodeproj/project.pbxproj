@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		28C18B662FE4155200A31D68 /* Defaults in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B652FE4155200A31D68 /* Defaults */; };
+		28C18B692FE4158500A31D68 /* TranslateKit in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B682FE4158500A31D68 /* TranslateKit */; };
+		28C18B6C2FE415A900A31D68 /* SFSafeSymbols in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B6B2FE415A900A31D68 /* SFSafeSymbols */; };
+		28C18B6F2FE4162E00A31D68 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B6E2FE4162E00A31D68 /* ComposableArchitecture */; };
+		28C18B722FE4166300A31D68 /* Chronicle in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B712FE4166300A31D68 /* Chronicle */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		28C18B442FE4149A00A31D68 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +60,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				28C18B6C2FE415A900A31D68 /* SFSafeSymbols in Frameworks */,
+				28C18B692FE4158500A31D68 /* TranslateKit in Frameworks */,
+				28C18B6F2FE4162E00A31D68 /* ComposableArchitecture in Frameworks */,
+				28C18B662FE4155200A31D68 /* Defaults in Frameworks */,
+				28C18B722FE4166300A31D68 /* Chronicle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +125,11 @@
 			);
 			name = ElapsedRecord;
 			packageProductDependencies = (
+				28C18B652FE4155200A31D68 /* Defaults */,
+				28C18B682FE4158500A31D68 /* TranslateKit */,
+				28C18B6B2FE415A900A31D68 /* SFSafeSymbols */,
+				28C18B6E2FE4162E00A31D68 /* ComposableArchitecture */,
+				28C18B712FE4166300A31D68 /* Chronicle */,
 			);
 			productName = ElapsedRecord;
 			productReference = 28C18B342FE4149900A31D68 /* ElapsedRecord.app */;
@@ -192,9 +210,17 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = 28C18B2B2FE4149900A31D68;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				28C18B642FE4155200A31D68 /* XCRemoteSwiftPackageReference "Defaults" */,
+				28C18B672FE4158500A31D68 /* XCRemoteSwiftPackageReference "TranslateKit" */,
+				28C18B6A2FE415A900A31D68 /* XCRemoteSwiftPackageReference "SFSafeSymbols" */,
+				28C18B6D2FE4162E00A31D68 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
+				28C18B702FE4166300A31D68 /* XCRemoteSwiftPackageReference "LogOutLoud" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 28C18B352FE4149900A31D68 /* Products */;
 			projectDirPath = "";
@@ -329,6 +355,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
 			name = Debug;
@@ -386,6 +413,7 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 			};
 			name = Release;
 		};
@@ -403,6 +431,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Elapsed Record";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -435,6 +464,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Elapsed Record";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -573,6 +603,77 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		28C18B642FE4155200A31D68 /* XCRemoteSwiftPackageReference "Defaults" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/Defaults";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.8;
+			};
+		};
+		28C18B672FE4158500A31D68 /* XCRemoteSwiftPackageReference "TranslateKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FlineDev/TranslateKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.3.0;
+			};
+		};
+		28C18B6A2FE415A900A31D68 /* XCRemoteSwiftPackageReference "SFSafeSymbols" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SFSafeSymbols/SFSafeSymbols";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+		28C18B6D2FE4162E00A31D68 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pointfreeco/swift-composable-architecture";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.26.0;
+			};
+		};
+		28C18B702FE4166300A31D68 /* XCRemoteSwiftPackageReference "LogOutLoud" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Aeastr/LogOutLoud";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.0.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		28C18B652FE4155200A31D68 /* Defaults */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 28C18B642FE4155200A31D68 /* XCRemoteSwiftPackageReference "Defaults" */;
+			productName = Defaults;
+		};
+		28C18B682FE4158500A31D68 /* TranslateKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 28C18B672FE4158500A31D68 /* XCRemoteSwiftPackageReference "TranslateKit" */;
+			productName = TranslateKit;
+		};
+		28C18B6B2FE415A900A31D68 /* SFSafeSymbols */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 28C18B6A2FE415A900A31D68 /* XCRemoteSwiftPackageReference "SFSafeSymbols" */;
+			productName = SFSafeSymbols;
+		};
+		28C18B6E2FE4162E00A31D68 /* ComposableArchitecture */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 28C18B6D2FE4162E00A31D68 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */;
+			productName = ComposableArchitecture;
+		};
+		28C18B712FE4166300A31D68 /* Chronicle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 28C18B702FE4166300A31D68 /* XCRemoteSwiftPackageReference "LogOutLoud" */;
+			productName = Chronicle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 28C18B2C2FE4149900A31D68 /* Project object */;
 }

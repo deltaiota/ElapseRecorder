@@ -9,17 +9,17 @@ import ComposableArchitecture
 import SwiftUI
 
 struct ContentView: View {
-    let store: StoreOf<ViewerFeature>
+    let store: StoreOf<AppFeature>
 
     var body: some View {
-        ViewerView(store: store)
+        AppView(store: store)
     }
 }
 
 #Preview {
     ContentView(
-        store: Store(initialState: ViewerFeature.State()) {
-            ViewerFeature()
+        store: Store(initialState: AppFeature.State()) {
+            AppFeature()
         }
     )
 }

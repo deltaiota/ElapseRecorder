@@ -13,7 +13,7 @@ nonisolated extension CaptureImageFormat: Defaults.Serializable {}
 nonisolated extension Defaults.Keys {
     static let captureImageFormat = Key<CaptureImageFormat>("captureImageFormat", default: .heic)
     static let captureHEICQuality = Key<Double>("captureHEICQuality", default: 0.82)
-    static let thumbnailMaximumPixelSize = Key<Int>("thumbnailMaximumPixelSize", default: 320)
+    static let thumbnailMaximumPixelSize = Key<Int>("thumbnailMaximumPixelSize", default: 1024)
 }
 
 nonisolated struct DateClient {
@@ -171,8 +171,9 @@ extension ScreenCaptureClient: DependencyKey {
 
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let configuration = SCStreamConfiguration()
-            configuration.width = Int(window.frame.width)
-            configuration.height = Int(window.frame.height)
+            let scale = WindowBackingScale.bestScale(for: window.frame)
+            configuration.width = max(1, Int((window.frame.width * scale).rounded(.up)))
+            configuration.height = max(1, Int((window.frame.height * scale).rounded(.up)))
             configuration.showsCursor = false
 
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
@@ -246,6 +247,24 @@ nonisolated enum FileStoragePaths {
         let root = base.appending(path: "ElapsedRecord/Captures", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
+    }
+
+    nonisolated enum WindowBackingScale {
+        static func bestScale(for frame: CGRect) -> CGFloat {
+            let matchingScreen = NSScreen.screens.max { lhs, rhs in
+                intersectionArea(lhs.frame, frame) < intersectionArea(rhs.frame, frame)
+            }
+
+            return matchingScreen?.backingScaleFactor
+                ?? NSScreen.main?.backingScaleFactor
+                ?? 2
+        }
+
+        private static func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
+            let intersection = lhs.intersection(rhs)
+            guard !intersection.isNull, !intersection.isEmpty else { return 0 }
+            return intersection.width * intersection.height
+        }
     }
 }
 

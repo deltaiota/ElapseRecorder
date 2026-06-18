@@ -70,7 +70,8 @@ struct CaptureEngineFeature: Reducer {
 
             case let .whitelistUpdated(configs):
                 state.whitelist = Dictionary(
-                    uniqueKeysWithValues: configs.map { ($0.bundleIdentifier, $0) }
+                    configs.map { ($0.bundleIdentifier, $0) },
+                    uniquingKeysWith: { _, latest in latest }
                 )
 
                 let disabledEffects = state.activeSessions.values
@@ -85,7 +86,8 @@ struct CaptureEngineFeature: Reducer {
 
             case let .runningApplicationsLoaded(applications):
                 state.runningApplications = Dictionary(
-                    uniqueKeysWithValues: applications.map { ($0.bundleIdentifier, $0) }
+                    applications.map { ($0.bundleIdentifier, $0) },
+                    uniquingKeysWith: { _, latest in latest }
                 )
                 return .merge(applications.map { attemptStart($0, state: &state) })
 

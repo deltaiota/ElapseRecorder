@@ -14,6 +14,116 @@
         }
       }
     },
+    "AppView.CaptureStatus.permissionNotRequested" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Permission not requested"
+          }
+        }
+      }
+    },
+    "AppView.CaptureStatus.ready" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ready"
+          }
+        }
+      }
+    },
+    "AppView.CaptureStatus.screenRecordingDenied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Screen Recording denied"
+          }
+        }
+      }
+    },
+    "AppView.TestCaptureBar.bundleID" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bundle ID"
+          }
+        }
+      }
+    },
+    "AppView.TestCaptureBar.captureTest" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capture test"
+          }
+        }
+      }
+    },
+    "AppView.TestCaptureBar.displayName" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Display name"
+          }
+        }
+      }
+    },
+    "AppView.TestCaptureBar.everyIntViewStoreTestIntervalSecondsS" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Every %llds"
+          }
+        }
+      }
+    },
+    "AppView.TestCaptureBar.refresh" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Refresh"
+          }
+        }
+      }
+    },
+    "AppView.TestCaptureBar.start" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Start"
+          }
+        }
+      }
+    },
+    "AppView.TestCaptureBar.stop" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Stop"
+          }
+        }
+      }
+    },
     "ScreenshotGrid.capturedFramesWillAppearHere" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {

@@ -25,8 +25,8 @@ struct ElapsedRecordApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(
-                store: Store(initialState: ViewerFeature.State()) {
-                    ViewerFeature()
+                store: Store(initialState: AppFeature.State()) {
+                    AppFeature()
                 } withDependencies: {
                     $0.persistenceClient = .live(modelContainer: sharedModelContainer)
                 }

@@ -14,6 +14,7 @@ nonisolated extension Defaults.Keys {
     static let captureImageFormat = Key<CaptureImageFormat>("captureImageFormat", default: .heic)
     static let captureHEICQuality = Key<Double>("captureHEICQuality", default: 0.82)
     static let thumbnailMaximumPixelSize = Key<Int>("thumbnailMaximumPixelSize", default: 1024)
+    static let whitelistedAppConfigsData = Key<Data>("whitelistedAppConfigsData", default: Data())
 }
 
 nonisolated struct DateClient {
@@ -27,6 +28,11 @@ nonisolated struct IDGeneratorClient {
 nonisolated struct CapturePreferencesClient {
     var encodingOptions: @Sendable () -> CaptureEncodingOptions
     var thumbnailMaximumPixelSize: @Sendable () -> Int
+}
+
+nonisolated struct WhitelistConfigurationClient {
+    var load: @Sendable () async throws -> [WhitelistedAppConfig]
+    var save: @Sendable (_ configs: [WhitelistedAppConfig]) async throws -> Void
 }
 
 nonisolated struct WorkspaceClient {
@@ -142,6 +148,19 @@ extension CapturePreferencesClient: DependencyKey {
         },
         thumbnailMaximumPixelSize: {
             Defaults[.thumbnailMaximumPixelSize]
+        }
+    )
+}
+
+extension WhitelistConfigurationClient: DependencyKey {
+    static let liveValue = Self(
+        load: {
+            let data = Defaults[.whitelistedAppConfigsData]
+            guard !data.isEmpty else { return [] }
+            return try JSONDecoder().decode([WhitelistedAppConfig].self, from: data)
+        },
+        save: { configs in
+            Defaults[.whitelistedAppConfigsData] = try JSONEncoder().encode(configs)
         }
     )
 }
@@ -343,6 +362,11 @@ extension DependencyValues {
     var capturePreferencesClient: CapturePreferencesClient {
         get { self[CapturePreferencesClient.self] }
         set { self[CapturePreferencesClient.self] = newValue }
+    }
+
+    var whitelistConfigurationClient: WhitelistConfigurationClient {
+        get { self[WhitelistConfigurationClient.self] }
+        set { self[WhitelistConfigurationClient.self] = newValue }
     }
 
     var workspaceClient: WorkspaceClient {

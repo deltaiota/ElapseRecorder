@@ -80,6 +80,12 @@ struct AppView: View {
 
             captureStatus
 
+            if let whitelistError = store.whitelistError {
+                Label(whitelistError, systemSymbol: .exclamationmarkTriangle)
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+            }
+
             if !store.captureEngine.recentDiagnostics.isEmpty {
                 Menu {
                     ForEach(Array(store.captureEngine.recentDiagnostics.enumerated()), id: \.offset) { _, diagnostic in

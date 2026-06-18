@@ -10,6 +10,7 @@ struct AppFeature: Reducer {
         var testDisplayName = "TextEdit"
         var testIntervalSeconds = 5.0
         var isTestCaptureEnabled = false
+        var whitelistError: String?
     }
 
     @CasePathable
@@ -23,7 +24,11 @@ struct AppFeature: Reducer {
         case startTestCaptureButtonTapped
         case stopTestCaptureButtonTapped
         case refreshViewerButtonTapped
+        case savedWhitelistLoaded([WhitelistedAppConfig])
+        case whitelistSaveFailed(String)
     }
+
+    @Dependency(\.whitelistConfigurationClient) private var whitelistConfiguration
 
     var body: some Reducer<State, Action> {
         Scope(state: \.captureEngine, action: \.captureEngine) {
@@ -35,9 +40,17 @@ struct AppFeature: Reducer {
         Reduce { state, action in
             switch action {
             case .task:
+                let whitelistConfiguration = whitelistConfiguration
                 return .merge(
                     .send(.captureEngine(.task)),
-                    .send(.viewer(.task))
+                    .send(.viewer(.task)),
+                    .run { send in
+                        do {
+                            try await send(.savedWhitelistLoaded(await whitelistConfiguration.load()))
+                        } catch {
+                            await send(.whitelistSaveFailed(error.localizedDescription))
+                        }
+                    }
                 )
 
             case .captureEngine(.screenshotRecorded):
@@ -59,15 +72,51 @@ struct AppFeature: Reducer {
                 return .none
 
             case .startTestCaptureButtonTapped:
+                let configs = [state.testWhitelistedAppConfig]
                 state.isTestCaptureEnabled = true
-                return .send(.captureEngine(.whitelistUpdated([state.testWhitelistedAppConfig])))
+                let whitelistConfiguration = whitelistConfiguration
+                return .merge(
+                    .send(.captureEngine(.whitelistUpdated(configs))),
+                    .run { send in
+                        do {
+                            try await whitelistConfiguration.save(configs)
+                        } catch {
+                            await send(.whitelistSaveFailed(error.localizedDescription))
+                        }
+                    }
+                )
 
             case .stopTestCaptureButtonTapped:
                 state.isTestCaptureEnabled = false
-                return .send(.captureEngine(.whitelistUpdated([])))
+                let whitelistConfiguration = whitelistConfiguration
+                return .merge(
+                    .send(.captureEngine(.whitelistUpdated([]))),
+                    .run { send in
+                        do {
+                            try await whitelistConfiguration.save([])
+                        } catch {
+                            await send(.whitelistSaveFailed(error.localizedDescription))
+                        }
+                    }
+                )
 
             case .refreshViewerButtonTapped:
                 return .send(.viewer(.refresh))
+
+            case let .savedWhitelistLoaded(configs):
+                if let config = configs.first {
+                    state.testBundleIdentifier = config.bundleIdentifier
+                    state.testDisplayName = config.displayName
+                    state.testIntervalSeconds = config.captureInterval
+                    state.isTestCaptureEnabled = config.isEnabled
+                } else {
+                    state.isTestCaptureEnabled = false
+                }
+                return .send(.captureEngine(.whitelistUpdated(configs)))
+
+            case let .whitelistSaveFailed(message):
+                state.whitelistError = message
+                return .none
             }
         }
     }

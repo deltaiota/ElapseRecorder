@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-nonisolated struct WhitelistedAppConfig: Equatable, Identifiable {
+nonisolated struct WhitelistedAppConfig: Codable, Equatable, Identifiable {
     var id: String {
         bundleIdentifier
     }

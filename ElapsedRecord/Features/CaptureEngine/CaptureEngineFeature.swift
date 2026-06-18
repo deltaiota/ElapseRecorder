@@ -78,15 +78,37 @@ struct CaptureEngineFeature: Reducer {
                     uniquingKeysWith: { _, latest in latest }
                 )
 
-                let disabledEffects = state.activeSessions.values
-                    .filter { state.whitelist[$0.config.bundleIdentifier]?.isEnabled != true }
-                    .map { closeSession($0, endedAt: date.now()) }
+                var effects: [Effect<Action>] = []
+                for (bundleIdentifier, active) in state.activeSessions {
+                    guard let updatedConfig = state.whitelist[bundleIdentifier],
+                          updatedConfig.isEnabled
+                    else {
+                        state.activeSessions[bundleIdentifier] = nil
+                        effects.append(closeSession(active, endedAt: date.now()))
+                        continue
+                    }
+
+                    guard updatedConfig != active.config else { continue }
+
+                    var updatedActive = active
+                    updatedActive.config = updatedConfig
+                    state.activeSessions[bundleIdentifier] = updatedActive
+
+                    if updatedConfig.sanitizedInterval != active.config.sanitizedInterval {
+                        effects.append(
+                            captureLoop(
+                                bundleIdentifier: bundleIdentifier,
+                                interval: updatedConfig.sanitizedInterval
+                            )
+                        )
+                    }
+                }
 
                 let startEffects = state.runningApplications.values.map { application in
                     attemptStart(application, state: &state)
                 }
 
-                return .merge(disabledEffects + startEffects)
+                return .merge(effects + startEffects)
 
             case let .runningApplicationsLoaded(applications):
                 state.runningApplications = Dictionary(

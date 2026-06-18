@@ -78,6 +78,8 @@ struct AppView: View {
 
             Spacer()
 
+            activeCaptureStatus
+
             captureStatus
 
             if let whitelistError = store.whitelistError {
@@ -95,6 +97,27 @@ struct AppView: View {
                     Label(#tk("Diagnostics"), systemSymbol: .stethoscope)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var activeCaptureStatus: some View {
+        let activeSessions = store.captureEngine.activeSessions.values.sorted {
+            $0.config.displayName < $1.config.displayName
+        }
+
+        if activeSessions.isEmpty {
+            Label(#tk("Idle"), systemSymbol: .pauseCircle)
+                .foregroundStyle(.secondary)
+        } else {
+            Menu {
+                ForEach(activeSessions, id: \.session.id) { active in
+                    Text(#tk("\(active.config.displayName) every \(Int(active.config.captureInterval))s"))
+                }
+            } label: {
+                Label(#tk("Capturing \(activeSessions.count)"), systemSymbol: .recordCircle)
+            }
+            .foregroundStyle(.green)
         }
     }
 

@@ -53,7 +53,9 @@ struct AppFeature: Reducer {
                     }
                 )
 
-            case .captureEngine(.screenshotRecorded):
+            case .captureEngine(.screenshotRecorded),
+                 .captureEngine(.sessionOpened),
+                 .captureEngine(.sessionClosed):
                 return .send(.viewer(.refresh))
 
             case .captureEngine, .viewer:

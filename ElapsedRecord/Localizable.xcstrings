@@ -17,6 +17,17 @@
         }
       }
     },
+    "AppView.activeConfigDisplayNameEveryIntActiveConfigCaptureInterval…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ every %2$llds"
+          }
+        }
+      }
+    },
     "AppView.bundleID" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -35,6 +46,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Capture test"
+          }
+        }
+      }
+    },
+    "AppView.capturingActiveSessionsCount" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capturing %lld"
           }
         }
       }
@@ -68,6 +90,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Every %llds"
+          }
+        }
+      }
+    },
+    "AppView.idle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Idle"
           }
         }
       }

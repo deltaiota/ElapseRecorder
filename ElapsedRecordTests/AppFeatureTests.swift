@@ -67,4 +67,21 @@ final class AppFeatureTests: XCTestCase {
 
         XCTAssertEqual(savedConfigs.value, [[expectedConfig], []])
     }
+
+    @MainActor
+    func testCaptureSessionEventsRefreshViewer() async {
+        let store = TestStore(initialState: AppFeature.State()) {
+            AppFeature()
+        } withDependencies: {
+            $0.persistenceClient.apps = { [] }
+            $0.persistenceClient.sessions = { _ in [] }
+            $0.persistenceClient.windows = { _ in [] }
+            $0.persistenceClient.screenshotsForApp = { _ in [] }
+            $0.persistenceClient.screenshotsForWindow = { _ in [] }
+        }
+
+        await store.send(.captureEngine(.sessionClosed("com.example.App")))
+        await store.receive(.viewer(.refresh))
+        await store.receive(.viewer(.appsLoaded([])))
+    }
 }

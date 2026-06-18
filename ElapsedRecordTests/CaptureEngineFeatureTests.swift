@@ -217,6 +217,125 @@ final class CaptureEngineFeatureTests: XCTestCase {
         XCTAssertEqual(windowEnumerationCount.value, 0)
     }
 
+    @MainActor
+    func testWhitelistUpdateChangesActiveConfigAndRestartsLoopWhenIntervalChanges() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.IntervalApp",
+            displayName: "Interval App",
+            processIdentifier: 8
+        )
+        let originalConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let updatedConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: "Renamed Interval App",
+            captureInterval: 5,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000030")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let clock = TestClock()
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [originalConfig.bundleIdentifier: originalConfig]
+        state.permissionStatus = .authorized
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: originalConfig,
+            session: session
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.dateClient.now = { Date(timeIntervalSince1970: 20) }
+            $0.persistenceClient.closeSession = { _, _ in }
+            $0.screenCaptureClient.windows = { _ in [] }
+        }
+
+        await store.send(.whitelistUpdated([updatedConfig])) {
+            $0.whitelist = [updatedConfig.bundleIdentifier: updatedConfig]
+            $0.activeSessions[app.bundleIdentifier]?.config = updatedConfig
+        }
+        await store.receive(.captureTick(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+        }
+        await store.send(.workspaceEvent(.terminated(app))) {
+            $0.runningApplications[app.bundleIdentifier] = nil
+            $0.activeSessions[app.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(app.bundleIdentifier))
+    }
+
+    @MainActor
+    func testWhitelistUpdateDisablesActiveSessionImmediately() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.DisableApp",
+            displayName: "Disable App",
+            processIdentifier: 9
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let disabledConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: false
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000040")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let endedAt = Date(timeIntervalSince1970: 20)
+        let closedSessions = LockIsolated([(UUID, Date)]())
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { endedAt }
+            $0.persistenceClient.closeSession = { sessionID, endedAt in
+                closedSessions.withValue { $0.append((sessionID, endedAt)) }
+            }
+        }
+
+        await store.send(.whitelistUpdated([disabledConfig])) {
+            $0.whitelist = [disabledConfig.bundleIdentifier: disabledConfig]
+            $0.activeSessions[app.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(app.bundleIdentifier))
+        XCTAssertEqual(closedSessions.value.count, 1)
+        XCTAssertEqual(closedSessions.value.first?.0, session.id)
+        XCTAssertEqual(closedSessions.value.first?.1, endedAt)
+    }
+
     private final class UUIDSequence: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [UUID]

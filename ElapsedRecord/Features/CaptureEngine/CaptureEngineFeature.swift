@@ -3,6 +3,7 @@ import ComposableArchitecture
 import Foundation
 
 struct CaptureEngineFeature: Reducer {
+    @ObservableState
     struct State: Equatable {
         var whitelist: [String: WhitelistedAppConfig] = [:]
         var runningApplications: [String: RunningApplication] = [:]

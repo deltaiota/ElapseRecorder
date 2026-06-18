@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 
 struct ViewerFeature: Reducer {
+    @ObservableState
     struct State: Equatable {
         var apps: [AppCaptureSummary] = []
         var sessions: [CaptureSessionSummary] = []

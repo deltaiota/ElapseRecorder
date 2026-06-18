@@ -4,103 +4,92 @@ import SwiftUI
 import TranslateKit
 
 struct AppView: View {
-    let store: StoreOf<AppFeature>
+    @Bindable var store: StoreOf<AppFeature>
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
-            VStack(spacing: 0) {
-                testCaptureBar(viewStore)
-                    .padding()
-                    .background(.regularMaterial)
+        VStack(spacing: 0) {
+            testCaptureBar
+                .padding()
+                .background(.regularMaterial)
 
-                Divider()
+            Divider()
 
-                ViewerView(
-                    store: store.scope(
-                        state: \.viewer,
-                        action: \.viewer
-                    )
+            ViewerView(
+                store: store.scope(
+                    state: \.viewer,
+                    action: \.viewer
                 )
-            }
-            .task {
-                await viewStore.send(.task).finish()
-            }
+            )
+        }
+        .task {
+            await store.send(.task).finish()
         }
     }
 
-    private func testCaptureBar(_ viewStore: ViewStoreOf<AppFeature>) -> some View {
+    private var testCaptureBar: some View {
         HStack(alignment: .center, spacing: 12) {
             Label(#tk("Capture test"), systemSymbol: .camera)
                 .font(.headline)
 
             TextField(
                 #tk("Bundle ID"),
-                text: viewStore.binding(
-                    get: \.testBundleIdentifier,
-                    send: AppFeature.Action.testBundleIdentifierChanged
-                )
+                text: $store.testBundleIdentifier.sending(\.testBundleIdentifierChanged)
             )
             .textFieldStyle(.roundedBorder)
             .frame(minWidth: 220)
 
             TextField(
                 #tk("Display name"),
-                text: viewStore.binding(
-                    get: \.testDisplayName,
-                    send: AppFeature.Action.testDisplayNameChanged
-                )
+                text: $store.testDisplayName.sending(\.testDisplayNameChanged)
             )
             .textFieldStyle(.roundedBorder)
             .frame(width: 140)
 
             Stepper(
-                value: viewStore.binding(
-                    get: \.testIntervalSeconds,
-                    send: AppFeature.Action.testIntervalSecondsChanged
-                ),
+                value: $store.testIntervalSeconds.sending(\.testIntervalSecondsChanged),
                 in: 1 ... 3600,
                 step: 1
             ) {
-                Text(#tk("Every \(Int(viewStore.testIntervalSeconds))s"))
+                Text(#tk("Every \(Int(store.testIntervalSeconds))s"))
                     .monospacedDigit()
             }
             .frame(width: 120)
 
-            if viewStore.isTestCaptureEnabled {
+            if store.isTestCaptureEnabled {
                 Button {
-                    viewStore.send(.stopTestCaptureButtonTapped)
+                    store.send(.stopTestCaptureButtonTapped)
                 } label: {
                     Label(#tk("Stop"), systemSymbol: .stopCircle)
                 }
             } else {
                 Button {
-                    viewStore.send(.startTestCaptureButtonTapped)
+                    store.send(.startTestCaptureButtonTapped)
                 } label: {
                     Label(#tk("Start"), systemSymbol: .recordCircle)
                 }
-                .disabled(!viewStore.canStartTestCapture)
+                .disabled(!store.canStartTestCapture)
             }
 
             Button {
-                viewStore.send(.refreshViewerButtonTapped)
+                store.send(.refreshViewerButtonTapped)
             } label: {
                 Label(#tk("Refresh"), systemSymbol: .arrowClockwise)
             }
 
             Spacer()
 
-            captureStatus(viewStore)
+            captureStatus
         }
     }
 
     @ViewBuilder
-    private func captureStatus(_ viewStore: ViewStoreOf<AppFeature>) -> some View {
-        if let message = viewStore.captureEngine.lastError {
+    private var captureStatus: some View {
+        if let message = store.captureEngine.lastError {
             Label(message, systemSymbol: .exclamationmarkTriangle)
                 .foregroundStyle(.orange)
                 .lineLimit(1)
         } else {
-            switch viewStore.captureEngine.permissionStatus {
+            switch store.captureEngine.permissionStatus {
             case .authorized:
                 Label(#tk("Ready"), systemSymbol: .checkmarkCircle)
                     .foregroundStyle(.secondary)

@@ -171,9 +171,10 @@ extension ScreenCaptureClient: DependencyKey {
 
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let configuration = SCStreamConfiguration()
-            let scale = WindowBackingScale.bestScale(for: window.frame)
-            configuration.width = max(1, Int((window.frame.width * scale).rounded(.up)))
-            configuration.height = max(1, Int((window.frame.height * scale).rounded(.up)))
+            let info = SCShareableContent.info(for: filter)
+            let scale = CGFloat(info.pointPixelScale)
+            configuration.width = max(1, Int((info.contentRect.width * scale).rounded(.up)))
+            configuration.height = max(1, Int((info.contentRect.height * scale).rounded(.up)))
             configuration.showsCursor = false
 
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
@@ -248,24 +249,6 @@ nonisolated enum FileStoragePaths {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
     }
-
-    nonisolated enum WindowBackingScale {
-        static func bestScale(for frame: CGRect) -> CGFloat {
-            let matchingScreen = NSScreen.screens.max { lhs, rhs in
-                intersectionArea(lhs.frame, frame) < intersectionArea(rhs.frame, frame)
-            }
-
-            return matchingScreen?.backingScaleFactor
-                ?? NSScreen.main?.backingScaleFactor
-                ?? 2
-        }
-
-        private static func intersectionArea(_ lhs: CGRect, _ rhs: CGRect) -> CGFloat {
-            let intersection = lhs.intersection(rhs)
-            guard !intersection.isNull, !intersection.isEmpty else { return 0 }
-            return intersection.width * intersection.height
-        }
-    }
 }
 
 extension PersistenceClient: DependencyKey {
@@ -274,19 +257,21 @@ extension PersistenceClient: DependencyKey {
 
 extension ThumbnailClient: DependencyKey {
     static let liveValue = Self { url, maximumPixelSize in
-        let options = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
-        ] as CFDictionary
+        try await Task.detached(priority: .high) {
+            let options = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+            ] as CFDictionary
 
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options)
-        else {
-            throw CaptureEngineError.fileWriteFailed(url)
-        }
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options)
+            else {
+                throw CaptureEngineError.fileWriteFailed(url)
+            }
 
-        return thumbnail
+            return thumbnail
+        }.value
     }
 }
 

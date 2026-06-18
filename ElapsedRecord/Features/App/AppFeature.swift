@@ -2,6 +2,7 @@ import ComposableArchitecture
 import Foundation
 
 struct AppFeature: Reducer {
+    @ObservableState
     struct State: Equatable {
         var captureEngine = CaptureEngineFeature.State()
         var viewer = ViewerFeature.State()

@@ -7,41 +7,40 @@ struct ViewerView: View {
     let store: StoreOf<ViewerFeature>
 
     var body: some View {
-        WithViewStore(store, observe: { $0 }) { viewStore in
-            NavigationSplitView {
-                appList(viewStore)
-            } content: {
-                sessionList(viewStore)
-            } detail: {
-                detailPane(viewStore)
-            }
-            .navigationTitle(#tk("Elapsed Record"))
-            .task {
-                await viewStore.send(.task).finish()
-            }
+        NavigationSplitView {
+            appList
+        } content: {
+            sessionList
+        } detail: {
+            detailPane
         }
+        .navigationTitle(#tk("Elapsed Record"))
     }
 
-    private func appList(_ viewStore: ViewStoreOf<ViewerFeature>) -> some View {
-        List(
-            selection: viewStore.binding(
-                get: \.selectedBundleIdentifier,
-                send: ViewerFeature.Action.appSelected
-            )
-        ) {
+    private var appList: some View {
+        List {
             Section {
-                ForEach(viewStore.apps) { app in
-                    Label {
-                        VStack(alignment: .leading) {
-                            Text(app.displayName)
-                            Text("\(app.sessionCount) sessions • \(app.screenshotCount) screenshots")
-                                .foregroundStyle(.secondary)
-                                .font(.caption)
+                ForEach(store.apps) { app in
+                    Button {
+                        store.send(.appSelected(app.bundleIdentifier))
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text(app.displayName)
+                                Text("\(app.sessionCount) sessions • \(app.screenshotCount) screenshots")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                        } icon: {
+                            Image(systemSymbol: .app)
                         }
-                    } icon: {
-                        Image(systemSymbol: .app)
                     }
-                    .tag(app.bundleIdentifier as String?)
+                    .buttonStyle(.plain)
+                    .listRowBackground(
+                        store.selectedBundleIdentifier == app.bundleIdentifier
+                            ? Color.accentColor.opacity(0.16)
+                            : Color.clear
+                    )
                 }
             } header: {
                 Label(#tk("Apps"), systemSymbol: .app)
@@ -50,33 +49,43 @@ struct ViewerView: View {
         .navigationSplitViewColumnWidth(min: 180, ideal: 240)
     }
 
-    private func sessionList(_ viewStore: ViewStoreOf<ViewerFeature>) -> some View {
-        List(
-            selection: viewStore.binding(
-                get: \.selectedSessionID,
-                send: ViewerFeature.Action.sessionSelected
-            )
-        ) {
-            if viewStore.selectedBundleIdentifier != nil {
+    private var sessionList: some View {
+        List {
+            if store.selectedBundleIdentifier != nil {
                 Button {
-                    viewStore.send(.flatGallerySelected)
+                    store.send(.flatGallerySelected)
                 } label: {
                     Label(#tk("All screenshots"), systemSymbol: .photoStack)
                 }
+                .buttonStyle(.plain)
+                .listRowBackground(
+                    store.isShowingFlatGallery
+                        ? Color.accentColor.opacity(0.16)
+                        : Color.clear
+                )
 
                 Section {
-                    ForEach(viewStore.sessions) { session in
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text(session.startedAt, format: .dateTime.month().day().hour().minute())
-                                Text(sessionSummary(session))
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
+                    ForEach(store.sessions) { session in
+                        Button {
+                            store.send(.sessionSelected(session.id))
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading) {
+                                    Text(session.startedAt, format: .dateTime.month().day().hour().minute())
+                                    Text(sessionSummary(session))
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption)
+                                }
+                            } icon: {
+                                Image(systemSymbol: .clock)
                             }
-                        } icon: {
-                            Image(systemSymbol: .clock)
                         }
-                        .tag(session.id as UUID?)
+                        .buttonStyle(.plain)
+                        .listRowBackground(
+                            store.selectedSessionID == session.id
+                                ? Color.accentColor.opacity(0.16)
+                                : Color.clear
+                        )
                     }
                 } header: {
                     Label(#tk("Sessions"), systemSymbol: .clock)
@@ -93,31 +102,35 @@ struct ViewerView: View {
     }
 
     @ViewBuilder
-    private func detailPane(_ viewStore: ViewStoreOf<ViewerFeature>) -> some View {
-        if viewStore.isShowingFlatGallery {
-            ScreenshotGrid(records: viewStore.flatScreenshots)
+    private var detailPane: some View {
+        if store.isShowingFlatGallery {
+            ScreenshotGrid(records: store.flatScreenshots)
                 .navigationTitle(#tk("All screenshots"))
-        } else if viewStore.selectedSessionID != nil {
+        } else if store.selectedSessionID != nil {
             HSplitView {
-                List(
-                    selection: viewStore.binding(
-                        get: \.selectedWindowID,
-                        send: ViewerFeature.Action.windowSelected
-                    )
-                ) {
+                List {
                     Section {
-                        ForEach(viewStore.windows) { window in
-                            Label {
-                                VStack(alignment: .leading) {
-                                    Text(windowTitle(window))
-                                    Text("\(window.screenshotCount) screenshots")
-                                        .foregroundStyle(.secondary)
-                                        .font(.caption)
+                        ForEach(store.windows) { window in
+                            Button {
+                                store.send(.windowSelected(window.id))
+                            } label: {
+                                Label {
+                                    VStack(alignment: .leading) {
+                                        Text(windowTitle(window))
+                                        Text("\(window.screenshotCount) screenshots")
+                                            .foregroundStyle(.secondary)
+                                            .font(.caption)
+                                    }
+                                } icon: {
+                                    Image(systemSymbol: .macwindow)
                                 }
-                            } icon: {
-                                Image(systemSymbol: .macwindow)
                             }
-                            .tag(window.id as UUID?)
+                            .buttonStyle(.plain)
+                            .listRowBackground(
+                                store.selectedWindowID == window.id
+                                    ? Color.accentColor.opacity(0.16)
+                                    : Color.clear
+                            )
                         }
                     } header: {
                         Label(#tk("Windows"), systemSymbol: .macwindow)
@@ -125,7 +138,7 @@ struct ViewerView: View {
                 }
                 .frame(minWidth: 220)
 
-                ScreenshotGrid(records: viewStore.windowScreenshots)
+                ScreenshotGrid(records: store.windowScreenshots)
                     .frame(minWidth: 360)
             }
         } else {

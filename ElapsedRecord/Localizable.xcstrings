@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%lld bytes" : {
+
+    },
     "%lld screenshots" : {
 
     },
@@ -32,6 +35,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Capture test"
+          }
+        }
+      }
+    },
+    "AppView.diagnostics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Diagnostics"
           }
         }
       }
@@ -120,6 +134,28 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Stop"
+          }
+        }
+      }
+    },
+    "ScreenshotDetailView.couldNotLoadImage" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Could not load image"
+          }
+        }
+      }
+    },
+    "ScreenshotDetailView.revealInFinder" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reveal in Finder"
           }
         }
       }

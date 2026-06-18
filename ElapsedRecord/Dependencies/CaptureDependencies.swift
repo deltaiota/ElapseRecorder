@@ -70,6 +70,14 @@ nonisolated struct ThumbnailClient {
     var thumbnail: @Sendable (_ url: URL, _ maximumPixelSize: Int) async throws -> CGImage
 }
 
+nonisolated struct ImageLoadingClient {
+    var fullSizeImage: @Sendable (_ url: URL) async throws -> CGImage
+}
+
+nonisolated struct FileRevealClient {
+    var reveal: @Sendable (_ url: URL) async -> Void
+}
+
 nonisolated struct LoggingClient {
     var log: @Sendable (_ level: LogLevel, _ message: String, _ metadata: [String: LogMetadataValue]) -> Void
 }
@@ -258,20 +266,60 @@ extension PersistenceClient: DependencyKey {
 extension ThumbnailClient: DependencyKey {
     static let liveValue = Self { url, maximumPixelSize in
         try await Task.detached(priority: .high) {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                throw CaptureEngineError.fileWriteFailed(url)
+            }
+
+            let clampedMaximumPixelSize = ImageSourceSizing.clampedMaximumPixelSize(
+                for: source,
+                requested: maximumPixelSize
+            )
             let options = [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
                 kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
+                kCGImageSourceThumbnailMaxPixelSize: clampedMaximumPixelSize,
             ] as CFDictionary
 
+            guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
+                throw CaptureEngineError.fileWriteFailed(url)
+            }
+            return thumbnail
+        }.value
+    }
+}
+
+nonisolated enum ImageSourceSizing {
+    static func clampedMaximumPixelSize(for source: CGImageSource, requested: Int) -> Int {
+        guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int
+        else {
+            return max(1, requested)
+        }
+
+        return max(1, min(requested, max(width, height)))
+    }
+}
+
+extension ImageLoadingClient: DependencyKey {
+    static let liveValue = Self { url in
+        try await Task.detached(priority: .high) {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options)
+                  let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
             else {
                 throw CaptureEngineError.fileWriteFailed(url)
             }
 
-            return thumbnail
+            return image
         }.value
+    }
+}
+
+extension FileRevealClient: DependencyKey {
+    static let liveValue = Self { url in
+        await MainActor.run {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
     }
 }
 
@@ -330,6 +378,16 @@ extension DependencyValues {
     var thumbnailClient: ThumbnailClient {
         get { self[ThumbnailClient.self] }
         set { self[ThumbnailClient.self] = newValue }
+    }
+
+    var imageLoadingClient: ImageLoadingClient {
+        get { self[ImageLoadingClient.self] }
+        set { self[ImageLoadingClient.self] = newValue }
+    }
+
+    var fileRevealClient: FileRevealClient {
+        get { self[FileRevealClient.self] }
+        set { self[FileRevealClient.self] = newValue }
     }
 
     var loggingClient: LoggingClient {

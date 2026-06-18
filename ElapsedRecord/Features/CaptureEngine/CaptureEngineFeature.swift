@@ -10,6 +10,7 @@ struct CaptureEngineFeature: Reducer {
         var activeSessions: [String: ActiveSession] = [:]
         var permissionStatus: CapturePermissionStatus = .notDetermined
         var lastError: String?
+        var recentDiagnostics: [String] = []
 
         struct ActiveSession: Equatable {
             var application: RunningApplication
@@ -17,6 +18,7 @@ struct CaptureEngineFeature: Reducer {
             var session: CaptureSession
             var nextWindowNumber: Int = 1
             var windowsBySystemID: [Int: MonitoredWindow] = [:]
+            var isCaptureInFlight = false
         }
     }
 
@@ -29,10 +31,11 @@ struct CaptureEngineFeature: Reducer {
         case sessionOpened(CaptureSession, RunningApplication)
         case sessionOpenFailed(String)
         case captureTick(String)
-        case windowsFailed(String)
+        case windowsFailed(String, String)
         case windowsLoaded(String, [CapturableWindow])
-        case screenshotFailed(String)
+        case screenshotFailed(String, String)
         case screenshotRecorded(ScreenshotRecord)
+        case captureCycleFinished(String)
         case sessionClosed(String)
     }
 
@@ -111,7 +114,7 @@ struct CaptureEngineFeature: Reducer {
                 state.permissionStatus = status
                 guard status == .authorized, let application else {
                     if status == .denied {
-                        state.lastError = CaptureEngineError.screenRecordingPermissionDenied.localizedDescription
+                        state.recordDiagnostic(CaptureEngineError.screenRecordingPermissionDenied.localizedDescription)
                     }
                     return .none
                 }
@@ -131,19 +134,27 @@ struct CaptureEngineFeature: Reducer {
                 return captureLoop(bundleIdentifier: application.bundleIdentifier, interval: config.sanitizedInterval)
 
             case let .sessionOpenFailed(message):
-                state.lastError = message
+                state.recordDiagnostic(message)
                 return .none
 
             case let .captureTick(bundleIdentifier):
-                guard let active = state.activeSessions[bundleIdentifier] else { return .none }
+                guard var active = state.activeSessions[bundleIdentifier],
+                      !active.isCaptureInFlight
+                else {
+                    return .none
+                }
 
+                active.isCaptureInFlight = true
+                state.activeSessions[bundleIdentifier] = active
+
+                let application = active.application
                 let screenCapture = screenCapture
                 return .run { send in
                     do {
-                        let windows = try await screenCapture.windows(active.application)
+                        let windows = try await screenCapture.windows(application)
                         await send(.windowsLoaded(bundleIdentifier, windows))
                     } catch {
-                        await send(.windowsFailed(error.localizedDescription))
+                        await send(.windowsFailed(bundleIdentifier, error.localizedDescription))
                     }
                 }
 
@@ -175,11 +186,20 @@ struct CaptureEngineFeature: Reducer {
                 }
 
                 state.activeSessions[bundleIdentifier] = active
-                return capture(monitoredWindows, in: active.session)
+                guard !monitoredWindows.isEmpty else {
+                    state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
+                    return .none
+                }
 
-            case let .windowsFailed(message):
-                state.lastError = message
-                logger.log(.error, message, [:])
+                return capture(monitoredWindows, in: active.session, bundleIdentifier: bundleIdentifier)
+
+            case let .windowsFailed(bundleIdentifier, message):
+                state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
+                let shouldLog = state.lastError != message
+                state.recordDiagnostic(message)
+                if shouldLog {
+                    logger.log(.error, message, [:])
+                }
                 return .none
 
             case let .screenshotRecorded(record):
@@ -190,9 +210,16 @@ struct CaptureEngineFeature: Reducer {
                 )
                 return .none
 
-            case let .screenshotFailed(message):
-                state.lastError = message
-                logger.log(.error, message, [:])
+            case let .screenshotFailed(_, message):
+                let shouldLog = state.lastError != message
+                state.recordDiagnostic(message)
+                if shouldLog {
+                    logger.log(.error, message, [:])
+                }
+                return .none
+
+            case let .captureCycleFinished(bundleIdentifier):
+                state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
                 return .none
 
             case .sessionClosed:
@@ -246,6 +273,7 @@ struct CaptureEngineFeature: Reducer {
 
         return .merge(
             .cancel(id: captureLoopID(active.config.bundleIdentifier)),
+            .cancel(id: captureCycleID(active.session.id)),
             .run { send in
                 do {
                     try await persistence.closeSession(active.session.id, endedAt)
@@ -279,10 +307,9 @@ struct CaptureEngineFeature: Reducer {
 
     private func capture(
         _ windows: [MonitoredWindow],
-        in session: CaptureSession
+        in session: CaptureSession,
+        bundleIdentifier: String
     ) -> Effect<Action> {
-        guard !windows.isEmpty else { return .none }
-
         let date = date
         let encoder = encoder
         let ids = ids
@@ -313,13 +340,31 @@ struct CaptureEngineFeature: Reducer {
                     try await persistence.recordScreenshot(record)
                     await send(.screenshotRecorded(record))
                 } catch {
-                    await send(.screenshotFailed(error.localizedDescription))
+                    await send(.screenshotFailed(bundleIdentifier, error.localizedDescription))
                 }
             }
+            await send(.captureCycleFinished(bundleIdentifier))
         }
+        .cancellable(id: captureCycleID(session.id), cancelInFlight: true)
     }
 
     private func captureLoopID(_ bundleIdentifier: String) -> String {
         "capture-loop-\(bundleIdentifier)"
+    }
+
+    private func captureCycleID(_ sessionID: UUID) -> String {
+        "capture-cycle-\(sessionID.uuidString)"
+    }
+}
+
+extension CaptureEngineFeature.State {
+    mutating func recordDiagnostic(_ message: String) {
+        lastError = message
+        if recentDiagnostics.last != message {
+            recentDiagnostics.append(message)
+        }
+        if recentDiagnostics.count > 6 {
+            recentDiagnostics.removeFirst(recentDiagnostics.count - 6)
+        }
     }
 }

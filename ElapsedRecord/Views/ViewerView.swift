@@ -4,7 +4,7 @@ import SwiftUI
 import TranslateKit
 
 struct ViewerView: View {
-    let store: StoreOf<ViewerFeature>
+    @Bindable var store: StoreOf<ViewerFeature>
 
     var body: some View {
         NavigationSplitView {
@@ -15,6 +15,14 @@ struct ViewerView: View {
             detailPane
         }
         .navigationTitle(#tk("Elapsed Record"))
+        .sheet(item: $store.selectedScreenshot.sending(\.screenshotSelected)) { record in
+            ScreenshotDetailView(
+                record: record,
+                revealInFinder: {
+                    store.send(.revealSelectedScreenshotInFinderButtonTapped)
+                }
+            )
+        }
     }
 
     private var appList: some View {
@@ -104,10 +112,13 @@ struct ViewerView: View {
     @ViewBuilder
     private var detailPane: some View {
         if store.isShowingFlatGallery {
-            ScreenshotGrid(records: store.flatScreenshots)
-                .navigationTitle(#tk("All screenshots"))
+            ScreenshotGrid(
+                records: store.flatScreenshots,
+                selectScreenshot: { store.send(.screenshotSelected($0)) }
+            )
+            .navigationTitle(#tk("All screenshots"))
         } else if store.selectedSessionID != nil {
-            HSplitView {
+            HStack(spacing: 0) {
                 List {
                     Section {
                         ForEach(store.windows) { window in
@@ -136,10 +147,15 @@ struct ViewerView: View {
                         Label(#tk("Windows"), systemSymbol: .macwindow)
                     }
                 }
-                .frame(minWidth: 220)
+                .frame(minWidth: 220, idealWidth: 240, maxWidth: 320)
 
-                ScreenshotGrid(records: store.windowScreenshots)
-                    .frame(minWidth: 360)
+                Divider()
+
+                ScreenshotGrid(
+                    records: store.windowScreenshots,
+                    selectScreenshot: { store.send(.screenshotSelected($0)) }
+                )
+                .frame(minWidth: 360)
             }
         } else {
             ContentUnavailableView(
@@ -167,6 +183,7 @@ struct ViewerView: View {
 
 private struct ScreenshotGrid: View {
     let records: [ScreenshotRecord]
+    let selectScreenshot: (ScreenshotRecord) -> Void
 
     private let columns = [
         GridItem(.adaptive(minimum: 160), spacing: 12),
@@ -176,15 +193,20 @@ private struct ScreenshotGrid: View {
         ScrollView {
             LazyVGrid(columns: columns, spacing: 12) {
                 ForEach(records) { record in
-                    VStack(alignment: .leading, spacing: 6) {
-                        ScreenshotThumbnailView(record: record)
-                            .aspectRatio(16 / 10, contentMode: .fit)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    Button {
+                        selectScreenshot(record)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ScreenshotThumbnailView(record: record)
+                                .aspectRatio(16 / 10, contentMode: .fit)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                        Text(record.capturedAt, format: .dateTime.hour().minute().second())
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Text(record.capturedAt, format: .dateTime.hour().minute().second())
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding()
@@ -196,6 +218,66 @@ private struct ScreenshotGrid: View {
                     systemImage: "photo",
                     description: Text(#tk("Captured frames will appear here."))
                 )
+            }
+        }
+    }
+}
+
+private struct ScreenshotDetailView: View {
+    let record: ScreenshotRecord
+    let revealInFinder: () -> Void
+
+    @Dependency(\.imageLoadingClient) private var images
+    @State private var image: CGImage?
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ZStack {
+                Rectangle()
+                    .fill(.quaternary)
+
+                if let image {
+                    Image(nsImage: NSImage(cgImage: image, size: image.displaySize))
+                        .resizable()
+                        .scaledToFit()
+                } else if let errorMessage {
+                    ContentUnavailableView(
+                        #tk("Could not load image"),
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(errorMessage)
+                    )
+                } else {
+                    ProgressView()
+                }
+            }
+            .frame(minWidth: 640, minHeight: 420)
+
+            Group {
+                Text(record.capturedAt, format: .dateTime.year().month().day().hour().minute().second())
+                Text(record.fileURL.path(percentEncoded: false))
+                    .font(.caption)
+                    .textSelection(.enabled)
+                Text("\(record.fileSizeBytes) bytes")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Spacer()
+                Button(#tk("Reveal in Finder")) {
+                    revealInFinder()
+                }
+            }
+        }
+        .padding()
+        .task(id: record.id) {
+            do {
+                image = try await images.fullSizeImage(record.fileURL)
+                errorMessage = nil
+            } catch {
+                image = nil
+                errorMessage = error.localizedDescription
             }
         }
     }
@@ -214,7 +296,7 @@ private struct ScreenshotThumbnailView: View {
                 .fill(.quaternary)
 
             if let image {
-                Image(nsImage: NSImage(cgImage: image, size: .zero))
+                Image(nsImage: NSImage(cgImage: image, size: image.displaySize))
                     .resizable()
                     .scaledToFill()
             } else {
@@ -224,10 +306,17 @@ private struct ScreenshotThumbnailView: View {
             }
         }
         .task(id: record.id) {
+            image = nil
             image = try? await thumbnails.thumbnail(
                 record.fileURL,
                 preferences.thumbnailMaximumPixelSize()
             )
         }
+    }
+}
+
+private extension CGImage {
+    var displaySize: CGSize {
+        CGSize(width: width, height: height)
     }
 }

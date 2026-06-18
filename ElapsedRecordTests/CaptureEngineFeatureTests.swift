@@ -67,8 +67,12 @@ final class CaptureEngineFeatureTests: XCTestCase {
                 session: expectedSession
             )
         }
-        await store.receive(.captureTick(app.bundleIdentifier))
-        await store.receive(.windowsLoaded(app.bundleIdentifier, []))
+        await store.receive(.captureTick(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+        }
 
         await store.send(.workspaceEvent(.terminated(app))) {
             $0.runningApplications[app.bundleIdentifier] = nil
@@ -168,6 +172,49 @@ final class CaptureEngineFeatureTests: XCTestCase {
             )
             $0.activeSessions[app.bundleIdentifier] = active
         }
+    }
+
+    @MainActor
+    func testCaptureTickIsIgnoredWhileCycleIsInFlight() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.SlowApp",
+            displayName: "Slow App",
+            processIdentifier: 7
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 1,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000020")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        var state = CaptureEngineFeature.State()
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session,
+            isCaptureInFlight: true
+        )
+
+        let windowEnumerationCount = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.screenCaptureClient.windows = { _ in
+                windowEnumerationCount.withValue { $0 += 1 }
+                return []
+            }
+        }
+
+        await store.send(.captureTick(app.bundleIdentifier))
+        XCTAssertEqual(windowEnumerationCount.value, 0)
     }
 
     private final class UUIDSequence: @unchecked Sendable {

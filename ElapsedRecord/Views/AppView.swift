@@ -79,6 +79,16 @@ struct AppView: View {
             Spacer()
 
             captureStatus
+
+            if !store.captureEngine.recentDiagnostics.isEmpty {
+                Menu {
+                    ForEach(Array(store.captureEngine.recentDiagnostics.enumerated()), id: \.offset) { _, diagnostic in
+                        Text(diagnostic)
+                    }
+                } label: {
+                    Label(#tk("Diagnostics"), systemSymbol: .stethoscope)
+                }
+            }
         }
     }
 

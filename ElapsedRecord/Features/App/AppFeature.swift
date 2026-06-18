@@ -41,7 +41,7 @@ struct AppFeature: Reducer {
                 )
 
             case .captureEngine(.screenshotRecorded):
-                return .send(.viewer(.task))
+                return .send(.viewer(.refresh))
 
             case .captureEngine, .viewer:
                 return .none
@@ -67,7 +67,7 @@ struct AppFeature: Reducer {
                 return .send(.captureEngine(.whitelistUpdated([])))
 
             case .refreshViewerButtonTapped:
-                return .send(.viewer(.task))
+                return .send(.viewer(.refresh))
             }
         }
     }

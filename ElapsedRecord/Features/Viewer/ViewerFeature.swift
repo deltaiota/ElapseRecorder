@@ -12,11 +12,13 @@ struct ViewerFeature: Reducer {
         var selectedBundleIdentifier: String?
         var selectedSessionID: UUID?
         var selectedWindowID: UUID?
+        var selectedScreenshot: ScreenshotRecord?
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
     }
 
+    @CasePathable
     enum Action: Equatable {
         case task
         case appsLoaded([AppCaptureSummary])
@@ -28,9 +30,13 @@ struct ViewerFeature: Reducer {
         case windowScreenshotsLoaded([ScreenshotRecord])
         case flatGallerySelected
         case flatScreenshotsLoaded([ScreenshotRecord])
+        case screenshotSelected(ScreenshotRecord?)
+        case refresh
+        case revealSelectedScreenshotInFinderButtonTapped
         case loadingFailed(String)
     }
 
+    @Dependency(\.fileRevealClient) private var fileReveal
     @Dependency(\.persistenceClient) private var persistence
 
     var body: some Reducer<State, Action> {
@@ -40,8 +46,16 @@ struct ViewerFeature: Reducer {
                 state.isLoading = true
                 return loadApps()
 
+            case .refresh:
+                return refresh(state)
+
             case let .appsLoaded(apps):
                 state.apps = apps
+                if let selectedBundleIdentifier = state.selectedBundleIdentifier,
+                   !apps.contains(where: { $0.bundleIdentifier == selectedBundleIdentifier })
+                {
+                    state.clearSelection()
+                }
                 state.isLoading = false
                 return .none
 
@@ -53,6 +67,7 @@ struct ViewerFeature: Reducer {
                 state.windows = []
                 state.windowScreenshots = []
                 state.flatScreenshots = []
+                state.selectedScreenshot = nil
                 state.isShowingFlatGallery = false
 
                 guard let bundleIdentifier else { return .none }
@@ -61,6 +76,15 @@ struct ViewerFeature: Reducer {
 
             case let .sessionsLoaded(sessions):
                 state.sessions = sessions
+                if let selectedSessionID = state.selectedSessionID,
+                   !sessions.contains(where: { $0.id == selectedSessionID })
+                {
+                    state.selectedSessionID = nil
+                    state.selectedWindowID = nil
+                    state.selectedScreenshot = nil
+                    state.windows = []
+                    state.windowScreenshots = []
+                }
                 state.isLoading = false
                 return .none
 
@@ -69,6 +93,7 @@ struct ViewerFeature: Reducer {
                 state.selectedWindowID = nil
                 state.windows = []
                 state.windowScreenshots = []
+                state.selectedScreenshot = nil
                 state.isShowingFlatGallery = false
 
                 guard let sessionID else { return .none }
@@ -77,12 +102,20 @@ struct ViewerFeature: Reducer {
 
             case let .windowsLoaded(windows):
                 state.windows = windows
+                if let selectedWindowID = state.selectedWindowID,
+                   !windows.contains(where: { $0.id == selectedWindowID })
+                {
+                    state.selectedWindowID = nil
+                    state.selectedScreenshot = nil
+                    state.windowScreenshots = []
+                }
                 state.isLoading = false
                 return .none
 
             case let .windowSelected(windowID):
                 state.selectedWindowID = windowID
                 state.windowScreenshots = []
+                state.selectedScreenshot = nil
                 state.isShowingFlatGallery = false
 
                 guard let windowID else { return .none }
@@ -98,6 +131,7 @@ struct ViewerFeature: Reducer {
                 guard let bundleIdentifier = state.selectedBundleIdentifier else { return .none }
                 state.selectedSessionID = nil
                 state.selectedWindowID = nil
+                state.selectedScreenshot = nil
                 state.isShowingFlatGallery = true
                 state.flatScreenshots = []
                 state.isLoading = true
@@ -108,12 +142,45 @@ struct ViewerFeature: Reducer {
                 state.isLoading = false
                 return .none
 
+            case let .screenshotSelected(record):
+                state.selectedScreenshot = record
+                return .none
+
+            case .revealSelectedScreenshotInFinderButtonTapped:
+                guard let url = state.selectedScreenshot?.fileURL else { return .none }
+                let fileReveal = fileReveal
+                return .run { _ in
+                    await fileReveal.reveal(url)
+                }
+
             case let .loadingFailed(message):
                 state.errorMessage = message
                 state.isLoading = false
                 return .none
             }
         }
+    }
+
+    private func refresh(_ state: State) -> Effect<Action> {
+        var effects: [Effect<Action>] = [loadApps()]
+
+        if let bundleIdentifier = state.selectedBundleIdentifier {
+            effects.append(loadSessions(bundleIdentifier: bundleIdentifier))
+
+            if state.isShowingFlatGallery {
+                effects.append(loadFlatScreenshots(bundleIdentifier: bundleIdentifier))
+            }
+        }
+
+        if let sessionID = state.selectedSessionID {
+            effects.append(loadWindows(sessionID: sessionID))
+        }
+
+        if let windowID = state.selectedWindowID {
+            effects.append(loadWindowScreenshots(windowID: windowID))
+        }
+
+        return .merge(effects)
     }
 
     private func loadApps() -> Effect<Action> {
@@ -169,5 +236,19 @@ struct ViewerFeature: Reducer {
                 await send(.loadingFailed(error.localizedDescription))
             }
         }
+    }
+}
+
+extension ViewerFeature.State {
+    mutating func clearSelection() {
+        selectedBundleIdentifier = nil
+        selectedSessionID = nil
+        selectedWindowID = nil
+        selectedScreenshot = nil
+        isShowingFlatGallery = false
+        sessions = []
+        windows = []
+        windowScreenshots = []
+        flatScreenshots = []
     }
 }

@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import SFSafeSymbols
 import SwiftUI
@@ -33,17 +34,8 @@ struct ViewerView: View {
     private func appList() -> some View {
         List(selection: $store.selectedBundleIdentifier.sending(\.appSelected)) {
             ForEach(store.apps) { app in
-                Label {
-                    VStack(alignment: .leading) {
-                        Text(app.displayName)
-                        Text("\(app.sessionCount) sessions • \(app.screenshotCount) screenshots")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-                } icon: {
-                    Image(systemSymbol: .app)
-                }
-                .tag(app.bundleIdentifier)
+                AppSidebarRow(app: app)
+                    .tag(app.bundleIdentifier)
             }
         }
     }
@@ -193,6 +185,154 @@ struct ViewerView: View {
             return #tk("Window \(window.displayNumber): \(label)")
         }
         return #tk("Window \(window.displayNumber)")
+    }
+}
+
+private struct AppSidebarRow: View {
+    let app: AppCaptureSummary
+
+    @State private var isShowingInfo = false
+
+    private var identity: InstalledAppIdentity {
+        InstalledAppIdentity(app: app)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            AppIconView(icon: identity.icon)
+
+            VStack(alignment: .leading) {
+                Text(identity.localizedName)
+                    .lineLimit(1)
+
+                Text("\(app.sessionCount) sessions • \(app.screenshotCount) screenshots")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                isShowingInfo.toggle()
+            } label: {
+                Image(systemSymbol: .infoCircle)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help(#tk("Show app information"))
+            .popover(isPresented: $isShowingInfo, arrowEdge: .trailing) {
+                AppInfoPopover(app: app, identity: identity)
+            }
+        }
+    }
+}
+
+private struct AppIconView: View {
+    let icon: NSImage?
+
+    var body: some View {
+        if let icon {
+            Image(nsImage: icon)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 24, height: 24)
+        } else {
+            Image(systemSymbol: .app)
+                .frame(width: 24, height: 24)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct AppInfoPopover: View {
+    let app: AppCaptureSummary
+    let identity: InstalledAppIdentity
+
+    var body: some View {
+        Form {
+            LabeledContent(#tk("Name")) {
+                Text(identity.localizedName)
+            }
+
+            LabeledContent(#tk("Bundle Identifier")) {
+                Text(identity.bundleIdentifier)
+                    .textSelection(.enabled)
+            }
+
+            LabeledContent(#tk("Recorded Name")) {
+                Text(identity.recordedName)
+            }
+
+            if let appURL = identity.appURL {
+                LabeledContent(#tk("Path")) {
+                    Text(appURL.path(percentEncoded: false))
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                }
+            } else {
+                LabeledContent(#tk("Application")) {
+                    Text(#tk("Not found"))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            LabeledContent(#tk("Sessions")) {
+                Text(app.sessionCount, format: .number)
+            }
+
+            LabeledContent(#tk("Screenshots")) {
+                Text(app.screenshotCount, format: .number)
+            }
+
+            if let lastCapturedAt = app.lastCapturedAt {
+                LabeledContent(#tk("Last Capture")) {
+                    Text(lastCapturedAt, format: .dateTime)
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .padding()
+        .frame(minWidth: 320)
+    }
+}
+
+private struct InstalledAppIdentity {
+    let bundleIdentifier: String
+    let localizedName: String
+    let recordedName: String
+    let appURL: URL?
+    let icon: NSImage?
+
+    init(app: AppCaptureSummary) {
+        let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)
+
+        bundleIdentifier = app.bundleIdentifier
+        recordedName = app.displayName
+        self.appURL = appURL
+        localizedName = Self.localizedName(appURL: appURL) ?? app.displayName
+        icon = Self.icon(appURL: appURL)
+    }
+
+    private static func localizedName(appURL: URL?) -> String? {
+        guard let appURL else { return nil }
+
+        let bundle = Bundle(url: appURL)
+        let bundleName = ["CFBundleDisplayName", "CFBundleName"]
+            .lazy
+            .compactMap { bundle?.object(forInfoDictionaryKey: $0) as? String }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+
+        return bundleName ?? FileManager.default.displayName(atPath: appURL.path(percentEncoded: false))
+    }
+
+    private static func icon(appURL: URL?) -> NSImage? {
+        guard let appURL else { return nil }
+
+        let icon = NSWorkspace.shared.icon(forFile: appURL.path(percentEncoded: false))
+        icon.size = NSSize(width: 24, height: 24)
+        return icon
     }
 }
 

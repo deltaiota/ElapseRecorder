@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import Foundation
+import IssueReporting
 import SFSafeSymbols
 import SwiftUI
 import TranslateKit
@@ -40,20 +41,13 @@ struct AppView: View {
             )
         }
         .task {
-            guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
+            guard !isTesting else {
                 return
             }
 
             await store.send(.task).finish()
         }
     }
-
-//    var body: some View {
-//        ViewerView(store: store.scope(
-//            state: \.viewer,
-//            action: \.viewer
-//        ))
-//    }
 
     @ViewBuilder
     private func whitelistBar() -> some View {

@@ -234,7 +234,7 @@ struct CaptureEngineFeature: Reducer {
                 let seenAt = date.now()
                 var monitoredWindows: [MonitoredWindow] = []
 
-                for window in windows where window.shouldCapture {
+                for window in CapturableWindow.capturableWindows(from: windows) {
                     if var monitoredWindow = active.windowsBySystemID[window.systemWindowID] {
                         monitoredWindow.lastSeenAt = seenAt
                         active.windowsBySystemID[window.systemWindowID] = monitoredWindow

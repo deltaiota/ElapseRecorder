@@ -134,8 +134,12 @@ struct ViewerView: View {
                                 Divider()
 
                                 ForEach(store.windows) { window in
-                                    Text("\(windowTitle(window)) - \(window.screenshotCount) screenshots")
-                                        .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
+                                    Button {} label: {
+                                        Text(windowTitle(window))
+
+                                        Text("\(window.screenshotCount) screenshots")
+                                    }
+                                    .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
                                 }
                             }
                         }

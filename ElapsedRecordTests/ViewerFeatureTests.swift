@@ -115,6 +115,51 @@ final class ViewerFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testWindowPickerSelectingCurrentItemDoesNotReloadScreenshots() async throws {
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000608"))
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000609"))
+        var state = ViewerFeature.State()
+        state.selectedSessionID = sessionID
+        state.selectedWindowID = windowID
+
+        let sessionScreenshotLoadCount = LockIsolated(0)
+        let windowScreenshotLoadCount = LockIsolated(0)
+        let store = TestStore(initialState: state) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.screenshotsForSession = { _ in
+                sessionScreenshotLoadCount.withValue { $0 += 1 }
+                return []
+            }
+            $0.persistenceClient.screenshotsForWindow = { _ in
+                windowScreenshotLoadCount.withValue { $0 += 1 }
+                return []
+            }
+        }
+
+        await store.send(.windowPickerSelectionChanged(.window(id: windowID)))
+        XCTAssertEqual(sessionScreenshotLoadCount.value, 0)
+        XCTAssertEqual(windowScreenshotLoadCount.value, 0)
+
+        await store.send(.windowPickerSelectionChanged(.all)) {
+            $0.selectedWindowID = nil
+            $0.selectedScreenshot = nil
+            $0.isShowingFlatGallery = false
+            $0.windowScreenshots = []
+            $0.isLoading = true
+        }
+        await store.receive(.windowScreenshotsLoaded([])) {
+            $0.isLoading = false
+        }
+        XCTAssertEqual(sessionScreenshotLoadCount.value, 1)
+        XCTAssertEqual(windowScreenshotLoadCount.value, 0)
+
+        await store.send(.windowPickerSelectionChanged(.all))
+        XCTAssertEqual(sessionScreenshotLoadCount.value, 1)
+        XCTAssertEqual(windowScreenshotLoadCount.value, 0)
+    }
+
+    @MainActor
     func testDeleteSelectedEndedSessionDeletesFilesAndMetadataThenRefreshes() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000501"))
         let session = CaptureSessionSummary(

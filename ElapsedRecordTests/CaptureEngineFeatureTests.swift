@@ -283,6 +283,89 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testAttachedSheetsAreNotTrackedAsSeparateWindows() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.Editor",
+            displayName: "Editor",
+            processIdentifier: 100
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000030")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let parentWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000031"))
+        let ids = UUIDSequence([parentWindowID])
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
+            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
+            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
+            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
+            $0.fileStorageClient.write = { data, _ in data.count }
+            $0.imageEncodingClient.encode = { _, _ in Data() }
+            $0.idGeneratorClient.uuid = { ids.next() }
+            $0.persistenceClient.upsertWindow = { _ in }
+            $0.screenCaptureClient.capture = { _ in throw CaptureEngineError.windowCaptureFailed(systemWindowID: -1) }
+            $0.loggingClient.log = { _, _, _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(
+            .windowsLoaded(
+                app.bundleIdentifier,
+                [
+                    CapturableWindow(
+                        systemWindowID: 801,
+                        title: "Document",
+                        frame: CGRect(x: 0, y: 0, width: 1000, height: 700),
+                        layer: 0,
+                        isOnScreen: true
+                    ),
+                    CapturableWindow(
+                        systemWindowID: 802,
+                        title: "Save",
+                        frame: CGRect(x: 250, y: 120, width: 500, height: 360),
+                        layer: 0,
+                        isOnScreen: true
+                    ),
+                ]
+            )
+        ) {
+            var active = $0.activeSessions[app.bundleIdentifier]!
+            active.nextWindowNumber = 2
+            active.windowsBySystemID[801] = MonitoredWindow(
+                id: parentWindowID,
+                sessionID: session.id,
+                systemWindowID: 801,
+                displayNumber: 1,
+                label: "Document",
+                firstSeenAt: Date(timeIntervalSince1970: 10),
+                lastSeenAt: Date(timeIntervalSince1970: 10)
+            )
+            $0.activeSessions[app.bundleIdentifier] = active
+        }
+    }
+
+    @MainActor
     func testCaptureTickIsIgnoredWhileCycleIsInFlight() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.SlowApp",

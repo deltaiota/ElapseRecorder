@@ -72,6 +72,42 @@ nonisolated struct CapturableWindow: Equatable, Identifiable {
             && frame.height >= 80
             && !frame.isEmpty
     }
+
+    static func capturableWindows(from windows: [Self]) -> [Self] {
+        windows.filter { window in
+            window.shouldCapture
+                && !window.isLikelyAttachedSheetOrOverlay(in: windows)
+        }
+    }
+
+    private func isLikelyAttachedSheetOrOverlay(in windows: [Self]) -> Bool {
+        guard hasSystemPanelTitle else { return false }
+
+        return windows.contains { other in
+            other.systemWindowID != systemWindowID
+                && other.shouldCapture
+                && other.frame.area > frame.area
+                && frame.intersection(other.frame).area >= frame.area * 0.85
+        }
+    }
+
+    private var hasSystemPanelTitle: Bool {
+        guard let title else { return true }
+
+        switch title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "", "open", "save", "save as", "export", "import", "print":
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+private nonisolated extension CGRect {
+    var area: CGFloat {
+        guard !isNull, !isInfinite, !isEmpty else { return 0 }
+        return width * height
+    }
 }
 
 nonisolated struct CapturedImage {

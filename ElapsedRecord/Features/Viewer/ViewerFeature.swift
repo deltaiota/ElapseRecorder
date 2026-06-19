@@ -159,12 +159,16 @@ struct ViewerFeature: Reducer {
                 return .none
 
             case let .windowSelected(windowID):
+                guard windowID != state.selectedWindowID else { return .none }
+
                 if let windowID {
                     return selectWindow(windowID, state: &state)
                 }
                 return selectAllWindows(state: &state)
 
             case let .windowPickerSelectionChanged(selection):
+                guard selection != state.windowPickerSelection else { return .none }
+
                 switch selection {
                 case .all:
                     return selectAllWindows(state: &state)

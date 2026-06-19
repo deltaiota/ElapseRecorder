@@ -27,6 +27,8 @@ struct CaptureEngineFeature: Reducer {
         case task
         case requestPermissionButtonTapped
         case refreshRunningApplications
+        case staleOpenSessionsClosed(Int)
+        case staleOpenSessionCloseFailed(String)
         case whitelistUpdated([WhitelistedAppConfig])
         case runningApplicationsLoaded([RunningApplication])
         case workspaceEvent(WorkspaceEvent)
@@ -58,10 +60,19 @@ struct CaptureEngineFeature: Reducer {
         Reduce { state, action in
             switch action {
             case .task:
+                let date = date
                 let permission = permission
+                let persistence = persistence
                 let workspace = workspace
 
                 return .merge(
+                    .run { send in
+                        do {
+                            try await send(.staleOpenSessionsClosed(await persistence.closeOpenSessions(date.now())))
+                        } catch {
+                            await send(.staleOpenSessionCloseFailed(error.localizedDescription))
+                        }
+                    },
                     .run { send in
                         await send(.permissionResolved(await permission.status(), nil))
                     },
@@ -85,6 +96,17 @@ struct CaptureEngineFeature: Reducer {
                 return .run { send in
                     await send(.runningApplicationsLoaded(await workspace.runningApplications()))
                 }
+
+            case let .staleOpenSessionsClosed(count):
+                if count > 0 {
+                    state.recordDiagnostic("Closed \(count) stale open capture sessions.")
+                }
+                return .none
+
+            case let .staleOpenSessionCloseFailed(message):
+                state.recordDiagnostic(message)
+                logger.log(.error, message, [:])
+                return .none
 
             case let .whitelistUpdated(configs):
                 state.whitelist = Dictionary(

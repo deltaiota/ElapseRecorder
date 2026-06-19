@@ -60,6 +60,12 @@ struct ViewerView: View {
     private var sessionList: some View {
         List {
             if store.selectedBundleIdentifier != nil {
+                if let errorMessage = store.errorMessage {
+                    Label(errorMessage, systemSymbol: .exclamationmarkTriangle)
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                }
+
                 Button {
                     store.send(.flatGallerySelected)
                 } label: {
@@ -71,6 +77,15 @@ struct ViewerView: View {
                         ? Color.accentColor.opacity(0.16)
                         : Color.clear
                 )
+
+                if store.selectedSession != nil {
+                    Button(role: .destructive) {
+                        store.send(.deleteSelectedSessionButtonTapped)
+                    } label: {
+                        Label(#tk("Delete selected session"), systemSymbol: .trash)
+                    }
+                    .disabled(store.isLoading)
+                }
 
                 Section {
                     ForEach(store.sessions) { session in

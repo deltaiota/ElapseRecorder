@@ -33,10 +33,13 @@ struct ViewerFeature: Reducer {
         case screenshotSelected(ScreenshotRecord?)
         case refresh
         case revealSelectedScreenshotInFinderButtonTapped
+        case deleteSelectedSessionButtonTapped
+        case sessionDeleted(UUID)
         case loadingFailed(String)
     }
 
     @Dependency(\.fileRevealClient) private var fileReveal
+    @Dependency(\.fileStorageClient) private var fileStorage
     @Dependency(\.persistenceClient) private var persistence
 
     var body: some Reducer<State, Action> {
@@ -153,6 +156,37 @@ struct ViewerFeature: Reducer {
                     await fileReveal.reveal(url)
                 }
 
+            case .deleteSelectedSessionButtonTapped:
+                guard let session = state.selectedSession else { return .none }
+                guard session.endedAt != nil else {
+                    state.errorMessage = "Stop capture before deleting an active session."
+                    return .none
+                }
+
+                state.isLoading = true
+                let fileStorage = fileStorage
+                let persistence = persistence
+                return .run { send in
+                    do {
+                        try await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
+                        try await persistence.deleteSession(session.id)
+                        await send(.sessionDeleted(session.id))
+                    } catch {
+                        await send(.loadingFailed(error.localizedDescription))
+                    }
+                }
+
+            case let .sessionDeleted(sessionID):
+                if state.selectedSessionID == sessionID {
+                    state.selectedSessionID = nil
+                    state.selectedWindowID = nil
+                    state.selectedScreenshot = nil
+                    state.windows = []
+                    state.windowScreenshots = []
+                }
+                state.isLoading = false
+                return .send(.refresh)
+
             case let .loadingFailed(message):
                 state.errorMessage = message
                 state.isLoading = false
@@ -240,6 +274,11 @@ struct ViewerFeature: Reducer {
 }
 
 extension ViewerFeature.State {
+    var selectedSession: CaptureSessionSummary? {
+        guard let selectedSessionID else { return nil }
+        return sessions.first { $0.id == selectedSessionID }
+    }
+
     mutating func clearSelection() {
         selectedBundleIdentifier = nil
         selectedSessionID = nil

@@ -58,11 +58,14 @@ nonisolated struct FileStorageClient {
     var captureRoot: @Sendable () throws -> URL
     var screenshotURL: @Sendable (_ session: CaptureSession, _ window: MonitoredWindow, _ capturedAt: Date, _ format: CaptureImageFormat) throws -> URL
     var write: @Sendable (_ data: Data, _ url: URL) async throws -> Int
+    var deleteSessionCaptures: @Sendable (_ bundleIdentifier: String, _ sessionID: UUID) async throws -> Void
 }
 
 nonisolated struct PersistenceClient {
     var openSession: @Sendable (_ session: CaptureSession) async throws -> Void
     var closeSession: @Sendable (_ sessionID: UUID, _ endedAt: Date) async throws -> Void
+    var closeOpenSessions: @Sendable (_ endedAt: Date) async throws -> Int
+    var deleteSession: @Sendable (_ sessionID: UUID) async throws -> Void
     var upsertWindow: @Sendable (_ window: MonitoredWindow) async throws -> Void
     var recordScreenshot: @Sendable (_ record: ScreenshotRecord) async throws -> Void
     var apps: @Sendable () async throws -> [AppCaptureSummary]
@@ -237,12 +240,13 @@ extension FileStorageClient: DependencyKey {
     static let liveValue = Self(
         captureRoot: FileStoragePaths.captureRoot,
         screenshotURL: { session, window, capturedAt, format in
-            let root = try FileStoragePaths.captureRoot()
             let timestamp = CaptureFilenameFormatter.string(from: capturedAt)
-            let directory = root
-                .appending(path: session.bundleIdentifier, directoryHint: .isDirectory)
-                .appending(path: session.id.uuidString, directoryHint: .isDirectory)
-                .appending(path: "window-\(window.displayNumber)", directoryHint: .isDirectory)
+            let directory = try FileStoragePaths.sessionDirectory(
+                bundleIdentifier: session.bundleIdentifier,
+                sessionID: session.id,
+                create: true
+            )
+            .appending(path: "window-\(window.displayNumber)", directoryHint: .isDirectory)
 
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -260,6 +264,15 @@ extension FileStorageClient: DependencyKey {
             } catch {
                 throw CaptureEngineError.fileWriteFailed(url)
             }
+        },
+        deleteSessionCaptures: { bundleIdentifier, sessionID in
+            let directory = try FileStoragePaths.sessionDirectory(
+                bundleIdentifier: bundleIdentifier,
+                sessionID: sessionID,
+                create: false
+            )
+            guard FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)) else { return }
+            try FileManager.default.removeItem(at: directory)
         }
     )
 }
@@ -275,6 +288,22 @@ nonisolated enum FileStoragePaths {
         let root = base.appending(path: "ElapsedRecord/Captures", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
+    }
+
+    static func sessionDirectory(
+        bundleIdentifier: String,
+        sessionID: UUID,
+        create: Bool
+    ) throws -> URL {
+        let directory = try captureRoot()
+            .appending(path: bundleIdentifier, directoryHint: .isDirectory)
+            .appending(path: sessionID.uuidString, directoryHint: .isDirectory)
+
+        if create {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        return directory
     }
 }
 
@@ -455,6 +484,11 @@ nonisolated extension PersistenceClient {
     static let unimplemented = Self(
         openSession: { _ in reportIssue("PersistenceClient.openSession is unimplemented") },
         closeSession: { _, _ in reportIssue("PersistenceClient.closeSession is unimplemented") },
+        closeOpenSessions: { _ in
+            reportIssue("PersistenceClient.closeOpenSessions is unimplemented")
+            return 0
+        },
+        deleteSession: { _ in reportIssue("PersistenceClient.deleteSession is unimplemented") },
         upsertWindow: { _ in reportIssue("PersistenceClient.upsertWindow is unimplemented") },
         recordScreenshot: { _ in reportIssue("PersistenceClient.recordScreenshot is unimplemented") },
         apps: {

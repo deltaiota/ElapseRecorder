@@ -34,6 +34,30 @@ final class SwiftDataPersistenceStore {
         try context.save()
     }
 
+    func closeOpenSessions(endedAt: Date) throws -> Int {
+        let context = ModelContext(modelContainer)
+        let sessions = try context.fetch(FetchDescriptor<CaptureSessionModel>())
+            .filter { $0.endedAt == nil }
+
+        for session in sessions {
+            session.endedAt = endedAt
+        }
+
+        guard !sessions.isEmpty else { return 0 }
+        try context.save()
+        return sessions.count
+    }
+
+    func deleteSession(_ sessionID: UUID) throws {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: sessionID, context: context) else {
+            throw CaptureEngineError.sessionNotFound(sessionID)
+        }
+
+        context.delete(session)
+        try context.save()
+    }
+
     func upsertWindow(_ window: MonitoredWindow) throws {
         let context = ModelContext(modelContainer)
         guard let session = try sessionModel(id: window.sessionID, context: context) else {
@@ -187,6 +211,12 @@ extension PersistenceClient {
             closeSession: { sessionID, endedAt in
                 try await store.closeSession(sessionID, endedAt: endedAt)
             },
+            closeOpenSessions: { endedAt in
+                try await store.closeOpenSessions(endedAt: endedAt)
+            },
+            deleteSession: { sessionID in
+                try await store.deleteSession(sessionID)
+            },
             upsertWindow: { window in
                 try await store.upsertWindow(window)
             },
@@ -214,6 +244,8 @@ extension PersistenceClient {
     static let unavailable = Self(
         openSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         closeSession: { _, _ in throw CaptureEngineError.persistenceUnavailable },
+        closeOpenSessions: { _ in throw CaptureEngineError.persistenceUnavailable },
+        deleteSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         upsertWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordScreenshot: { _ in throw CaptureEngineError.persistenceUnavailable },
         apps: { throw CaptureEngineError.persistenceUnavailable },

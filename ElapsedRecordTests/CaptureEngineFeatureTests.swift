@@ -178,6 +178,18 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testStaleOpenSessionsClosedRecordsDiagnostic() async {
+        let store = TestStore(initialState: CaptureEngineFeature.State()) {
+            CaptureEngineFeature()
+        }
+
+        await store.send(.staleOpenSessionsClosed(2)) {
+            $0.lastError = "Closed 2 stale open capture sessions."
+            $0.recentDiagnostics = ["Closed 2 stale open capture sessions."]
+        }
+    }
+
+    @MainActor
     func testWindowsReceiveStableSessionScopedNumbers() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.Modeler",

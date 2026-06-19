@@ -119,6 +119,39 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         XCTAssertEqual(appScreenshots.map(\.id), [oldScreenshot.id, newerScreenshot.id, laterScreenshot.id])
     }
 
+    @MainActor
+    func testCloseOpenSessionsAndDeleteSession() async throws {
+        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let staleSession = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000401"),
+            bundleIdentifier: "com.example.StaleApp",
+            displayName: "Stale App",
+            processIdentifier: 401,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        let closedSession = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000402"),
+            bundleIdentifier: "com.example.StaleApp",
+            displayName: "Stale App",
+            processIdentifier: 402,
+            startedAt: Date(timeIntervalSince1970: 200),
+            endedAt: Date(timeIntervalSince1970: 250)
+        )
+
+        try await client.openSession(staleSession)
+        try await client.openSession(closedSession)
+
+        let closedCount = try await client.closeOpenSessions(Date(timeIntervalSince1970: 300))
+        XCTAssertEqual(closedCount, 1)
+        var sessions = try await client.sessions("com.example.StaleApp")
+        XCTAssertEqual(sessions.first { $0.id == staleSession.id }?.endedAt, Date(timeIntervalSince1970: 300))
+        XCTAssertEqual(sessions.first { $0.id == closedSession.id }?.endedAt, Date(timeIntervalSince1970: 250))
+
+        try await client.deleteSession(staleSession.id)
+        sessions = try await client.sessions("com.example.StaleApp")
+        XCTAssertEqual(sessions.map(\.id), [closedSession.id])
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: Schema.elapsedRecord, configurations: [configuration])

@@ -28,6 +28,17 @@ struct AppView: View {
             setCaptureInterval: { app, interval in
                 store.send(.whitelistIntervalChanged(app.bundleIdentifier, interval))
             },
+            setCaptureMode: { app, captureMode in
+                store.send(.whitelistCaptureModeChanged(app.bundleIdentifier, captureMode))
+            },
+            startManualCapture: { app in
+                store.send(.captureEngine(.manualCaptureStart(app.bundleIdentifier)))
+            },
+            stopManualCapture: { app in
+                store.send(.captureEngine(.manualCaptureStop(app.bundleIdentifier)))
+            },
+            activeCaptureBundleIdentifiers: Set(store.captureEngine.activeSessions.keys),
+            runningApplicationBundleIdentifiers: Set(store.captureEngine.runningApplications.keys),
             removeFromWhitelist: { app in
                 store.send(.removeViewerAppFromWhitelistButtonTapped(app))
             },
@@ -70,22 +81,24 @@ struct AppView: View {
         Button {
             store.send(.requestCapturePermissionButtonTapped)
         } label: {
-            HStack(spacing: 2) {
+            HStack(spacing: -8) {
                 Image(systemSymbol: .recordCircle)
                     .foregroundStyle(.red)
 
-                switch store.captureEngine.permissionStatus {
-                case .authorized:
-                    Label("Screen Recording Ready", systemSymbol: .checkmarkSealFill)
-                        .foregroundStyle(.green)
+                Group {
+                    switch store.captureEngine.permissionStatus {
+                    case .authorized:
+                        Label("Screen Recording Ready", systemSymbol: .checkmarkSealFill)
+                            .foregroundStyle(.green)
 
-                case .notDetermined:
-                    Label("Request Screen Recording Permission", systemSymbol: .questionmarkCircleFill)
-                        .foregroundStyle(.yellow)
+                    case .notDetermined:
+                        Label("Request Screen Recording Permission", systemSymbol: .questionmarkCircleFill)
+                            .foregroundStyle(.yellow)
 
-                case .denied:
-                    Label("Request Screen Recording Permission", systemSymbol: .exclamationmarkTriangleFill)
-                        .foregroundStyle(.red)
+                    case .denied:
+                        Label("Request Screen Recording Permission", systemSymbol: .exclamationmarkTriangleFill)
+                            .foregroundStyle(.red)
+                    }
                 }
             }
         }

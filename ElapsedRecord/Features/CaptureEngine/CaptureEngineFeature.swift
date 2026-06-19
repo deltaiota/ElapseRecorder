@@ -27,6 +27,8 @@ struct CaptureEngineFeature: Reducer {
         case task
         case requestPermissionButtonTapped
         case refreshRunningApplications
+        case manualCaptureStart(String)
+        case manualCaptureStop(String)
         case staleOpenSessionsClosed(Int)
         case staleOpenSessionCloseFailed(String)
         case whitelistUpdated([WhitelistedAppConfig])
@@ -97,6 +99,39 @@ struct CaptureEngineFeature: Reducer {
                     await send(.runningApplicationsLoaded(await workspace.runningApplications()))
                 }
 
+            case let .manualCaptureStart(bundleIdentifier):
+                guard let config = state.whitelist[bundleIdentifier],
+                      config.captureMode == .manual
+                else {
+                    return .none
+                }
+                guard let application = state.runningApplications[bundleIdentifier] else {
+                    state.recordDiagnostic("Cannot start manual capture because \(config.displayName) is not running.")
+                    return .none
+                }
+                guard state.activeSessions[bundleIdentifier] == nil else {
+                    return .none
+                }
+                guard state.permissionStatus == .authorized else {
+                    let permission = permission
+                    return .run { send in
+                        let status = await permission.request()
+                        await send(.permissionResolved(status, nil))
+                        if status == .authorized {
+                            await send(.manualCaptureStart(bundleIdentifier))
+                        }
+                    }
+                }
+                return openSession(application, config: config)
+
+            case let .manualCaptureStop(bundleIdentifier):
+                guard let active = state.activeSessions.removeValue(forKey: bundleIdentifier),
+                      active.config.captureMode == .manual
+                else {
+                    return .none
+                }
+                return closeSession(active, endedAt: date.now())
+
             case let .staleOpenSessionsClosed(count):
                 if count > 0 {
                     state.recordDiagnostic("Closed \(count) stale open capture sessions.")
@@ -116,8 +151,14 @@ struct CaptureEngineFeature: Reducer {
 
                 var effects: [Effect<Action>] = []
                 for (bundleIdentifier, active) in state.activeSessions {
-                    guard let updatedConfig = state.whitelist[bundleIdentifier],
-                          updatedConfig.isEnabled
+                    guard let updatedConfig = state.whitelist[bundleIdentifier] else {
+                        state.activeSessions[bundleIdentifier] = nil
+                        effects.append(closeSession(active, endedAt: date.now()))
+                        continue
+                    }
+
+                    guard updatedConfig.captureMode == active.config.captureMode,
+                          updatedConfig.captureMode == .manual || updatedConfig.isEnabled
                     else {
                         state.activeSessions[bundleIdentifier] = nil
                         effects.append(closeSession(active, endedAt: date.now()))
@@ -191,7 +232,9 @@ struct CaptureEngineFeature: Reducer {
                 return attemptStart(application, state: &state)
 
             case let .sessionOpened(session, application):
-                guard let config = state.whitelist[application.bundleIdentifier], config.isEnabled else {
+                guard let config = state.whitelist[application.bundleIdentifier],
+                      config.captureMode == .manual || config.isEnabled
+                else {
                     return .none
                 }
 
@@ -302,7 +345,10 @@ struct CaptureEngineFeature: Reducer {
         _ application: RunningApplication,
         state: inout State
     ) -> Effect<Action> {
-        guard let config = state.whitelist[application.bundleIdentifier], config.isEnabled else {
+        guard let config = state.whitelist[application.bundleIdentifier],
+              config.captureMode == .auto,
+              config.isEnabled
+        else {
             return .none
         }
         guard state.activeSessions[application.bundleIdentifier] == nil else {
@@ -316,6 +362,13 @@ struct CaptureEngineFeature: Reducer {
             }
         }
 
+        return openSession(application, config: config)
+    }
+
+    private func openSession(
+        _ application: RunningApplication,
+        config: WhitelistedAppConfig
+    ) -> Effect<Action> {
         let session = CaptureSession(
             id: ids.uuid(),
             bundleIdentifier: config.bundleIdentifier,

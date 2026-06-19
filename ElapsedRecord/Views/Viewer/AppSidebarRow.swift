@@ -4,35 +4,70 @@ import TranslateKit
 
 struct AppSidebarRow: View {
     let app: AppCaptureSummary
+    let captureMode: CaptureMode
+    var isRunning = true
     var isWhitelisted = true
-    var isPaused = false
+    var isPaused = true
+    var isManualCapturing = false
     var captureInterval: TimeInterval?
     var setCaptureState: (Bool) -> Void = { _ in }
+    var startManualCapture: () -> Void = {}
+    var stopManualCapture: () -> Void = {}
 
     @State private var isShowingInfo = false
 
     private var identity: InstalledAppIdentity {
         InstalledAppIdentity(app: app)
     }
+    
+    private var opacity: CGFloat {
+        guard isRunning else { return 0.45 }
+        return switch captureMode {
+        case .auto: isPaused ? 0.45 : 1
+        case .manual: isManualCapturing ? 0.45 : 1
+        }
+    }
 
     var body: some View {
         HStack {
             AppIconView(icon: identity.icon)
                 .frame(height: 32)
-                .opacity(isPaused ? 0.45 : 1)
+                .opacity(opacity)
                 .overlay(alignment: .center) {
-                    if isPaused {
-                        Button {
-                            setCaptureState(true)
-                        } label: {
-                            Image(systemSymbol: .playCircle)
-                                .imageScale(.large)
+                    if isRunning {
+                        Group {
+                            switch captureMode {
+                            case .auto where isPaused:
+                                Button {
+                                    setCaptureState(true)
+                                } label: {
+                                    Image(systemSymbol: .playCircle)
+                                }
+                            case .manual where isManualCapturing:
+                                Button {
+                                    stopManualCapture()
+                                } label: {
+                                    Image(systemSymbol: .stopCircle)
+                                        .foregroundStyle(.red)
+                                }
+                            default: EmptyView()
+                            }
                         }
                         .buttonBorderShape(.circle)
                         .buttonStyle(.plain)
+                        .imageScale(.large)
                     }
                 }
                 .fixedSize()
+                .onTapGesture {
+                    if isRunning {
+                        switch captureMode {
+                        case .auto where !isPaused: setCaptureState(false)
+                        case .manual where !isManualCapturing: startManualCapture()
+                        default: break
+                        }
+                    }
+                }
 
             VStack(alignment: .leading) {
                 Text(identity.localizedName)
@@ -106,7 +141,8 @@ struct AppSidebarRow: View {
             sessionCount: 3,
             screenshotCount: 128,
             lastCapturedAt: .now
-        )
+        ),
+        captureMode: .auto
     )
     .padding()
     .frame(width: 260)

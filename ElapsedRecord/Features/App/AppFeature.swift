@@ -28,6 +28,7 @@ struct AppFeature: Reducer {
         case removeWhitelistButtonTapped(String)
         case whitelistEnabledChanged(String, Bool)
         case whitelistIntervalChanged(String, Double)
+        case whitelistCaptureModeChanged(String, CaptureMode)
         case requestCapturePermissionButtonTapped
         case revealCaptureRootButtonTapped
         case captureRootRevealFailed(String)
@@ -135,6 +136,14 @@ struct AppFeature: Reducer {
             case let .whitelistIntervalChanged(bundleIdentifier, interval):
                 state.updateWhitelistConfig(bundleIdentifier) {
                     $0.captureInterval = interval.sanitizedCaptureInterval
+                }
+                state.whitelistError = nil
+                return persistWhitelist(state.whitelistConfigs)
+
+            case let .whitelistCaptureModeChanged(bundleIdentifier, captureMode):
+                state.updateWhitelistConfig(bundleIdentifier) {
+                    $0.captureMode = captureMode
+                    $0.isEnabled = captureMode == .auto
                 }
                 state.whitelistError = nil
                 return persistWhitelist(state.whitelistConfigs)
@@ -302,6 +311,7 @@ extension AppFeature.State {
                     ? bundleIdentifier
                     : config.displayName.trimmingCharacters(in: .whitespacesAndNewlines),
                 captureInterval: config.captureInterval.sanitizedCaptureInterval,
+                captureMode: config.captureMode,
                 isEnabled: config.isEnabled
             )
         }

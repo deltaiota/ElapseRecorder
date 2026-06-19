@@ -83,6 +83,107 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testManualCaptureDoesNotStartFromRunningApplicationDetection() async {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.ManualApp",
+            displayName: "Manual App",
+            processIdentifier: 43
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            captureMode: .manual,
+            isEnabled: false
+        )
+
+        var initialState = CaptureEngineFeature.State()
+        initialState.permissionStatus = .authorized
+
+        let store = TestStore(initialState: initialState) {
+            CaptureEngineFeature()
+        }
+
+        await store.send(.whitelistUpdated([config])) {
+            $0.whitelist = [config.bundleIdentifier: config]
+        }
+        await store.send(.runningApplicationsLoaded([app])) {
+            $0.runningApplications = [app.bundleIdentifier: app]
+        }
+        await store.send(.workspaceEvent(.launched(app))) {
+            $0.lastWorkspaceEvent = .launched(app)
+            $0.runningApplications = [app.bundleIdentifier: app]
+        }
+    }
+
+    @MainActor
+    func testManualCaptureStartsAndStopsOnlyFromExplicitActions() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.ManualStartApp",
+            displayName: "Manual Start App",
+            processIdentifier: 45
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            captureMode: .manual,
+            isEnabled: false
+        )
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000051"))
+        let startedAt = Date(timeIntervalSince1970: 510)
+        let endedAt = Date(timeIntervalSince1970: 610)
+        let now = LockIsolated(startedAt)
+        let clock = TestClock()
+
+        var initialState = CaptureEngineFeature.State()
+        initialState.whitelist = [config.bundleIdentifier: config]
+        initialState.runningApplications = [app.bundleIdentifier: app]
+        initialState.permissionStatus = .authorized
+
+        let store = TestStore(initialState: initialState) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.dateClient.now = { now.value }
+            $0.idGeneratorClient.uuid = { sessionID }
+            $0.persistenceClient.openSession = { _ in }
+            $0.persistenceClient.closeSession = { _, _ in }
+            $0.screenCaptureClient.windows = { _ in [] }
+        }
+
+        await store.send(.manualCaptureStart(app.bundleIdentifier))
+
+        let expectedSession = CaptureSession(
+            id: sessionID,
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: startedAt
+        )
+
+        await store.receive(.sessionOpened(expectedSession, app)) {
+            $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+                application: app,
+                config: config,
+                session: expectedSession
+            )
+        }
+        await store.receive(.captureTick(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+        }
+
+        now.setValue(endedAt)
+        await store.send(.manualCaptureStop(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(app.bundleIdentifier))
+    }
+
+    @MainActor
     func testExplicitPermissionRequestStartsWhitelistedRunningAppsWhenAuthorized() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.PermissionApp",

@@ -1,0 +1,3 @@
+--swift-version 5
+--disable redundantViewBuilder
+--func-attributes prev-line

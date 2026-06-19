@@ -20,18 +20,21 @@ struct AppView: View {
                     state: \.viewer,
                     action: \.viewer
                 ),
-                whitelistedBundleIdentifiers: Set(store.whitelistConfigs.map(\.bundleIdentifier)),
+                whitelistConfigs: store.whitelistConfigs,
                 defaultCaptureInterval: store.draftIntervalSeconds,
-                addAppsToWhitelist: { configs in
+                whitelistApps: { configs in
                     store.send(.addWhitelistConfigsButtonTapped(configs))
                 },
-                removeAppFromWhitelist: { app in
+                setCaptureState: { app, isEnabled in
+                    store.send(.whitelistEnabledChanged(app.bundleIdentifier, isEnabled))
+                },
+                removeFromWhitelist: { app in
                     store.send(.removeViewerAppFromWhitelistButtonTapped(app))
                 },
-                addAppToWhitelist: { app in
+                moveIntoWhitelist: { app in
                     store.send(.addViewerAppToWhitelistButtonTapped(app))
                 },
-                deleteApp: { app in
+                deleteAllCaptures: { app in
                     store.send(.deleteViewerAppButtonTapped(app))
                 }
             )
@@ -52,6 +55,7 @@ struct AppView: View {
 //        ))
 //    }
 
+    @ViewBuilder
     private func whitelistBar() -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
@@ -151,6 +155,7 @@ struct AppView: View {
         }
     }
 
+    @ViewBuilder
     private func runningApplicationsMenu() -> some View {
         Menu {
             if store.runningApplicationsAvailableForWhitelist.isEmpty {
@@ -169,7 +174,8 @@ struct AppView: View {
         }
     }
 
-    @ViewBuilder private func diagnosticsMenu() -> some View {
+    @ViewBuilder
+    private func diagnosticsMenu() -> some View {
         if !store.captureEngine.recentDiagnostics.isEmpty {
             Menu {
                 ForEach(Array(store.captureEngine.recentDiagnostics.enumerated()), id: \.offset) { _, diagnostic in
@@ -229,7 +235,8 @@ struct AppView: View {
 //        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
 //    }
 
-    @ViewBuilder private func whitelistStatus(_ config: WhitelistedAppConfig) -> some View {
+    @ViewBuilder
+    private func whitelistStatus(_ config: WhitelistedAppConfig) -> some View {
         if store.captureEngine.activeSessions[config.bundleIdentifier] != nil {
             Label("Capturing", systemSymbol: .recordCircle)
                 .foregroundStyle(.green)
@@ -245,6 +252,7 @@ struct AppView: View {
         }
     }
 
+    @ViewBuilder
     private func lifecycleDiagnostics() -> some View {
         HStack(spacing: 12) {
             Label("\(store.captureEngine.runningApplications.count) running apps seen", systemSymbol: .app)
@@ -268,7 +276,8 @@ struct AppView: View {
         .font(.caption)
     }
 
-    @ViewBuilder private func whitelistRuntimeDetails(_ config: WhitelistedAppConfig) -> some View {
+    @ViewBuilder
+    private func whitelistRuntimeDetails(_ config: WhitelistedAppConfig) -> some View {
         if let active = store.captureEngine.activeSessions[config.bundleIdentifier] {
             Text("Session \(active.session.id.uuidString.prefix(8)) - PID \(active.application.processIdentifier)")
                 .font(.caption2)
@@ -287,7 +296,8 @@ struct AppView: View {
         }
     }
 
-    @ViewBuilder private func activeCaptureStatus() -> some View {
+    @ViewBuilder
+    private func activeCaptureStatus() -> some View {
         let activeSessions = store.captureEngine.activeSessions.values.sorted {
             $0.config.displayName < $1.config.displayName
         }
@@ -307,7 +317,8 @@ struct AppView: View {
         }
     }
 
-    @ViewBuilder private func captureStatus() -> some View {
+    @ViewBuilder
+    private func captureStatus() -> some View {
         switch store.captureEngine.permissionStatus {
         case .authorized:
             Label("Ready", systemSymbol: .checkmarkCircle)

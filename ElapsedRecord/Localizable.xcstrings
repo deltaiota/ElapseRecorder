@@ -33,9 +33,6 @@
     "Add running app" : {
 
     },
-    "Add to Whitelist" : {
-
-    },
     "All screenshots" : {
 
     },
@@ -45,51 +42,51 @@
     "All Windows" : {
 
     },
-    "AppSelectionSheet.1AppSelected" : {
+    "ApplicationSelectionSheet.1ApplicationSelected" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "1 app selected"
+            "value" : "1 application selected"
           }
         }
       }
     },
-    "AppSelectionSheet.add1App" : {
+    "ApplicationSelectionSheet.noApplicationsAvailable" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Add 1 App"
+            "value" : "No applications available"
           }
         }
       }
     },
-    "AppSelectionSheet.addSelectedBundleIdentifiersCountApps" : {
+    "ApplicationSelectionSheet.noMatchingApplications" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Add %lld Apps"
+            "value" : "No matching applications"
           }
         }
       }
     },
-    "AppSelectionSheet.chooseAppFilesManuallyIfTheAppYouWantIs…" : {
+    "ApplicationSelectionSheet.selectableSelectedBundleIdentifiersCountApplicationsSelected" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Choose app files manually if the app you want is not listed."
+            "value" : "%lld applications selected"
           }
         }
       }
     },
-    "AppSelectionSheet.ImportApplications.noUsableAppBundlesWereFound" : {
+    "ApplicationSelectionSheet.ImportApplications.noUsableAppBundlesWereFound" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -100,51 +97,51 @@
         }
       }
     },
-    "AppSelectionSheet.noAppsAvailable" : {
+    "ApplicationSelectionSheet.tryADifferentApplicationNameOrBundleIdentifier" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "No apps available"
+            "value" : "Try a different application name or bundle identifier."
           }
         }
       }
     },
-    "AppSelectionSheet.noMatchingApps" : {
+    "ApplicationSelectionSheet.unavailableDescription.chooseApplicationFilesManually" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "No matching apps"
+            "value" : "Choose application files manually if the application you want is not listed."
           }
         }
       }
     },
-    "AppSelectionSheet.selectedBundleIdentifiersCountAppsSelected" : {
+    "ApplicationSelectionSheet.whitelist1App" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%lld apps selected"
+            "value" : "Whitelist 1 App"
           }
         }
       }
     },
-    "AppSelectionSheet.tryADifferentAppNameOrBundleIdentifier" : {
+    "ApplicationSelectionSheet.whitelistSelectableSelectedBundleIdentifiersCountApps" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Try a different app name or bundle identifier."
+            "value" : "Whitelist %lld Apps"
           }
         }
       }
     },
-    "AppSelectionSource.chosen" : {
+    "ApplicationSelectionSource.chosen" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -155,18 +152,18 @@
         }
       }
     },
-    "AppSelectionSource.chosenAppFiles" : {
+    "ApplicationSelectionSource.chosenApplications" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Chosen App Files"
+            "value" : "Chosen Applications"
           }
         }
       }
     },
-    "AppSelectionSource.installed" : {
+    "ApplicationSelectionSource.installed" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -177,7 +174,7 @@
         }
       }
     },
-    "AppSelectionSource.installedApplications" : {
+    "ApplicationSelectionSource.installedApplications" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -188,7 +185,7 @@
         }
       }
     },
-    "AppSelectionSource.running" : {
+    "ApplicationSelectionSource.running" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -199,13 +196,13 @@
         }
       }
     },
-    "AppSelectionSource.runningApps" : {
+    "ApplicationSelectionSource.runningApplications" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Running Apps"
+            "value" : "Running Applications"
           }
         }
       }
@@ -328,9 +325,6 @@
 
     },
     "Remove from Whitelist" : {
-
-    },
-    "Removed from Whitelist" : {
 
     },
     "Request Screen Recording" : {

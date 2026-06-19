@@ -6,25 +6,26 @@ import TranslateKit
 struct ViewerView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
-    var whitelistedBundleIdentifiers: Set<String> = []
+    var whitelistConfigs: [WhitelistedAppConfig] = []
     var defaultCaptureInterval: TimeInterval = 5
-    var addAppsToWhitelist: ([WhitelistedAppConfig]) -> Void = { _ in }
-    var removeAppFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
-    var addAppToWhitelist: (AppCaptureSummary) -> Void = { _ in }
-    var deleteApp: (AppCaptureSummary) -> Void = { _ in }
+    var whitelistApps: ([WhitelistedAppConfig]) -> Void = { _ in }
+    var setCaptureState: (AppCaptureSummary, Bool) -> Void = { _, _ in }
+    var removeFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
+    var moveIntoWhitelist: (AppCaptureSummary) -> Void = { _ in }
+    var deleteAllCaptures: (AppCaptureSummary) -> Void = { _ in }
 
-    @State private var isShowingAppSelection = false
+    @State private var isShowingApplicationSelection = false
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
 
     var body: some View {
         NavigationSplitView {
             appList()
                 .navigationSplitViewColumnWidth(min: 180, ideal: 225, max: 400)
-                .sheet(isPresented: $isShowingAppSelection) {
-                    AppSelectionSheet(
-                        disabledBundleIdentifiers: whitelistedBundleIdentifiers.union(store.apps.map(\.bundleIdentifier)),
+                .sheet(isPresented: $isShowingApplicationSelection) {
+                    ApplicationSelectionSheet(
+                        disabledBundleIdentifiers: whitelistedBundleIdentifiers,
                         defaultCaptureInterval: defaultCaptureInterval,
-                        addAppsToWhitelist: addAppsToWhitelist
+                        whitelistApplications: whitelistApps
                     )
                 }
         } content: {
@@ -45,27 +46,28 @@ struct ViewerView: View {
         }
     }
 
+    @ViewBuilder
     private func appList() -> some View {
         List(selection: $store.selectedBundleIdentifier.sending(\.appSelected)) {
             if !whitelistedApps.isEmpty {
                 Section("Whitelisted") {
                     ForEach(whitelistedApps) { app in
-                        appRow(app, isWhitelisted: true)
+                        appRow(app, whitelistConfig: whitelistConfig(for: app.bundleIdentifier))
                     }
                 }
             }
 
-            if !removedApps.isEmpty {
-                Section("Removed from Whitelist") {
-                    ForEach(removedApps) { app in
-                        appRow(app, isWhitelisted: false)
+            if !staleDataApps.isEmpty {
+                Section("Stale Data") {
+                    ForEach(staleDataApps) { app in
+                        appRow(app, whitelistConfig: nil)
                     }
                 }
             }
         }
         .safeAreaInset(edge: .bottom) {
             Button {
-                isShowingAppSelection = true
+                isShowingApplicationSelection = true
             } label: {
                 Spacer(minLength: 0)
 
@@ -81,52 +83,81 @@ struct ViewerView: View {
         }
     }
 
+    @ViewBuilder
     private func appRow(
         _ app: AppCaptureSummary,
-        isWhitelisted: Bool
+        whitelistConfig: WhitelistedAppConfig?
     ) -> some View {
-        AppSidebarRow(app: app, isWhitelisted: isWhitelisted)
-            .tag(app.bundleIdentifier)
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                Button(role: .destructive) {
-                    deleteApp(app)
-                } label: {
-                    Label("Delete All Captures", systemSymbol: .trash)
-                }
+        let isWhitelisted = whitelistConfig != nil
+        let isPaused = whitelistConfig?.isEnabled == false
 
-                if isWhitelisted {
-                    Button("Remove from Whitelist", systemSymbol: .pauseFill) {
-                        removeAppFromWhitelist(app)
+        AppSidebarRow(app: app, isWhitelisted: isWhitelisted, isPaused: isPaused) { isEnabled in
+            setCaptureState(app, isEnabled)
+        }
+        .tag(app.bundleIdentifier)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button(role: .destructive) {
+                deleteAllCaptures(app)
+            } label: {
+                Label("Delete All Captures", systemSymbol: .trash)
+            }
+
+            if isWhitelisted {
+                if isPaused {
+                    Button("Resume Capture", systemSymbol: .playFill) {
+                        setCaptureState(app, true)
                     }
                     .tint(.orange)
                 } else {
-                    Button("Add to Whitelist", systemSymbol: .playFill) {
-                        addAppToWhitelist(app)
+                    Button("Pause Capture", systemSymbol: .pauseFill) {
+                        setCaptureState(app, false)
                     }
-                    .tint(.green)
+                    .tint(.orange)
                 }
+
+                Button("Remove \(app.displayName) from Whitelist", systemSymbol: .minusCircle) {
+                    removeFromWhitelist(app)
+                }
+                .tint(.gray)
+            } else {
+                Button("Whitelist \(app.displayName)", systemSymbol: .plusCircleFill) {
+                    moveIntoWhitelist(app)
+                }
+                .tint(.green)
             }
-            .contextMenu {
-                if isWhitelisted {
-                    Button("Remove from Whitelist", systemSymbol: .pause) {
-                        removeAppFromWhitelist(app)
+        }
+        .contextMenu {
+            if isWhitelisted {
+                if isPaused {
+                    Button("Resume Capture", systemSymbol: .play) {
+                        setCaptureState(app, true)
                     }
                 } else {
-                    Button("Add to Whitelist", systemSymbol: .play) {
-                        addAppToWhitelist(app)
+                    Button("Pause Capture", systemSymbol: .pause) {
+                        setCaptureState(app, false)
                     }
                 }
 
-                Divider()
-
-                Button(role: .destructive) {
-                    deleteApp(app)
-                } label: {
-                    Label("Delete All Captures", systemSymbol: .trash)
+                Button("Remove \(app.displayName) from Whitelist", systemSymbol: .minusCircle) {
+                    removeFromWhitelist(app)
+                }
+            } else {
+                Button("Whitelist App", systemSymbol: .plusCircle) {
+                    moveIntoWhitelist(app)
                 }
             }
+
+            Divider()
+
+            Button(role: .destructive) {
+                deleteAllCaptures(app)
+            } label: {
+                Label("Delete All Captures", systemSymbol: .trash)
+            }
+        }
     }
 
+    @ViewBuilder
     private func sessionList() -> some View {
         List(selection: $store.sessionListSelection.sending(\.sessionListSelectionChanged)) {
             if store.selectedBundleIdentifier != nil {
@@ -196,6 +227,7 @@ struct ViewerView: View {
         .background(.windowBackground)
     }
 
+    @ViewBuilder
     private func detailPane() -> some View {
         Group {
             if store.isShowingFlatGallery {
@@ -271,15 +303,35 @@ struct ViewerView: View {
     }
 
     private var whitelistedApps: [AppCaptureSummary] {
-        sortedApps(
-            store.apps.filter { whitelistedBundleIdentifiers.contains($0.bundleIdentifier) }
+        let capturedAppsByBundleIdentifier = Dictionary(
+            store.apps.map { ($0.bundleIdentifier, $0) },
+            uniquingKeysWith: { _, latest in latest }
         )
+
+        return sortedApps(whitelistConfigs.map { config in
+            capturedAppsByBundleIdentifier[config.bundleIdentifier]
+                ?? AppCaptureSummary(
+                    bundleIdentifier: config.bundleIdentifier,
+                    displayName: config.displayName,
+                    sessionCount: 0,
+                    screenshotCount: 0,
+                    lastCapturedAt: nil
+                )
+        })
     }
 
-    private var removedApps: [AppCaptureSummary] {
+    private var staleDataApps: [AppCaptureSummary] {
         sortedApps(
             store.apps.filter { !whitelistedBundleIdentifiers.contains($0.bundleIdentifier) }
         )
+    }
+
+    private var whitelistedBundleIdentifiers: Set<String> {
+        Set(whitelistConfigs.map(\.bundleIdentifier))
+    }
+
+    private func whitelistConfig(for bundleIdentifier: String) -> WhitelistedAppConfig? {
+        whitelistConfigs.first { $0.bundleIdentifier == bundleIdentifier }
     }
 
     private func sortedApps(_ apps: [AppCaptureSummary]) -> [AppCaptureSummary] {

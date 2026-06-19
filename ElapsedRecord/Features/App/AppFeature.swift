@@ -11,6 +11,7 @@ struct AppFeature: Reducer {
         var draftDisplayName = "TextEdit"
         var draftIntervalSeconds = 5.0
         var whitelistError: String?
+        var captureRootError: String?
     }
 
     @CasePathable
@@ -26,12 +27,17 @@ struct AppFeature: Reducer {
         case removeWhitelistButtonTapped(String)
         case whitelistEnabledChanged(String, Bool)
         case whitelistIntervalChanged(String, Double)
+        case requestCapturePermissionButtonTapped
+        case revealCaptureRootButtonTapped
+        case captureRootRevealFailed(String)
         case refreshRunningApplicationsButtonTapped
         case refreshViewerButtonTapped
         case savedWhitelistLoaded([WhitelistedAppConfig])
         case whitelistSaveFailed(String)
     }
 
+    @Dependency(\.fileRevealClient) private var fileReveal
+    @Dependency(\.fileStorageClient) private var fileStorage
     @Dependency(\.whitelistConfigurationClient) private var whitelistConfiguration
 
     var body: some Reducer<State, Action> {
@@ -117,6 +123,25 @@ struct AppFeature: Reducer {
                 }
                 state.whitelistError = nil
                 return persistWhitelist(state.whitelistConfigs)
+
+            case .requestCapturePermissionButtonTapped:
+                return .send(.captureEngine(.requestPermissionButtonTapped))
+
+            case .revealCaptureRootButtonTapped:
+                state.captureRootError = nil
+                let fileReveal = fileReveal
+                let fileStorage = fileStorage
+                return .run { send in
+                    do {
+                        try await fileReveal.reveal(fileStorage.captureRoot())
+                    } catch {
+                        await send(.captureRootRevealFailed(error.localizedDescription))
+                    }
+                }
+
+            case let .captureRootRevealFailed(message):
+                state.captureRootError = message
+                return .none
 
             case .refreshRunningApplicationsButtonTapped:
                 return .send(.captureEngine(.refreshRunningApplications))

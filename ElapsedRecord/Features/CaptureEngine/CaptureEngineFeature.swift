@@ -10,6 +10,7 @@ struct CaptureEngineFeature: Reducer {
         var activeSessions: [String: ActiveSession] = [:]
         var permissionStatus: CapturePermissionStatus = .notDetermined
         var lastError: String?
+        var lastWorkspaceEvent: WorkspaceEvent?
         var recentDiagnostics: [String] = []
 
         struct ActiveSession: Equatable {
@@ -24,6 +25,7 @@ struct CaptureEngineFeature: Reducer {
 
     enum Action: Equatable {
         case task
+        case requestPermissionButtonTapped
         case refreshRunningApplications
         case whitelistUpdated([WhitelistedAppConfig])
         case runningApplicationsLoaded([RunningApplication])
@@ -71,6 +73,12 @@ struct CaptureEngineFeature: Reducer {
                     }
                     .cancellable(id: workspaceEventsID, cancelInFlight: true)
                 )
+
+            case .requestPermissionButtonTapped:
+                let permission = permission
+                return .run { send in
+                    await send(.permissionResolved(await permission.request(), nil))
+                }
 
             case .refreshRunningApplications:
                 let workspace = workspace
@@ -124,10 +132,12 @@ struct CaptureEngineFeature: Reducer {
                 return .merge(applications.map { attemptStart($0, state: &state) })
 
             case let .workspaceEvent(.launched(application)):
+                state.lastWorkspaceEvent = .launched(application)
                 state.runningApplications[application.bundleIdentifier] = application
                 return attemptStart(application, state: &state)
 
             case let .workspaceEvent(.terminated(application)):
+                state.lastWorkspaceEvent = .terminated(application)
                 state.runningApplications[application.bundleIdentifier] = nil
                 guard let active = state.activeSessions.removeValue(forKey: application.bundleIdentifier) else {
                     return .none
@@ -135,17 +145,27 @@ struct CaptureEngineFeature: Reducer {
                 return closeSession(active, endedAt: date.now())
 
             case let .workspaceEvent(.activated(application)):
+                state.lastWorkspaceEvent = .activated(application)
                 state.runningApplications[application.bundleIdentifier] = application
                 return .none
 
             case let .permissionResolved(status, application):
                 state.permissionStatus = status
-                guard status == .authorized, let application else {
+                if status == .authorized {
+                    state.clearPermissionDeniedError()
+                }
+
+                guard status == .authorized else {
                     if status == .denied {
                         state.recordDiagnostic(CaptureEngineError.screenRecordingPermissionDenied.localizedDescription)
                     }
                     return .none
                 }
+
+                guard let application else {
+                    return .merge(state.runningApplications.values.map { attemptStart($0, state: &state) })
+                }
+
                 return attemptStart(application, state: &state)
 
             case let .sessionOpened(session, application):
@@ -397,6 +417,12 @@ extension CaptureEngineFeature.State {
         }
         if recentDiagnostics.count > 6 {
             recentDiagnostics.removeFirst(recentDiagnostics.count - 6)
+        }
+    }
+
+    mutating func clearPermissionDeniedError() {
+        if lastError == CaptureEngineError.screenRecordingPermissionDenied.localizedDescription {
+            lastError = nil
         }
     }
 }

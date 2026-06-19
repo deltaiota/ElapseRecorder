@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
     "%lld bytes" : {
 
     },
@@ -28,6 +38,39 @@
         }
       }
     },
+    "AppView.add" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add"
+          }
+        }
+      }
+    },
+    "AppView.addAnAppToTheWhitelistIfItIsAlready…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add an app to the whitelist. If it is already running, recording starts immediately; otherwise it starts on launch."
+          }
+        }
+      }
+    },
+    "AppView.addRunningApp" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add running app"
+          }
+        }
+      }
+    },
     "AppView.bundleID" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -35,17 +78,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Bundle ID"
-          }
-        }
-      }
-    },
-    "AppView.captureTest" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Capture test"
           }
         }
       }
@@ -83,7 +115,7 @@
         }
       }
     },
-    "AppView.everyIntStoreTestIntervalSecondsS" : {
+    "AppView.everyIntStoreDraftIntervalSecondsS" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -101,6 +133,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Idle"
+          }
+        }
+      }
+    },
+    "AppView.noRunningAppsToAdd" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No running apps to add"
           }
         }
       }
@@ -127,13 +170,24 @@
         }
       }
     },
-    "AppView.refresh" : {
+    "AppView.refreshApps" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Refresh"
+            "value" : "Refresh apps"
+          }
+        }
+      }
+    },
+    "AppView.refreshViewer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Refresh viewer"
           }
         }
       }
@@ -149,24 +203,68 @@
         }
       }
     },
-    "AppView.start" : {
+    "AppView.whitelist" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Start"
+            "value" : "Whitelist"
           }
         }
       }
     },
-    "AppView.stop" : {
+    "AppView.WhitelistConfigCard.everyIntConfigCaptureIntervalS" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Stop"
+            "value" : "Every %llds"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.capturing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capturing"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.disabled" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Disabled"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.runningWaitingToStart" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Running, waiting to start"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.startsOnLaunch" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Starts on launch"
           }
         }
       }

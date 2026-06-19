@@ -38,6 +38,12 @@ struct AppView: View {
 
                 Spacer()
 
+                Button {
+                    store.send(.revealCaptureRootButtonTapped)
+                } label: {
+                    Label(#tk("Reveal captures"), systemSymbol: .folder)
+                }
+
                 runningApplicationsMenu
 
                 Button {
@@ -54,6 +60,8 @@ struct AppView: View {
 
                 diagnosticsMenu
             }
+
+            lifecycleDiagnostics
 
             HStack(alignment: .center, spacing: 8) {
                 TextField(
@@ -89,6 +97,12 @@ struct AppView: View {
 
                 if let whitelistError = store.whitelistError {
                     Label(whitelistError, systemSymbol: .exclamationmarkTriangle)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                }
+
+                if let captureRootError = store.captureRootError {
+                    Label(captureRootError, systemSymbol: .exclamationmarkTriangle)
                         .foregroundStyle(.orange)
                         .lineLimit(1)
                 }
@@ -182,6 +196,8 @@ struct AppView: View {
             }
 
             whitelistStatus(config)
+
+            whitelistRuntimeDetails(config)
         }
         .padding(10)
         .frame(width: 260, alignment: .leading)
@@ -202,6 +218,49 @@ struct AppView: View {
         } else {
             Label(#tk("Starts on launch"), systemSymbol: .clock)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var lifecycleDiagnostics: some View {
+        HStack(spacing: 12) {
+            Label(#tk("\(store.captureEngine.runningApplications.count) running apps seen"), systemSymbol: .app)
+                .foregroundStyle(.secondary)
+
+            if let event = store.captureEngine.lastWorkspaceEvent {
+                Label(workspaceEventSummary(event), systemSymbol: .clock)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                Label(#tk("No workspace event yet"), systemSymbol: .clock)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let lastError = store.captureEngine.lastError {
+                Label(lastError, systemSymbol: .exclamationmarkTriangle)
+                    .foregroundStyle(.orange)
+                    .lineLimit(1)
+            }
+        }
+        .font(.caption)
+    }
+
+    @ViewBuilder
+    private func whitelistRuntimeDetails(_ config: WhitelistedAppConfig) -> some View {
+        if let active = store.captureEngine.activeSessions[config.bundleIdentifier] {
+            Text(#tk("Session \(active.session.id.uuidString.prefix(8)) - PID \(active.application.processIdentifier)"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        } else if let application = store.captureEngine.runningApplications[config.bundleIdentifier] {
+            Text(#tk("Matched running app - PID \(application.processIdentifier)"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        } else {
+            Text(#tk("No running process matched"))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
@@ -228,22 +287,40 @@ struct AppView: View {
 
     @ViewBuilder
     private var captureStatus: some View {
-        if let message = store.captureEngine.lastError {
-            Label(message, systemSymbol: .exclamationmarkTriangle)
-                .foregroundStyle(.orange)
-                .lineLimit(1)
-        } else {
-            switch store.captureEngine.permissionStatus {
-            case .authorized:
-                Label(#tk("Ready"), systemSymbol: .checkmarkCircle)
-                    .foregroundStyle(.secondary)
-            case .notDetermined:
-                Label(#tk("Permission not requested"), systemSymbol: .questionmarkCircle)
-                    .foregroundStyle(.secondary)
-            case .denied:
+        switch store.captureEngine.permissionStatus {
+        case .authorized:
+            Label(#tk("Ready"), systemSymbol: .checkmarkCircle)
+                .foregroundStyle(.secondary)
+
+        case .notDetermined:
+            Button {
+                store.send(.requestCapturePermissionButtonTapped)
+            } label: {
+                Label(#tk("Request Screen Recording"), systemSymbol: .questionmarkCircle)
+            }
+
+        case .denied:
+            HStack(spacing: 6) {
                 Label(#tk("Screen Recording denied"), systemSymbol: .exclamationmarkTriangle)
                     .foregroundStyle(.orange)
+
+                Button {
+                    store.send(.requestCapturePermissionButtonTapped)
+                } label: {
+                    Text(#tk("Retry"))
+                }
             }
+        }
+    }
+
+    private func workspaceEventSummary(_ event: WorkspaceEvent) -> String {
+        switch event {
+        case let .launched(application):
+            #tk("Last event: launched \(application.displayName)")
+        case let .terminated(application):
+            #tk("Last event: quit \(application.displayName)")
+        case let .activated(application):
+            #tk("Last event: activated \(application.displayName)")
         }
     }
 }

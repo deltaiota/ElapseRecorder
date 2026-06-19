@@ -157,6 +157,40 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testRequestCapturePermissionButtonForwardsToCaptureEngine() async {
+        let store = TestStore(initialState: AppFeature.State()) {
+            AppFeature()
+        } withDependencies: {
+            $0.capturePermissionClient.request = { .denied }
+        }
+
+        await store.send(.requestCapturePermissionButtonTapped)
+        await store.receive(.captureEngine(.requestPermissionButtonTapped))
+        await store.receive(.captureEngine(.permissionResolved(.denied, nil))) {
+            $0.captureEngine.permissionStatus = .denied
+            $0.captureEngine.lastError = CaptureEngineError.screenRecordingPermissionDenied.localizedDescription
+            $0.captureEngine.recentDiagnostics = [
+                CaptureEngineError.screenRecordingPermissionDenied.localizedDescription,
+            ]
+        }
+    }
+
+    @MainActor
+    func testRevealCaptureRootFailureIsShown() async {
+        let store = TestStore(initialState: AppFeature.State()) {
+            AppFeature()
+        } withDependencies: {
+            $0.fileRevealClient.reveal = { _ in }
+            $0.fileStorageClient.captureRoot = { throw CaptureEngineError.persistenceUnavailable }
+        }
+
+        await store.send(.revealCaptureRootButtonTapped)
+        await store.receive(.captureRootRevealFailed(CaptureEngineError.persistenceUnavailable.localizedDescription)) {
+            $0.captureRootError = CaptureEngineError.persistenceUnavailable.localizedDescription
+        }
+    }
+
+    @MainActor
     func testCaptureSessionEventsRefreshViewer() async {
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()

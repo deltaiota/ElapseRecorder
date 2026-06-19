@@ -75,10 +75,106 @@ final class CaptureEngineFeatureTests: XCTestCase {
         }
 
         await store.send(.workspaceEvent(.terminated(app))) {
+            $0.lastWorkspaceEvent = .terminated(app)
             $0.runningApplications[app.bundleIdentifier] = nil
             $0.activeSessions[app.bundleIdentifier] = nil
         }
         await store.receive(.sessionClosed(app.bundleIdentifier))
+    }
+
+    @MainActor
+    func testExplicitPermissionRequestStartsWhitelistedRunningAppsWhenAuthorized() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.PermissionApp",
+            displayName: "Permission App",
+            processIdentifier: 44
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000050"))
+        let startedAt = Date(timeIntervalSince1970: 500)
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.runningApplications = [app.bundleIdentifier: app]
+        state.permissionStatus = .denied
+        state.lastError = CaptureEngineError.screenRecordingPermissionDenied.localizedDescription
+
+        let clock = TestClock()
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.capturePermissionClient.request = { .authorized }
+            $0.dateClient.now = { startedAt }
+            $0.idGeneratorClient.uuid = { sessionID }
+            $0.persistenceClient.openSession = { _ in }
+            $0.persistenceClient.closeSession = { _, _ in }
+            $0.screenCaptureClient.windows = { _ in [] }
+        }
+
+        await store.send(.requestPermissionButtonTapped)
+        await store.receive(.permissionResolved(.authorized, nil)) {
+            $0.permissionStatus = .authorized
+            $0.lastError = nil
+        }
+
+        let expectedSession = CaptureSession(
+            id: sessionID,
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: startedAt
+        )
+        await store.receive(.sessionOpened(expectedSession, app)) {
+            $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+                application: app,
+                config: config,
+                session: expectedSession
+            )
+        }
+        await store.receive(.captureTick(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+        }
+        await store.send(.workspaceEvent(.terminated(app))) {
+            $0.lastWorkspaceEvent = .terminated(app)
+            $0.runningApplications[app.bundleIdentifier] = nil
+            $0.activeSessions[app.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(app.bundleIdentifier))
+    }
+
+    @MainActor
+    func testWorkspaceEventsUpdateLifecycleDiagnostics() async {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.LifecycleApp",
+            displayName: "Lifecycle App",
+            processIdentifier: 45
+        )
+
+        let store = TestStore(initialState: CaptureEngineFeature.State()) {
+            CaptureEngineFeature()
+        }
+
+        await store.send(.workspaceEvent(.launched(app))) {
+            $0.lastWorkspaceEvent = .launched(app)
+            $0.runningApplications[app.bundleIdentifier] = app
+        }
+        await store.send(.workspaceEvent(.activated(app))) {
+            $0.lastWorkspaceEvent = .activated(app)
+            $0.runningApplications[app.bundleIdentifier] = app
+        }
+        await store.send(.workspaceEvent(.terminated(app))) {
+            $0.lastWorkspaceEvent = .terminated(app)
+            $0.runningApplications[app.bundleIdentifier] = nil
+        }
     }
 
     @MainActor
@@ -274,6 +370,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
         }
         await store.send(.workspaceEvent(.terminated(app))) {
+            $0.lastWorkspaceEvent = .terminated(app)
             $0.runningApplications[app.bundleIdentifier] = nil
             $0.activeSessions[app.bundleIdentifier] = nil
         }

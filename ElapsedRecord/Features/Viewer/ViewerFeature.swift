@@ -16,6 +16,35 @@ struct ViewerFeature: Reducer {
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
+
+        enum SessionListSelection: Hashable {
+            case flat
+            case session(id: UUID)
+        }
+
+        var sessionListSelection: SessionListSelection? {
+            get {
+                if isShowingFlatGallery {
+                    return .flat
+                }
+
+                guard let selectedSessionID else { return nil }
+                return .session(id: selectedSessionID)
+            }
+            set {
+                switch newValue {
+                case .flat:
+                    selectedSessionID = nil
+                    isShowingFlatGallery = true
+                case let .session(id):
+                    selectedSessionID = id
+                    isShowingFlatGallery = false
+                case nil:
+                    selectedSessionID = nil
+                    isShowingFlatGallery = false
+                }
+            }
+        }
     }
 
     @CasePathable
@@ -28,11 +57,13 @@ struct ViewerFeature: Reducer {
         case windowsLoaded([WindowCaptureSummary])
         case windowSelected(UUID?)
         case windowScreenshotsLoaded([ScreenshotRecord])
+        case sessionListSelectionChanged(State.SessionListSelection?)
         case flatGallerySelected
         case flatScreenshotsLoaded([ScreenshotRecord])
         case screenshotSelected(ScreenshotRecord?)
         case refresh
         case revealSelectedScreenshotInFinderButtonTapped
+        case deleteSessionButtonTapped(CaptureSessionSummary)
         case deleteSelectedSessionButtonTapped
         case sessionDeleted(UUID)
         case loadingFailed(String)
@@ -92,16 +123,7 @@ struct ViewerFeature: Reducer {
                 return .none
 
             case let .sessionSelected(sessionID):
-                state.selectedSessionID = sessionID
-                state.selectedWindowID = nil
-                state.windows = []
-                state.windowScreenshots = []
-                state.selectedScreenshot = nil
-                state.isShowingFlatGallery = false
-
-                guard let sessionID else { return .none }
-                state.isLoading = true
-                return loadWindows(sessionID: sessionID)
+                return selectSession(sessionID, state: &state)
 
             case let .windowsLoaded(windows):
                 state.windows = windows
@@ -130,15 +152,25 @@ struct ViewerFeature: Reducer {
                 state.isLoading = false
                 return .none
 
+            case let .sessionListSelectionChanged(selection):
+                switch selection {
+                case .flat:
+                    return selectFlatGallery(state: &state)
+                case let .session(id: sessionID):
+                    return selectSession(sessionID, state: &state)
+                case nil:
+                    state.selectedSessionID = nil
+                    state.selectedWindowID = nil
+                    state.selectedScreenshot = nil
+                    state.isShowingFlatGallery = false
+                    state.windows = []
+                    state.windowScreenshots = []
+                    state.flatScreenshots = []
+                    return .none
+                }
+
             case .flatGallerySelected:
-                guard let bundleIdentifier = state.selectedBundleIdentifier else { return .none }
-                state.selectedSessionID = nil
-                state.selectedWindowID = nil
-                state.selectedScreenshot = nil
-                state.isShowingFlatGallery = true
-                state.flatScreenshots = []
-                state.isLoading = true
-                return loadFlatScreenshots(bundleIdentifier: bundleIdentifier)
+                return selectFlatGallery(state: &state)
 
             case let .flatScreenshotsLoaded(records):
                 state.flatScreenshots = records
@@ -156,25 +188,12 @@ struct ViewerFeature: Reducer {
                     await fileReveal.reveal(url)
                 }
 
+            case let .deleteSessionButtonTapped(session):
+                return deleteSession(session, state: &state)
+
             case .deleteSelectedSessionButtonTapped:
                 guard let session = state.selectedSession else { return .none }
-                guard session.endedAt != nil else {
-                    state.errorMessage = "Stop capture before deleting an active session."
-                    return .none
-                }
-
-                state.isLoading = true
-                let fileStorage = fileStorage
-                let persistence = persistence
-                return .run { send in
-                    do {
-                        try await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
-                        try await persistence.deleteSession(session.id)
-                        await send(.sessionDeleted(session.id))
-                    } catch {
-                        await send(.loadingFailed(error.localizedDescription))
-                    }
-                }
+                return deleteSession(session, state: &state)
 
             case let .sessionDeleted(sessionID):
                 if state.selectedSessionID == sessionID {
@@ -215,6 +234,56 @@ struct ViewerFeature: Reducer {
         }
 
         return .merge(effects)
+    }
+
+    private func selectSession(
+        _ sessionID: UUID?,
+        state: inout State
+    ) -> Effect<Action> {
+        state.selectedSessionID = sessionID
+        state.selectedWindowID = nil
+        state.windows = []
+        state.windowScreenshots = []
+        state.selectedScreenshot = nil
+        state.isShowingFlatGallery = false
+
+        guard let sessionID else { return .none }
+        state.isLoading = true
+        return loadWindows(sessionID: sessionID)
+    }
+
+    private func selectFlatGallery(state: inout State) -> Effect<Action> {
+        guard let bundleIdentifier = state.selectedBundleIdentifier else { return .none }
+        state.selectedSessionID = nil
+        state.selectedWindowID = nil
+        state.selectedScreenshot = nil
+        state.isShowingFlatGallery = true
+        state.flatScreenshots = []
+        state.isLoading = true
+        return loadFlatScreenshots(bundleIdentifier: bundleIdentifier)
+    }
+
+    private func deleteSession(
+        _ session: CaptureSessionSummary,
+        state: inout State
+    ) -> Effect<Action> {
+        guard session.endedAt != nil else {
+            state.errorMessage = "Stop capture before deleting an active session."
+            return .none
+        }
+
+        state.isLoading = true
+        let fileStorage = fileStorage
+        let persistence = persistence
+        return .run { send in
+            do {
+                try await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
+                try await persistence.deleteSession(session.id)
+                await send(.sessionDeleted(session.id))
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+            }
+        }
     }
 
     private func loadApps() -> Effect<Action> {

@@ -8,11 +8,13 @@ struct ViewerView: View {
 
     var body: some View {
         NavigationSplitView {
-            appList
+            appList()
+                .navigationSplitViewColumnWidth(min: 180, ideal: 240)
         } content: {
-            sessionList
+            sessionList()
+                .navigationSplitViewColumnWidth(min: 240, ideal: 300)
         } detail: {
-            detailPane
+            detailPane()
         }
         .navigationTitle(#tk("Elapsed Record"))
         .sheet(item: $store.selectedScreenshot.sending(\.screenshotSelected)) { record in
@@ -25,40 +27,26 @@ struct ViewerView: View {
         }
     }
 
-    private var appList: some View {
-        List {
-            Section {
-                ForEach(store.apps) { app in
-                    Button {
-                        store.send(.appSelected(app.bundleIdentifier))
-                    } label: {
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text(app.displayName)
-                                Text("\(app.sessionCount) sessions • \(app.screenshotCount) screenshots")
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                            }
-                        } icon: {
-                            Image(systemSymbol: .app)
-                        }
+    private func appList() -> some View {
+        List(selection: $store.selectedBundleIdentifier.sending(\.appSelected)) {
+            ForEach(store.apps) { app in
+                Label {
+                    VStack(alignment: .leading) {
+                        Text(app.displayName)
+                        Text("\(app.sessionCount) sessions • \(app.screenshotCount) screenshots")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
                     }
-                    .buttonStyle(.plain)
-                    .listRowBackground(
-                        store.selectedBundleIdentifier == app.bundleIdentifier
-                            ? Color.accentColor.opacity(0.16)
-                            : Color.clear
-                    )
+                } icon: {
+                    Image(systemSymbol: .app)
                 }
-            } header: {
-                Label(#tk("Apps"), systemSymbol: .app)
+                .tag(app.bundleIdentifier)
             }
         }
-        .navigationSplitViewColumnWidth(min: 180, ideal: 240)
     }
 
-    private var sessionList: some View {
-        List {
+    private func sessionList() -> some View {
+        List(selection: $store.sessionListSelection.sending(\.sessionListSelectionChanged)) {
             if store.selectedBundleIdentifier != nil {
                 if let errorMessage = store.errorMessage {
                     Label(errorMessage, systemSymbol: .exclamationmarkTriangle)
@@ -66,66 +54,56 @@ struct ViewerView: View {
                         .font(.caption)
                 }
 
-                Button {
-                    store.send(.flatGallerySelected)
-                } label: {
-                    Label(#tk("All screenshots"), systemSymbol: .photoStack)
-                }
-                .buttonStyle(.plain)
-                .listRowBackground(
-                    store.isShowingFlatGallery
-                        ? Color.accentColor.opacity(0.16)
-                        : Color.clear
-                )
-
-                if store.selectedSession != nil {
-                    Button(role: .destructive) {
-                        store.send(.deleteSelectedSessionButtonTapped)
-                    } label: {
-                        Label(#tk("Delete selected session"), systemSymbol: .trash)
-                    }
-                    .disabled(store.isLoading)
-                }
+                Label(#tk("All screenshots"), systemSymbol: .photoStack)
+                    .tag(ViewerFeature.State.SessionListSelection.flat)
+                    .listRowSeparator(.hidden)
 
                 Section {
                     ForEach(store.sessions) { session in
-                        Button {
-                            store.send(.sessionSelected(session.id))
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading) {
-                                    Text(session.startedAt, format: .dateTime.month().day().hour().minute())
-                                    Text(sessionSummary(session))
-                                        .foregroundStyle(.secondary)
-                                        .font(.caption)
-                                }
-                            } icon: {
-                                Image(systemSymbol: .clock)
+                        Label {
+                            VStack(alignment: .leading) {
+                                Text(session.startedAt, format: .dateTime.month().day().hour().minute())
+                                Text(sessionSummary(session))
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                        } icon: {
+                            Image(systemSymbol: .clock)
+                        }
+                        .tag(ViewerFeature.State.SessionListSelection.session(id: session.id))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                store.send(.deleteSessionButtonTapped(session))
+                            } label: {
+                                Label(TK.Action.delete, systemSymbol: .trash)
+                            }
+                            .tint(.red)
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                store.send(.deleteSessionButtonTapped(session))
+                            } label: {
+                                Text(#tk("Delete Session"))
                             }
                         }
-                        .buttonStyle(.plain)
-                        .listRowBackground(
-                            store.selectedSessionID == session.id
-                                ? Color.accentColor.opacity(0.16)
-                                : Color.clear
-                        )
                     }
                 } header: {
                     Label(#tk("Sessions"), systemSymbol: .clock)
                 }
-            } else {
+            }
+        }
+        .overlay(alignment: .center) {
+            if store.selectedBundleIdentifier == nil {
                 ContentUnavailableView(
                     #tk("Choose an app"),
-                    systemImage: "app",
+                    systemSymbol: .app,
                     description: Text(#tk("Captured sessions will appear here."))
                 )
             }
         }
-        .navigationSplitViewColumnWidth(min: 240, ideal: 300)
     }
 
-    @ViewBuilder
-    private var detailPane: some View {
+    @ViewBuilder private func detailPane() -> some View {
         if store.isShowingFlatGallery {
             ScreenshotGrid(
                 records: store.flatScreenshots,
@@ -133,49 +111,38 @@ struct ViewerView: View {
             )
             .navigationTitle(#tk("All screenshots"))
         } else if store.selectedSessionID != nil {
-            HStack(spacing: 0) {
-                List {
-                    Section {
-                        ForEach(store.windows) { window in
-                            Button {
-                                store.send(.windowSelected(window.id))
-                            } label: {
-                                Label {
-                                    VStack(alignment: .leading) {
-                                        Text(windowTitle(window))
-                                        Text("\(window.screenshotCount) screenshots")
-                                            .foregroundStyle(.secondary)
-                                            .font(.caption)
-                                    }
-                                } icon: {
-                                    Image(systemSymbol: .macwindow)
+            ScreenshotGrid(
+                records: store.windowScreenshots,
+                selectScreenshot: { store.send(.screenshotSelected($0)) }
+            )
+            .safeAreaInset(edge: .top) {
+                VStack(spacing: 0) {
+                    Picker("Window", selection: $store.selectedWindowID.sending(\.windowSelected)) {
+                        Text("All Windows")
+
+                        if !store.windows.isEmpty {
+                            Divider()
+
+                            ForEach(store.windows) { window in
+                                Button {} label: {
+                                    Text(windowTitle(window))
+
+                                    Text("\(window.screenshotCount) screenshots")
                                 }
+                                .tag(window.id)
                             }
-                            .buttonStyle(.plain)
-                            .listRowBackground(
-                                store.selectedWindowID == window.id
-                                    ? Color.accentColor.opacity(0.16)
-                                    : Color.clear
-                            )
                         }
-                    } header: {
-                        Label(#tk("Windows"), systemSymbol: .macwindow)
                     }
+                    .padding()
+                    .background(.windowBackground)
+
+                    Divider()
                 }
-                .frame(minWidth: 220, idealWidth: 240, maxWidth: 320)
-
-                Divider()
-
-                ScreenshotGrid(
-                    records: store.windowScreenshots,
-                    selectScreenshot: { store.send(.screenshotSelected($0)) }
-                )
-                .frame(minWidth: 360)
             }
         } else {
             ContentUnavailableView(
                 #tk("Choose a session"),
-                systemImage: "clock",
+                systemSymbol: .clock,
                 description: Text(#tk("Windows and screenshots will appear here."))
             )
         }

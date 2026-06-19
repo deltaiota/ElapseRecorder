@@ -1,16 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ (%@)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ (%2$@)"
-          }
-        }
-      }
-    },
     "%lld bytes" : {
 
     },
@@ -23,248 +13,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$lld sessions • %2$lld screenshots"
-          }
-        }
-      }
-    },
-    "AppView.activeConfigDisplayNameEveryIntActiveConfigCaptureInterval…" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ every %2$llds"
-          }
-        }
-      }
-    },
-    "AppView.add" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add"
-          }
-        }
-      }
-    },
-    "AppView.addAnAppToTheWhitelistIfItIsAlready…" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add an app to the whitelist. If it is already running, recording starts immediately; otherwise it starts on launch."
-          }
-        }
-      }
-    },
-    "AppView.addRunningApp" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Add running app"
-          }
-        }
-      }
-    },
-    "AppView.bundleID" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Bundle ID"
-          }
-        }
-      }
-    },
-    "AppView.capturingActiveSessionsCount" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Capturing %lld"
-          }
-        }
-      }
-    },
-    "AppView.diagnostics" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Diagnostics"
-          }
-        }
-      }
-    },
-    "AppView.displayName" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Display name"
-          }
-        }
-      }
-    },
-    "AppView.everyIntStoreDraftIntervalSecondsS" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Every %llds"
-          }
-        }
-      }
-    },
-    "AppView.idle" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Idle"
-          }
-        }
-      }
-    },
-    "AppView.noRunningAppsToAdd" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "No running apps to add"
-          }
-        }
-      }
-    },
-    "AppView.permissionNotRequested" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Permission not requested"
-          }
-        }
-      }
-    },
-    "AppView.ready" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Ready"
-          }
-        }
-      }
-    },
-    "AppView.refreshApps" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Refresh apps"
-          }
-        }
-      }
-    },
-    "AppView.refreshViewer" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Refresh viewer"
-          }
-        }
-      }
-    },
-    "AppView.screenRecordingDenied" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Screen Recording denied"
-          }
-        }
-      }
-    },
-    "AppView.whitelist" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Whitelist"
-          }
-        }
-      }
-    },
-    "AppView.WhitelistConfigCard.everyIntConfigCaptureIntervalS" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Every %llds"
-          }
-        }
-      }
-    },
-    "AppView.WhitelistStatus.capturing" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Capturing"
-          }
-        }
-      }
-    },
-    "AppView.WhitelistStatus.disabled" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Disabled"
-          }
-        }
-      }
-    },
-    "AppView.WhitelistStatus.runningWaitingToStart" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Running, waiting to start"
-          }
-        }
-      }
-    },
-    "AppView.WhitelistStatus.startsOnLaunch" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Starts on launch"
           }
         }
       }
@@ -313,7 +61,7 @@
         }
       }
     },
-    "ViewerView.allScreenshots" : {
+    "ViewerView.DetailPane.allScreenshots" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -324,46 +72,35 @@
         }
       }
     },
-    "ViewerView.apps" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Apps"
-          }
-        }
-      }
-    },
-    "ViewerView.capturedSessionsWillAppearHere" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Captured sessions will appear here."
-          }
-        }
-      }
-    },
-    "ViewerView.chooseAnApp" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose an app"
-          }
-        }
-      }
-    },
-    "ViewerView.chooseASession" : {
+    "ViewerView.DetailPane.chooseASession" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Choose a session"
+          }
+        }
+      }
+    },
+    "ViewerView.DetailPane.windows" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Windows"
+          }
+        }
+      }
+    },
+    "ViewerView.DetailPane.windowsAndScreenshotsWillAppearHere" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Windows and screenshots will appear here."
           }
         }
       }
@@ -379,35 +116,57 @@
         }
       }
     },
-    "ViewerView.sessions" : {
+    "ViewerView.SessionList.allScreenshots" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "All screenshots"
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.capturedSessionsWillAppearHere" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Captured sessions will appear here."
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.chooseAnApp" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose an app"
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.deleteSelectedSession" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Delete selected session"
+          }
+        }
+      }
+    },
+    "ViewerView.SessionList.sessions" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "Sessions"
-          }
-        }
-      }
-    },
-    "ViewerView.windows" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Windows"
-          }
-        }
-      }
-    },
-    "ViewerView.windowsAndScreenshotsWillAppearHere" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Windows and screenshots will appear here."
           }
         }
       }

@@ -66,6 +66,65 @@ final class ViewerFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testDeleteSpecificUnselectedEndedSessionKeepsCurrentSelection() async throws {
+        let selectedSessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000503"))
+        let deletedSessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000504"))
+        let selectedSession = CaptureSessionSummary(
+            id: selectedSessionID,
+            bundleIdentifier: "com.example.DeleteApp",
+            displayName: "Delete App",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            windowCount: 1,
+            screenshotCount: 2
+        )
+        let deletedSession = CaptureSessionSummary(
+            id: deletedSessionID,
+            bundleIdentifier: "com.example.DeleteApp",
+            displayName: "Delete App",
+            startedAt: Date(timeIntervalSince1970: 300),
+            endedAt: Date(timeIntervalSince1970: 400),
+            windowCount: 1,
+            screenshotCount: 2
+        )
+        let deletedFileSessions = LockIsolated([(String, UUID)]())
+        let deletedMetadataSessions = LockIsolated([UUID]())
+
+        var state = ViewerFeature.State()
+        state.sessions = [selectedSession, deletedSession]
+        state.selectedBundleIdentifier = selectedSession.bundleIdentifier
+        state.selectedSessionID = selectedSession.id
+
+        let store = TestStore(initialState: state) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.fileStorageClient.deleteSessionCaptures = { bundleIdentifier, sessionID in
+                deletedFileSessions.withValue { $0.append((bundleIdentifier, sessionID)) }
+            }
+            $0.persistenceClient.deleteSession = { sessionID in
+                deletedMetadataSessions.withValue { $0.append(sessionID) }
+            }
+            $0.persistenceClient.apps = { [] }
+            $0.persistenceClient.sessions = { _ in [] }
+            $0.persistenceClient.windows = { _ in [] }
+            $0.persistenceClient.screenshotsForApp = { _ in [] }
+            $0.persistenceClient.screenshotsForWindow = { _ in [] }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.deleteSessionButtonTapped(deletedSession)) {
+            $0.isLoading = true
+        }
+        await store.receive(.sessionDeleted(deletedSession.id)) {
+            $0.isLoading = false
+        }
+
+        XCTAssertEqual(deletedFileSessions.value.map(\.0), [deletedSession.bundleIdentifier])
+        XCTAssertEqual(deletedFileSessions.value.map(\.1), [deletedSession.id])
+        XCTAssertEqual(deletedMetadataSessions.value, [deletedSession.id])
+    }
+
+    @MainActor
     func testDeleteSelectedOpenSessionIsBlocked() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000502"))
         let session = CaptureSessionSummary(

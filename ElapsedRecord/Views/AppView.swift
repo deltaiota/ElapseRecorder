@@ -25,6 +25,9 @@ struct AppView: View {
             setCaptureState: { app, isEnabled in
                 store.send(.whitelistEnabledChanged(app.bundleIdentifier, isEnabled))
             },
+            setCaptureInterval: { app, interval in
+                store.send(.whitelistIntervalChanged(app.bundleIdentifier, interval))
+            },
             removeFromWhitelist: { app in
                 store.send(.removeViewerAppFromWhitelistButtonTapped(app))
             },

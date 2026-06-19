@@ -10,6 +10,7 @@ struct ViewerView: View {
     var defaultCaptureInterval: TimeInterval = 5
     var whitelistApps: ([WhitelistedAppConfig]) -> Void = { _ in }
     var setCaptureState: (AppCaptureSummary, Bool) -> Void = { _, _ in }
+    var setCaptureInterval: (AppCaptureSummary, TimeInterval) -> Void = { _, _ in }
     var removeFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
     var addToWhitelist: (AppCaptureSummary) -> Void = { _ in }
     var deleteAllCaptures: (AppCaptureSummary) -> Void = { _ in }
@@ -165,7 +166,7 @@ struct ViewerView: View {
     @ViewBuilder
     private func sessionList() -> some View {
         List(selection: $store.sessionListSelection.sending(\.sessionListSelectionChanged)) {
-            if store.selectedBundleIdentifier != nil {
+            if selectedApp != nil {
                 if let errorMessage = store.errorMessage {
                     Label(errorMessage, systemSymbol: .exclamationmarkTriangle)
                         .foregroundStyle(.orange)
@@ -220,10 +221,19 @@ struct ViewerView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .safeAreaInset(edge: .bottom) {
+            if selectedApp != nil {
+                VStack(spacing: 0) {
+                    Divider()
+
+                    captureSettings()
+                }
+            }
+        }
         .overlay(alignment: .center) {
-            if store.selectedBundleIdentifier == nil {
+            if selectedApp == nil {
                 ContentUnavailableView(
-                    "Choose an app",
+                    "Choose an App",
                     systemSymbol: .appDashed,
                     description: Text("Captured sessions will appear here.")
                 )
@@ -240,28 +250,28 @@ struct ViewerView: View {
                     records: store.flatScreenshots,
                     selectScreenshot: { store.send(.screenshotSelected($0)) }
                 )
-                .navigationTitle("All screenshots")
+                .navigationTitle("All Screenshots")
             } else if store.selectedSessionID != nil {
                 ScreenshotGrid(
                     records: store.windowScreenshots,
                     selectScreenshot: { store.send(.screenshotSelected($0)) }
                 )
-                .safeAreaInset(edge: .top) {
+                .safeAreaInset(edge: .bottom) {
                     VStack(spacing: 0) {
+                        Divider()
+
                         HStack {
-                            Spacer()
-                            
                             Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
                                 Text("All Windows")
                                     .tag(ViewerFeature.State.WindowPickerSelection.all)
-                                
+
                                 if !store.windows.isEmpty {
                                     Divider()
-                                    
+
                                     ForEach(store.windows) { window in
                                         Button {} label: {
                                             Text(windowTitle(window))
-                                            
+
                                             Text("\(window.screenshotCount) Screenshots")
                                         }
                                         .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
@@ -270,12 +280,14 @@ struct ViewerView: View {
                             }
                             .labelsHidden()
                             .buttonStyle(.borderless)
+
+                            Spacer()
+
+                            Button("Export…") {}
                         }
                         .padding()
-                        .background(.bar)
-                        
-                        Divider()
                     }
+                    .background(.bar)
                 }
             } else {
                 Color.clear
@@ -284,13 +296,76 @@ struct ViewerView: View {
         .overlay(alignment: .center) {
             if !store.isShowingFlatGallery && store.selectedSessionID == nil {
                 ContentUnavailableView(
-                    "Choose a session",
+                    "Choose a Session",
                     systemSymbol: .film,
                     description: Text("Windows and screenshots will appear here.")
                 )
             }
         }
         .background(.background)
+    }
+
+    @ViewBuilder
+    private func captureSettings() -> some View {
+        if let selectedApp {
+            HStack {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Capture Settings", systemSymbol: .sliderHorizontal3)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if whitelistConfig(for: selectedApp.bundleIdentifier) != nil {
+                        HStack(spacing: 12) {
+                            Stepper(
+                                value: captureIntervalSecondsBinding(for: selectedApp),
+                                in: Self.captureIntervalSecondsRange,
+                                step: 1
+                            ) {
+                                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                    Image(systemSymbol: .timer)
+
+                                    Text("Every")
+
+                                    TextField(
+                                        "Seconds",
+                                        value: captureIntervalSecondsBinding(for: selectedApp),
+                                        format: .number
+                                    )
+                                    .monospaced()
+                                    .multilineTextAlignment(.trailing)
+                                    .frame(width: 48)
+                                    .textFieldStyle(.plain)
+
+                                    Text("s")
+                                }
+                            }
+                            .controlSize(.small)
+                            .fixedSize()
+
+                            Slider(
+                                value: captureIntervalPresetBinding(for: selectedApp),
+                                in: Self.captureIntervalPresetIndexRange,
+                                step: 1
+                            ) {
+                                Text("Capture interval")
+                            } minimumValueLabel: {
+                                Text("1s")
+                            } maximumValueLabel: {
+                                Text("1h")
+                            }
+                            .labelsHidden()
+                        }
+                    } else {
+                        Label("Whitelist this app to configure capture.", systemSymbol: .minusCircle)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+            }
+            .padding()
+        }
     }
 
     private var sessionDaySections: [SessionDaySection] {
@@ -333,12 +408,70 @@ struct ViewerView: View {
         )
     }
 
+    private var selectedApp: AppCaptureSummary? {
+        guard let selectedBundleIdentifier = store.selectedBundleIdentifier else {
+            return nil
+        }
+
+        return (whitelistedApps + staleApps).first { $0.bundleIdentifier == selectedBundleIdentifier }
+    }
+
     private var whitelistedBundleIdentifiers: Set<String> {
         Set(whitelistConfigs.map(\.bundleIdentifier))
     }
 
     private func whitelistConfig(for bundleIdentifier: String) -> WhitelistedAppConfig? {
         whitelistConfigs.first { $0.bundleIdentifier == bundleIdentifier }
+    }
+
+    private func captureInterval(for app: AppCaptureSummary) -> TimeInterval {
+        whitelistConfig(for: app.bundleIdentifier)?.captureInterval ?? defaultCaptureInterval
+    }
+
+    private func captureIntervalBinding(for app: AppCaptureSummary) -> Binding<TimeInterval> {
+        Binding(
+            get: {
+                captureInterval(for: app)
+            },
+            set: {
+                setCaptureInterval(app, $0)
+            }
+        )
+    }
+
+    private func captureIntervalSecondsBinding(for app: AppCaptureSummary) -> Binding<Int> {
+        Binding(
+            get: {
+                Int(captureInterval(for: app))
+            },
+            set: {
+                setCaptureInterval(app, TimeInterval($0))
+            }
+        )
+    }
+
+    private func captureIntervalPresetBinding(for app: AppCaptureSummary) -> Binding<Double> {
+        Binding(
+            get: {
+                Double(nearestCaptureIntervalPresetIndex(for: captureInterval(for: app)))
+            },
+            set: { index in
+                let clampedIndex = min(
+                    max(Int(index.rounded()), 0),
+                    Self.captureIntervalPresetSeconds.count - 1
+                )
+                setCaptureInterval(app, Self.captureIntervalPresetSeconds[clampedIndex])
+            }
+        )
+    }
+
+    private func nearestCaptureIntervalPresetIndex(for interval: TimeInterval) -> Int {
+        Self.captureIntervalPresetSeconds
+            .enumerated()
+            .min { lhs, rhs in
+                abs(lhs.element - interval) < abs(rhs.element - interval)
+            }?
+            .offset ?? 0
     }
 
     private func sortedApps(_ apps: [AppCaptureSummary]) -> [AppCaptureSummary] {
@@ -364,6 +497,19 @@ struct ViewerView: View {
         }
         return #tk("Window \(window.displayNumber)")
     }
+
+    private static let captureIntervalSecondsRange: ClosedRange<Int> = 1 ... 3600
+    private static let captureIntervalPresetSeconds: [TimeInterval] = [
+        1,
+        5,
+        15,
+        30,
+        60,
+        300,
+        900,
+        3600,
+    ]
+    private static let captureIntervalPresetIndexRange = 0 ... Double(captureIntervalPresetSeconds.count - 1)
 }
 
 #Preview {

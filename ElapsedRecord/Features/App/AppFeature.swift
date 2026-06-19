@@ -256,22 +256,6 @@ extension AppFeature.State {
         !draftBundleIdentifier.isEmpty
     }
 
-    var sortedWhitelistConfigs: [WhitelistedAppConfig] {
-        whitelistConfigs.sorted { lhs, rhs in
-            lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
-        }
-    }
-
-    var runningApplicationsAvailableForWhitelist: [RunningApplication] {
-        captureEngine.runningApplications.values
-            .filter { application in
-                !whitelistConfigs.contains { $0.bundleIdentifier == application.bundleIdentifier }
-            }
-            .sorted { lhs, rhs in
-                lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
-            }
-    }
-
     mutating func setWhitelistConfigs(_ configs: [WhitelistedAppConfig]) {
         whitelistConfigs = Self.normalizedWhitelistConfigs(configs)
     }

@@ -42,17 +42,6 @@
     "All Windows" : {
 
     },
-    "ApplicationSelectionSheet.1ApplicationSelected" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "1 application selected"
-          }
-        }
-      }
-    },
     "ApplicationSelectionSheet.noApplicationsAvailable" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -79,9 +68,21 @@
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%lld applications selected"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%lld application selected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%lld applications selected"
+                }
+              }
+            }
           }
         }
       }
@@ -119,24 +120,25 @@
         }
       }
     },
-    "ApplicationSelectionSheet.whitelist1App" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Whitelist 1 App"
-          }
-        }
-      }
-    },
     "ApplicationSelectionSheet.whitelistSelectableSelectedBundleIdentifiersCountApps" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Whitelist %lld Apps"
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "Whitelist %lld App"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "Whitelist %lld Apps"
+                }
+              }
+            }
           }
         }
       }
@@ -252,8 +254,27 @@
     "Capturing" : {
 
     },
-    "Capturing %lld" : {
-
+    "Capturing %lld Apps" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "Capturing %lld App"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "Capturing %lld Apps"
+                }
+              }
+            }
+          }
+        }
+      }
     },
     "Choose a session" : {
 

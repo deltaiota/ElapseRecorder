@@ -256,15 +256,11 @@ struct ApplicationSelectionSheet: View {
     }
 
     private var addButtonTitle: String {
-        selectableSelectedBundleIdentifiers.count == 1
-            ? #tk("Whitelist 1 App")
-            : #tk("Whitelist \(selectableSelectedBundleIdentifiers.count) Apps")
+        #tk("Whitelist \(selectableSelectedBundleIdentifiers.count) Apps")
     }
 
     private var selectionSummary: String {
-        selectableSelectedBundleIdentifiers.count == 1
-            ? #tk("1 application selected")
-            : #tk("\(selectableSelectedBundleIdentifiers.count) applications selected")
+        #tk("\(selectableSelectedBundleIdentifiers.count) applications selected")
     }
 }
 

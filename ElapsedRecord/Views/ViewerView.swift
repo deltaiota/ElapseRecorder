@@ -224,7 +224,7 @@ struct ViewerView: View {
             if store.selectedBundleIdentifier == nil {
                 ContentUnavailableView(
                     "Choose an app",
-                    systemSymbol: .app,
+                    systemSymbol: .appDashed,
                     description: Text("Captured sessions will appear here.")
                 )
             }
@@ -248,30 +248,32 @@ struct ViewerView: View {
                 )
                 .safeAreaInset(edge: .top) {
                     VStack(spacing: 0) {
-                        Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
-                            Text("All Windows")
-                                .tag(ViewerFeature.State.WindowPickerSelection.all)
-
-                            if !store.windows.isEmpty {
-                                Divider()
-
-                                ForEach(store.windows) { window in
-                                    Button {} label: {
-                                        Text(windowTitle(window))
-
-                                        CountSummary(
-                                            items: [
-                                                .init(value: window.screenshotCount, systemSymbol: .photo),
-                                            ]
-                                        )
+                        HStack {
+                            Spacer()
+                            
+                            Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
+                                Text("All Windows")
+                                    .tag(ViewerFeature.State.WindowPickerSelection.all)
+                                
+                                if !store.windows.isEmpty {
+                                    Divider()
+                                    
+                                    ForEach(store.windows) { window in
+                                        Button {} label: {
+                                            Text(windowTitle(window))
+                                            
+                                            Text("\(window.screenshotCount) Screenshots")
+                                        }
+                                        .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
                                     }
-                                    .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
                                 }
                             }
+                            .labelsHidden()
+                            .buttonStyle(.borderless)
                         }
                         .padding()
                         .background(.bar)
-
+                        
                         Divider()
                     }
                 }
@@ -283,7 +285,7 @@ struct ViewerView: View {
             if !store.isShowingFlatGallery && store.selectedSessionID == nil {
                 ContentUnavailableView(
                     "Choose a session",
-                    systemSymbol: .clock,
+                    systemSymbol: .film,
                     description: Text("Windows and screenshots will appear here.")
                 )
             }

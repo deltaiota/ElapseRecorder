@@ -7,38 +7,45 @@ import TranslateKit
 
 struct AppView: View {
     @Bindable var store: StoreOf<AppFeature>
+    @State private var isShowingDiagnosticsPopover = false
+    @State private var isShowingRecordingPermissionHint = false
+    @State private var refreshButtonAnimationTrigger: Int = 0
 
     var body: some View {
-        VStack(spacing: 0) {
-            whitelistBar()
-                .padding()
-                .background(.regularMaterial)
+        ViewerView(
+            store: store.scope(
+                state: \.viewer,
+                action: \.viewer
+            ),
+            whitelistConfigs: store.whitelistConfigs,
+            defaultCaptureInterval: store.draftIntervalSeconds,
+            whitelistApps: { configs in
+                store.send(.addWhitelistConfigsButtonTapped(configs))
+            },
+            setCaptureState: { app, isEnabled in
+                store.send(.whitelistEnabledChanged(app.bundleIdentifier, isEnabled))
+            },
+            removeFromWhitelist: { app in
+                store.send(.removeViewerAppFromWhitelistButtonTapped(app))
+            },
+            addToWhitelist: { app in
+                store.send(.addViewerAppToWhitelistButtonTapped(app))
+            },
+            deleteAllCaptures: { app in
+                store.send(.deleteViewerAppButtonTapped(app))
+            }
+        )
+        .navigationSubtitle(captureCountSubtitle)
+        .toolbar {
+            ToolbarItemGroup(placement: .navigation) {
+                screenRecordingStatus()
+            }
 
-            Divider()
-
-            ViewerView(
-                store: store.scope(
-                    state: \.viewer,
-                    action: \.viewer
-                ),
-                whitelistConfigs: store.whitelistConfigs,
-                defaultCaptureInterval: store.draftIntervalSeconds,
-                whitelistApps: { configs in
-                    store.send(.addWhitelistConfigsButtonTapped(configs))
-                },
-                setCaptureState: { app, isEnabled in
-                    store.send(.whitelistEnabledChanged(app.bundleIdentifier, isEnabled))
-                },
-                removeFromWhitelist: { app in
-                    store.send(.removeViewerAppFromWhitelistButtonTapped(app))
-                },
-                addToWhitelist: { app in
-                    store.send(.addViewerAppToWhitelistButtonTapped(app))
-                },
-                deleteAllCaptures: { app in
-                    store.send(.deleteViewerAppButtonTapped(app))
-                }
-            )
+            ToolbarItemGroup(placement: .primaryAction) {
+                diagnosticsPopoverButton()
+                refreshButton()
+                revealCapturesButton()
+            }
         }
         .task {
             guard !isTesting else {
@@ -47,296 +54,269 @@ struct AppView: View {
 
             await store.send(.task).finish()
         }
-    }
-
-    @ViewBuilder
-    private func whitelistBar() -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 12) {
-                Label("Whitelist", systemSymbol: .app)
-                    .font(.headline)
-
-                activeCaptureStatus()
-
-                captureStatus()
-
-                Spacer()
-
-                Button {
-                    store.send(.revealCaptureRootButtonTapped)
-                } label: {
-                    Label("Reveal captures", systemSymbol: .folder)
-                }
-
-                runningApplicationsMenu()
-
-                Button {
-                    store.send(.refreshRunningApplicationsButtonTapped)
-                } label: {
-                    Label("Refresh apps", systemSymbol: .arrowClockwise)
-                }
-
-                Button {
-                    store.send(.refreshViewerButtonTapped)
-                } label: {
-                    Label("Refresh viewer", systemSymbol: .arrowClockwise)
-                }
-
-                diagnosticsMenu()
-            }
-
-            lifecycleDiagnostics()
-
-            HStack(alignment: .center, spacing: 8) {
-                TextField(
-                    "Bundle ID",
-                    text: $store.draftBundleIdentifier.sending(\.draftBundleIdentifierChanged)
-                )
-                .textFieldStyle(.roundedBorder)
-                .frame(minWidth: 240)
-
-                TextField(
-                    "Display name",
-                    text: $store.draftDisplayName.sending(\.draftDisplayNameChanged)
-                )
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 160)
-
-                Stepper(
-                    value: $store.draftIntervalSeconds.sending(\.draftIntervalSecondsChanged),
-                    in: 1 ... 3600,
-                    step: 1
-                ) {
-                    Text("Every \(Int(store.draftIntervalSeconds))s")
-                        .monospacedDigit()
-                }
-                .frame(width: 130)
-
-                Button {
-                    store.send(.addDraftWhitelistButtonTapped)
-                } label: {
-                    Label("Add", systemSymbol: .plusCircle)
-                }
-                .disabled(!store.canAddDraftWhitelist)
-
-                if let whitelistError = store.whitelistError {
-                    Label(whitelistError, systemSymbol: .exclamationmarkTriangle)
-                        .foregroundStyle(.orange)
-                        .lineLimit(1)
-                }
-
-                if let captureRootError = store.captureRootError {
-                    Label(captureRootError, systemSymbol: .exclamationmarkTriangle)
-                        .foregroundStyle(.orange)
-                        .lineLimit(1)
-                }
-            }
-
-//            if store.whitelistConfigs.isEmpty {
-//                Text("Add an app to the whitelist. If it is already running, recording starts immediately; otherwise it starts on launch.")
-//                    .font(.caption)
-//                    .foregroundStyle(.secondary)
-//            } else {
-//                ScrollView(.horizontal) {
-//                    HStack(alignment: .top, spacing: 10) {
-//                        ForEach(store.sortedWhitelistConfigs) { config in
-//                            whitelistConfigCard(config)
-//                        }
-//                    }
-//                }
-//                .scrollIndicators(.hidden)
-//            }
+        .onAppear {
+            updateRecordingPermissionHint(for: store.captureEngine.permissionStatus)
+        }
+        .onChange(of: store.captureEngine.permissionStatus) { _, permissionStatus in
+            updateRecordingPermissionHint(for: permissionStatus)
         }
     }
 
     @ViewBuilder
-    private func runningApplicationsMenu() -> some View {
-        Menu {
-            if store.runningApplicationsAvailableForWhitelist.isEmpty {
-                Text("No running apps to add")
-            } else {
-                ForEach(store.runningApplicationsAvailableForWhitelist) { application in
-                    Button {
-                        store.send(.addRunningApplicationButtonTapped(application.bundleIdentifier))
-                    } label: {
-                        Text("\(application.displayName) (\(application.bundleIdentifier))")
-                    }
-                }
-            }
+    private func screenRecordingStatus() -> some View {
+        Button {
+            store.send(.requestCapturePermissionButtonTapped)
         } label: {
-            Label("Add running app", systemSymbol: .plusCircle)
-        }
-    }
+            HStack(spacing: 2) {
+                Image(systemSymbol: .recordCircle)
+                    .foregroundStyle(.red)
 
-    @ViewBuilder
-    private func diagnosticsMenu() -> some View {
-        if !store.captureEngine.recentDiagnostics.isEmpty {
-            Menu {
-                ForEach(Array(store.captureEngine.recentDiagnostics.enumerated()), id: \.offset) { _, diagnostic in
-                    Text(diagnostic)
+                switch store.captureEngine.permissionStatus {
+                case .authorized:
+                    Label("Screen Recording Ready", systemSymbol: .checkmarkSealFill)
+                        .foregroundStyle(.green)
+
+                case .notDetermined:
+                    Label("Request Screen Recording Permission", systemSymbol: .questionmarkCircleFill)
+                        .foregroundStyle(.yellow)
+
+                case .denied:
+                    Label("Request Screen Recording Permission", systemSymbol: .exclamationmarkTriangleFill)
+                        .foregroundStyle(.red)
                 }
-            } label: {
-                Label("Diagnostics", systemSymbol: .stethoscope)
             }
         }
-    }
-
-//    @ViewBuilder private func whitelistConfigCard(_ config: WhitelistedAppConfig) -> some View {
-//        VStack(alignment: .leading, spacing: 8) {
-//            HStack {
-//                Toggle(
-//                    isOn: Binding(
-//                        get: { config.isEnabled },
-//                        set: { store.send(.whitelistEnabledChanged(config.bundleIdentifier, $0)) }
-//                    )
-//                ) {
-//                    Text(config.displayName)
-//                        .font(.headline)
-//                        .lineLimit(1)
-//                }
-//
-//                Button {
-//                    store.send(.removeWhitelistButtonTapped(config.bundleIdentifier))
-//                } label: {
-//                    Image(systemSymbol: .trash)
-//                }
-//                .buttonStyle(.borderless)
-//            }
-//
-//            Text(config.bundleIdentifier)
-//                .font(.caption)
-//                .foregroundStyle(.secondary)
-//                .lineLimit(1)
-//
-//            Stepper(
-//                value: Binding(
-//                    get: { config.captureInterval },
-//                    set: { store.send(.whitelistIntervalChanged(config.bundleIdentifier, $0)) }
-//                ),
-//                in: 1 ... 3600,
-//                step: 1
-//            ) {
-//                Text("Every \(Int(config.captureInterval))s")
-//                    .monospacedDigit()
-//            }
-//
-//            whitelistStatus(config)
-//
-//            whitelistRuntimeDetails(config)
-//        }
-//        .padding(10)
-//        .frame(width: 260, alignment: .leading)
-//        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-//    }
-
-    @ViewBuilder
-    private func whitelistStatus(_ config: WhitelistedAppConfig) -> some View {
-        if store.captureEngine.activeSessions[config.bundleIdentifier] != nil {
-            Label("Capturing", systemSymbol: .recordCircle)
-                .foregroundStyle(.green)
-        } else if !config.isEnabled {
-            Label("Disabled", systemSymbol: .pauseCircle)
-                .foregroundStyle(.secondary)
-        } else if store.captureEngine.runningApplications[config.bundleIdentifier] != nil {
-            Label("Running, waiting to start", systemSymbol: .clock)
-                .foregroundStyle(.orange)
-        } else {
-            Label("Starts on launch", systemSymbol: .clock)
-                .foregroundStyle(.secondary)
+        .background(.selection, in: .buttonBorder)
+        .popover(isPresented: $isShowingRecordingPermissionHint, arrowEdge: .bottom) {
+            recordingPermissionHint()
         }
+        .disabled(store.captureEngine.permissionStatus == .authorized)
     }
 
     @ViewBuilder
-    private func lifecycleDiagnostics() -> some View {
-        HStack(spacing: 12) {
-            Label("\(store.captureEngine.runningApplications.count) running apps seen", systemSymbol: .app)
-                .foregroundStyle(.secondary)
-
-            if let event = store.captureEngine.lastWorkspaceEvent {
-                Label(workspaceEventSummary(event), systemSymbol: .clock)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            } else {
-                Label("No workspace event yet", systemSymbol: .clock)
-                    .foregroundStyle(.secondary)
+    private func recordingPermissionHint() -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label {
+                Text("Screen Recording Permission Required")
+            } icon: {
+                Image(systemSymbol: .recordCircle)
+                    .foregroundStyle(.red)
             }
+            .font(.headline)
 
-            if let lastError = store.captureEngine.lastError {
-                Label(lastError, systemSymbol: .exclamationmarkTriangle)
-                    .foregroundStyle(.orange)
-                    .lineLimit(1)
-            }
-        }
-        .font(.caption)
-    }
+            Text("Screen Recording permission needs to be granted before capturing app windows.")
+                .foregroundStyle(.secondary)
 
-    @ViewBuilder
-    private func whitelistRuntimeDetails(_ config: WhitelistedAppConfig) -> some View {
-        if let active = store.captureEngine.activeSessions[config.bundleIdentifier] {
-            Text("Session \(active.session.id.uuidString.prefix(8)) - PID \(active.application.processIdentifier)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        } else if let application = store.captureEngine.runningApplications[config.bundleIdentifier] {
-            Text("Matched running app - PID \(application.processIdentifier)")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        } else {
-            Text("No running process matched")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-    }
-
-    @ViewBuilder
-    private func activeCaptureStatus() -> some View {
-        let activeSessions = store.captureEngine.activeSessions.values.sorted {
-            $0.config.displayName < $1.config.displayName
-        }
-
-        if activeSessions.isEmpty {
-            Label("Idle", systemSymbol: .pauseCircle)
-                .foregroundStyle(.secondary)
-        } else {
-            Menu {
-                ForEach(activeSessions, id: \.session.id) { active in
-                    Text("\(active.config.displayName) every \(Int(active.config.captureInterval))s")
+            if store.captureEngine.permissionStatus == .denied {
+                Button {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Text("If granting permission failed, open System Settings > Privacy & Security > Screen & System Audio Recording (click to open), remove Elapsed Record and add it back, then reopen the app.")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(.red)
                 }
-            } label: {
-                Label("Capturing \(activeSessions.count)", systemSymbol: .recordCircle)
+                .buttonStyle(.plain)
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .foregroundStyle(.green)
-        }
-    }
 
-    @ViewBuilder
-    private func captureStatus() -> some View {
-        switch store.captureEngine.permissionStatus {
-        case .authorized:
-            Label("Ready", systemSymbol: .checkmarkCircle)
-                .foregroundStyle(.secondary)
-
-        case .notDetermined:
             Button {
                 store.send(.requestCapturePermissionButtonTapped)
             } label: {
-                Label("Request Screen Recording", systemSymbol: .questionmarkCircle)
+                Label("Grant Permission", systemSymbol: .checkmarkSealFill)
             }
+            .controlSize(.large)
+        }
+        .padding(12)
+        .frame(width: Self.recordingPermissionHintWidth, alignment: .leading)
+    }
 
-        case .denied:
-            HStack(spacing: 6) {
-                Label("Screen Recording denied", systemSymbol: .exclamationmarkTriangle)
-                    .foregroundStyle(.orange)
+    @ViewBuilder
+    private func diagnosticsPopoverButton() -> some View {
+        Button {
+            isShowingDiagnosticsPopover.toggle()
+        } label: {
+            Label(diagnosticsButtonTitle, systemSymbol: .stethoscope)
+        }
+        .popover(isPresented: $isShowingDiagnosticsPopover, arrowEdge: .bottom) {
+            diagnosticsPopover()
+        }
+    }
 
-                Button {
-                    store.send(.requestCapturePermissionButtonTapped)
-                } label: {
-                    Text("Retry")
+    @ViewBuilder
+    private func diagnosticsPopover() -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Diagnostics", systemSymbol: .stethoscope)
+                    .font(.headline)
+
+                diagnosticsSection("Capture") {
+                    diagnosticsRow("Permission", permissionStatusText, systemSymbol: .recordCircle)
+                    diagnosticsRow("Active sessions", activeCaptureSessions.count.formatted(), systemSymbol: .recordCircle)
+                    diagnosticsRow("Whitelist", store.whitelistConfigs.count.formatted(), systemSymbol: .app)
+                    diagnosticsRow("Running apps seen", store.captureEngine.runningApplications.count.formatted(), systemSymbol: .app)
+                }
+
+                if !activeCaptureSessions.isEmpty {
+                    diagnosticsSection("Active Sessions") {
+                        ForEach(activeCaptureSessions, id: \.session.id) { active in
+                            diagnosticsRow(
+                                active.config.displayName,
+                                activeSessionSummary(active),
+                                systemSymbol: active.isCaptureInFlight ? .recordCircle : .clock
+                            )
+                        }
+                    }
+                }
+
+                diagnosticsSection("Workspace") {
+                    if let event = store.captureEngine.lastWorkspaceEvent {
+                        diagnosticsRow("Last event", workspaceEventSummary(event), systemSymbol: .clock)
+                    } else {
+                        diagnosticsRow("Last event", "None", systemSymbol: .clock)
+                    }
+                }
+
+                if hasAppErrors {
+                    diagnosticsSection("Errors") {
+                        if let whitelistError = store.whitelistError {
+                            diagnosticsRow("Whitelist", whitelistError, systemSymbol: .exclamationmarkTriangle)
+                        }
+
+                        if let captureRootError = store.captureRootError {
+                            diagnosticsRow("Capture folder", captureRootError, systemSymbol: .exclamationmarkTriangle)
+                        }
+
+                        if let lastError = store.captureEngine.lastError {
+                            diagnosticsRow("Capture engine", lastError, systemSymbol: .exclamationmarkTriangle)
+                        }
+                    }
+                }
+
+                recentDiagnostics()
+            }
+            .frame(width: Self.diagnosticsPopoverContentWidth, alignment: .leading)
+            .padding(Self.diagnosticsPopoverPadding)
+        }
+        .frame(width: Self.diagnosticsPopoverWidth)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: Self.diagnosticsPopoverMaximumHeight)
+    }
+
+    @ViewBuilder
+    private func diagnosticsSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 3) {
+                content()
+            }
+            .font(.caption)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func diagnosticsRow(
+        _ title: String,
+        _ value: String,
+        systemSymbol: SFSymbol
+    ) -> some View {
+        GridRow {
+            Image(systemSymbol: systemSymbol)
+                .foregroundStyle(.secondary)
+            Text(title)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .lineLimit(2)
+                .textSelection(.enabled)
+        }
+    }
+
+    @ViewBuilder
+    private func recentDiagnostics() -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Recent Diagnostics")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if store.captureEngine.recentDiagnostics.isEmpty {
+                Text("No recent diagnostics")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(store.captureEngine.recentDiagnostics.reversed().enumerated()), id: \.offset) { _, diagnostic in
+                    Text(diagnostic)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+        .font(.caption)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func refreshButton() -> some View {
+        Button("Refresh", systemSymbol: .arrowCounterclockwise) {
+            store.send(.refreshViewerButtonTapped)
+            store.send(.refreshRunningApplicationsButtonTapped)
+            refreshButtonAnimationTrigger += 1
+        }
+        .symbolEffect(.rotate, options: .speed(8), value: refreshButtonAnimationTrigger)
+    }
+
+    @ViewBuilder
+    private func revealCapturesButton() -> some View {
+        Button {
+            store.send(.revealCaptureRootButtonTapped)
+        } label: {
+            Label("Reveal Captures", systemSymbol: .folder)
+        }
+    }
+
+    private var activeCaptureSessions: [CaptureEngineFeature.State.ActiveSession] {
+        store.captureEngine.activeSessions.values.sorted {
+            $0.config.displayName < $1.config.displayName
+        }
+    }
+
+    private var diagnosticsButtonTitle: String {
+        store.captureEngine.recentDiagnostics.isEmpty
+            ? #tk("Diagnostics")
+            : #tk("Diagnostics \(store.captureEngine.recentDiagnostics.count)")
+    }
+
+    private var captureCountSubtitle: String {
+        #tk("Capturing \(activeCaptureSessions.count) Apps")
+    }
+
+    private var permissionStatusText: String {
+        switch store.captureEngine.permissionStatus {
+        case .authorized:
+            #tk("Authorized")
+        case .notDetermined:
+            #tk("Not determined")
+        case .denied:
+            #tk("Denied")
+        }
+    }
+
+    private var hasAppErrors: Bool {
+        store.whitelistError != nil
+            || store.captureRootError != nil
+            || store.captureEngine.lastError != nil
+    }
+
+    private func activeSessionSummary(_ active: CaptureEngineFeature.State.ActiveSession) -> String {
+        let sessionID = active.session.id.uuidString.prefix(8)
+        let flightState = active.isCaptureInFlight ? #tk("capturing") : #tk("waiting")
+        return #tk("PID \(active.application.processIdentifier), session \(sessionID), every \(Int(active.config.captureInterval))s, \(flightState)")
     }
 
     private func workspaceEventSummary(_ event: WorkspaceEvent) -> String {
@@ -349,6 +329,16 @@ struct AppView: View {
             #tk("Last event: activated \(application.displayName)")
         }
     }
+
+    private func updateRecordingPermissionHint(for permissionStatus: CapturePermissionStatus) {
+        isShowingRecordingPermissionHint = permissionStatus != .authorized
+    }
+
+    private static let diagnosticsPopoverWidth: CGFloat = 340
+    private static let diagnosticsPopoverMaximumHeight: CGFloat = 520
+    private static let diagnosticsPopoverPadding: CGFloat = 10
+    private static let diagnosticsPopoverContentWidth = diagnosticsPopoverWidth - diagnosticsPopoverPadding * 2
+    private static let recordingPermissionHintWidth: CGFloat = 300
 }
 
 #Preview {

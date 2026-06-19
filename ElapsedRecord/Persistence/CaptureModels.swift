@@ -103,6 +103,10 @@ extension Schema {
 }
 
 extension CaptureSessionModel {
+    var isEmpty: Bool {
+        windows.isEmpty && screenshots.isEmpty
+    }
+
     var domainValue: CaptureSession {
         CaptureSession(
             id: id,

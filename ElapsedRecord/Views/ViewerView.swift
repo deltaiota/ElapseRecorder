@@ -1,4 +1,3 @@
-import AppKit
 import ComposableArchitecture
 import SFSafeSymbols
 import SwiftUI
@@ -12,10 +11,10 @@ struct ViewerView: View {
     var body: some View {
         NavigationSplitView {
             appList()
-                .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 300)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 225, max: 400)
         } content: {
             sessionList()
-                .navigationSplitViewColumnWidth(min: 180, ideal: 300)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 275)
         } detail: {
             detailPane()
                 .navigationSplitViewColumnWidth(min: 300, ideal: 500)
@@ -59,9 +58,15 @@ struct ViewerView: View {
                             Label {
                                 VStack(alignment: .leading) {
                                     Text(session.startedAt, format: .dateTime.hour().minute())
-                                    Text(sessionSummary(session))
-                                        .foregroundStyle(.secondary)
-                                        .font(.caption)
+                                    CountSummary(
+                                        items: [
+                                            .init(text: sessionDuration(session), systemSymbol: .timer, isMonospaced: true),
+                                            .init(value: session.windowCount, systemSymbol: .macwindow),
+                                            .init(value: session.screenshotCount, systemSymbol: .photo),
+                                        ]
+                                    )
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
                                 }
                             } icon: {
                                 Image(systemSymbol: .clock)
@@ -121,7 +126,7 @@ struct ViewerView: View {
                         Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
                             Text("All Windows")
                                 .tag(ViewerFeature.State.WindowPickerSelection.all)
-
+                            
                             if !store.windows.isEmpty {
                                 Divider()
 
@@ -129,7 +134,11 @@ struct ViewerView: View {
                                     Button {} label: {
                                         Text(windowTitle(window))
 
-                                        Text("\(window.screenshotCount) screenshots")
+                                        CountSummary(
+                                            items: [
+                                                .init(value: window.screenshotCount, systemSymbol: .photo),
+                                            ]
+                                        )
                                     }
                                     .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
                                 }
@@ -157,13 +166,6 @@ struct ViewerView: View {
         .background(.background)
     }
 
-    private func sessionSummary(_ session: CaptureSessionSummary) -> String {
-        let duration = Duration.seconds(session.duration)
-            .formatted(.time(pattern: .hourMinuteSecond))
-
-        return "\(duration) • \(session.windowCount) windows • \(session.screenshotCount) screenshots"
-    }
-
     private var sessionDaySections: [SessionDaySection] {
         let calendar = Calendar.current
         let groupedSessions = Dictionary(grouping: store.sessions) { session in
@@ -180,6 +182,11 @@ struct ViewerView: View {
             }
     }
 
+    private func sessionDuration(_ session: CaptureSessionSummary) -> String {
+        Duration.seconds(session.duration)
+            .formatted(.time(pattern: .hourMinuteSecond))
+    }
+
     private func windowTitle(_ window: WindowCaptureSummary) -> String {
         if let label = window.label, !label.isEmpty {
             return #tk("Window \(window.displayNumber): \(label)")
@@ -188,300 +195,12 @@ struct ViewerView: View {
     }
 }
 
-private struct AppSidebarRow: View {
-    let app: AppCaptureSummary
-
-    @State private var isShowingInfo = false
-
-    private var identity: InstalledAppIdentity {
-        InstalledAppIdentity(app: app)
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            AppIconView(icon: identity.icon)
-
-            VStack(alignment: .leading) {
-                Text(identity.localizedName)
-                    .lineLimit(1)
-
-                Text("\(app.sessionCount) sessions • \(app.screenshotCount) screenshots")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            Button {
-                isShowingInfo.toggle()
-            } label: {
-                Image(systemSymbol: .infoCircle)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .help("Show app information")
-            .popover(isPresented: $isShowingInfo, arrowEdge: .trailing) {
-                AppInfoPopover(app: app, identity: identity)
-            }
-        }
-    }
-}
-
-private struct AppIconView: View {
-    let icon: NSImage?
-
-    var body: some View {
-        if let icon {
-            Image(nsImage: icon)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 24, height: 24)
-        } else {
-            Image(systemSymbol: .app)
-                .frame(width: 24, height: 24)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
-
-private struct AppInfoPopover: View {
-    let app: AppCaptureSummary
-    let identity: InstalledAppIdentity
-
-    var body: some View {
-        Form {
-            LabeledContent("Name") {
-                Text(identity.localizedName)
-            }
-
-            LabeledContent("Bundle Identifier") {
-                Text(identity.bundleIdentifier)
-                    .textSelection(.enabled)
-            }
-
-            LabeledContent("Recorded Name") {
-                Text(identity.recordedName)
-            }
-
-            if let appURL = identity.appURL {
-                LabeledContent("Path") {
-                    Text(appURL.path(percentEncoded: false))
-                        .lineLimit(3)
-                        .textSelection(.enabled)
-                }
-            } else {
-                LabeledContent("Application") {
-                    Text("Not found")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            LabeledContent("Sessions") {
-                Text(app.sessionCount, format: .number)
-            }
-
-            LabeledContent("Screenshots") {
-                Text(app.screenshotCount, format: .number)
-            }
-
-            if let lastCapturedAt = app.lastCapturedAt {
-                LabeledContent("Last Capture") {
-                    Text(lastCapturedAt, format: .dateTime)
-                }
-            }
-        }
-        .formStyle(.grouped)
-        .padding()
-        .frame(minWidth: 320)
-    }
-}
-
-private struct InstalledAppIdentity {
-    let bundleIdentifier: String
-    let localizedName: String
-    let recordedName: String
-    let appURL: URL?
-    let icon: NSImage?
-
-    init(app: AppCaptureSummary) {
-        let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)
-
-        bundleIdentifier = app.bundleIdentifier
-        recordedName = app.displayName
-        self.appURL = appURL
-        localizedName = Self.localizedName(appURL: appURL) ?? app.displayName
-        icon = Self.icon(appURL: appURL)
-    }
-
-    private static func localizedName(appURL: URL?) -> String? {
-        guard let appURL else { return nil }
-
-        let bundle = Bundle(url: appURL)
-        let bundleName = ["CFBundleDisplayName", "CFBundleName"]
-            .lazy
-            .compactMap { bundle?.object(forInfoDictionaryKey: $0) as? String }
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .first { !$0.isEmpty }
-
-        return bundleName ?? FileManager.default.displayName(atPath: appURL.path(percentEncoded: false))
-    }
-
-    private static func icon(appURL: URL?) -> NSImage? {
-        guard let appURL else { return nil }
-
-        let icon = NSWorkspace.shared.icon(forFile: appURL.path(percentEncoded: false))
-        icon.size = NSSize(width: 24, height: 24)
-        return icon
-    }
-}
-
-private struct SessionDaySection: Identifiable {
+struct SessionDaySection: Identifiable {
     var day: Date
     var sessions: [CaptureSessionSummary]
-
+    
     var id: Date {
         day
-    }
-}
-
-private struct ScreenshotGrid: View {
-    let records: [ScreenshotRecord]
-    let selectScreenshot: (ScreenshotRecord) -> Void
-
-    private let columns = [
-        GridItem(.adaptive(minimum: 160), spacing: 12),
-    ]
-
-    var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(records) { record in
-                    Button {
-                        selectScreenshot(record)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ScreenshotThumbnailView(record: record)
-                                .aspectRatio(16 / 10, contentMode: .fit)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                            Text(record.capturedAt, format: .dateTime.hour().minute().second())
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding()
-        }
-        .overlay {
-            if records.isEmpty {
-                ContentUnavailableView(
-                    "No screenshots",
-                    systemSymbol: .photo,
-                    description: Text("Captured frames will appear here.")
-                )
-            }
-        }
-    }
-}
-
-private struct ScreenshotDetailView: View {
-    let record: ScreenshotRecord
-    let revealInFinder: () -> Void
-
-    @Dependency(\.imageLoadingClient) private var images
-    @State private var image: CGImage?
-    @State private var errorMessage: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ZStack {
-                Rectangle()
-                    .fill(.quaternary)
-
-                if let image {
-                    Image(nsImage: NSImage(cgImage: image, size: image.displaySize))
-                        .resizable()
-                        .scaledToFit()
-                } else if let errorMessage {
-                    ContentUnavailableView(
-                        "Could not load image",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(errorMessage)
-                    )
-                } else {
-                    ProgressView()
-                }
-            }
-            .frame(minWidth: 640, minHeight: 420)
-
-            Group {
-                Text(record.capturedAt, format: .dateTime.year().month().day().hour().minute().second())
-                Text(record.fileURL.path(percentEncoded: false))
-                    .font(.caption)
-                    .textSelection(.enabled)
-                Text("\(record.fileSizeBytes) bytes")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Spacer()
-                Button("Reveal in Finder") {
-                    revealInFinder()
-                }
-            }
-        }
-        .padding()
-        .task(id: record.id) {
-            do {
-                image = try await images.fullSizeImage(record.fileURL)
-                errorMessage = nil
-            } catch {
-                image = nil
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-}
-
-private struct ScreenshotThumbnailView: View {
-    let record: ScreenshotRecord
-
-    @Dependency(\.capturePreferencesClient) private var preferences
-    @Dependency(\.thumbnailClient) private var thumbnails
-    @State private var image: CGImage?
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(.quaternary)
-
-            if let image {
-                Image(nsImage: NSImage(cgImage: image, size: image.displaySize))
-                    .resizable()
-                    .scaledToFill()
-            } else {
-                Image(systemSymbol: .photo)
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .task(id: record.id) {
-            image = nil
-            image = try? await thumbnails.thumbnail(
-                record.fileURL,
-                preferences.thumbnailMaximumPixelSize()
-            )
-        }
-    }
-}
-
-private extension CGImage {
-    var displaySize: CGSize {
-        CGSize(width: width, height: height)
     }
 }
 

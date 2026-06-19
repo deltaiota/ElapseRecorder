@@ -30,7 +30,11 @@ final class SwiftDataPersistenceStore {
             throw CaptureEngineError.sessionNotFound(sessionID)
         }
 
-        session.endedAt = endedAt
+        if session.isEmpty {
+            context.delete(session)
+        } else {
+            session.endedAt = endedAt
+        }
         try context.save()
     }
 
@@ -40,7 +44,11 @@ final class SwiftDataPersistenceStore {
             .filter { $0.endedAt == nil }
 
         for session in sessions {
-            session.endedAt = endedAt
+            if session.isEmpty {
+                context.delete(session)
+            } else {
+                session.endedAt = endedAt
+            }
         }
 
         guard !sessions.isEmpty else { return 0 }
@@ -187,6 +195,7 @@ final class SwiftDataPersistenceStore {
     private func allSessions() throws -> [CaptureSessionModel] {
         let context = ModelContext(modelContainer)
         return try context.fetch(FetchDescriptor<CaptureSessionModel>())
+            .filter { !$0.isEmpty }
     }
 
     private func sessionModel(id: UUID, context: ModelContext) throws -> CaptureSessionModel? {

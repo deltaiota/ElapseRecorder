@@ -33,8 +33,6 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         try await client.openSession(appSession)
         try await client.openSession(laterAppSession)
         try await client.openSession(otherSession)
-        try await client.closeSession(appSession.id, Date(timeIntervalSince1970: 240))
-
         let firstWindow = try MonitoredWindow(
             id: uuid("00000000-0000-0000-0000-000000000201"),
             sessionID: appSession.id,
@@ -95,12 +93,15 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         try await client.recordScreenshot(newerScreenshot)
         try await client.recordScreenshot(oldScreenshot)
         try await client.recordScreenshot(laterScreenshot)
+        try await client.closeSession(appSession.id, Date(timeIntervalSince1970: 240))
 
         let apps = try await client.apps()
-        XCTAssertEqual(apps.map(\.bundleIdentifier), ["com.example.ArtApp", "com.example.CodeApp"])
+        XCTAssertEqual(apps.map(\.bundleIdentifier), ["com.example.ArtApp"])
         XCTAssertEqual(apps.first?.sessionCount, 2)
         XCTAssertEqual(apps.first?.screenshotCount, 3)
         XCTAssertEqual(apps.first?.lastCapturedAt, laterScreenshot.capturedAt)
+        let codeSessions = try await client.sessions("com.example.CodeApp")
+        XCTAssertEqual(codeSessions, [])
 
         let sessions = try await client.sessions("com.example.ArtApp")
         XCTAssertEqual(sessions.map(\.id), [laterAppSession.id, appSession.id])
@@ -125,34 +126,72 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
     @MainActor
     func testCloseOpenSessionsAndDeleteSession() async throws {
         let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
-        let staleSession = try CaptureSession(
+        let emptySession = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000401"),
             bundleIdentifier: "com.example.StaleApp",
             displayName: "Stale App",
             processIdentifier: 401,
             startedAt: Date(timeIntervalSince1970: 100)
         )
-        let closedSession = try CaptureSession(
+        let retainedSession = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000402"),
             bundleIdentifier: "com.example.StaleApp",
             displayName: "Stale App",
             processIdentifier: 402,
-            startedAt: Date(timeIntervalSince1970: 200),
-            endedAt: Date(timeIntervalSince1970: 250)
+            startedAt: Date(timeIntervalSince1970: 200)
+        )
+        let window = try MonitoredWindow(
+            id: uuid("00000000-0000-0000-0000-000000000403"),
+            sessionID: retainedSession.id,
+            systemWindowID: 403,
+            displayNumber: 1,
+            label: "Main",
+            firstSeenAt: Date(timeIntervalSince1970: 210),
+            lastSeenAt: Date(timeIntervalSince1970: 220)
+        )
+        let screenshot = try ScreenshotRecord(
+            id: uuid("00000000-0000-0000-0000-000000000404"),
+            windowID: window.id,
+            sessionID: retainedSession.id,
+            capturedAt: Date(timeIntervalSince1970: 215),
+            fileURL: URL(filePath: "/tmp/stale.heic"),
+            fileSizeBytes: 40
         )
 
-        try await client.openSession(staleSession)
-        try await client.openSession(closedSession)
+        try await client.openSession(emptySession)
+        try await client.openSession(retainedSession)
+        try await client.upsertWindow(window)
+        try await client.recordScreenshot(screenshot)
 
         let closedCount = try await client.closeOpenSessions(Date(timeIntervalSince1970: 300))
-        XCTAssertEqual(closedCount, 1)
+        XCTAssertEqual(closedCount, 2)
         var sessions = try await client.sessions("com.example.StaleApp")
-        XCTAssertEqual(sessions.first { $0.id == staleSession.id }?.endedAt, Date(timeIntervalSince1970: 300))
-        XCTAssertEqual(sessions.first { $0.id == closedSession.id }?.endedAt, Date(timeIntervalSince1970: 250))
+        XCTAssertEqual(sessions.map(\.id), [retainedSession.id])
+        XCTAssertEqual(sessions.first?.endedAt, Date(timeIntervalSince1970: 300))
 
-        try await client.deleteSession(staleSession.id)
+        try await client.deleteSession(retainedSession.id)
         sessions = try await client.sessions("com.example.StaleApp")
-        XCTAssertEqual(sessions.map(\.id), [closedSession.id])
+        XCTAssertEqual(sessions, [])
+    }
+
+    @MainActor
+    func testClosingEmptySessionDeletesIt() async throws {
+        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let emptySession = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000405"),
+            bundleIdentifier: "com.example.EmptyApp",
+            displayName: "Empty App",
+            processIdentifier: 405,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        try await client.openSession(emptySession)
+        try await client.closeSession(emptySession.id, Date(timeIntervalSince1970: 120))
+
+        let apps = try await client.apps()
+        let sessions = try await client.sessions(emptySession.bundleIdentifier)
+        XCTAssertEqual(apps, [])
+        XCTAssertEqual(sessions, [])
     }
 
     private func inMemoryContainer() throws -> ModelContainer {

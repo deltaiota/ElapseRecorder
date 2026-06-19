@@ -31,7 +31,7 @@ struct AppView: View {
                 removeFromWhitelist: { app in
                     store.send(.removeViewerAppFromWhitelistButtonTapped(app))
                 },
-                moveIntoWhitelist: { app in
+                addToWhitelist: { app in
                     store.send(.addViewerAppToWhitelistButtonTapped(app))
                 },
                 deleteAllCaptures: { app in

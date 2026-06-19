@@ -12,7 +12,7 @@ struct AppInfoView: View {
                 AppIconView(icon: identity.icon)
                     .frame(height: 54)
 
-                VStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 5) {
                     VStack(alignment: .leading, spacing: -4) {
                         Text(identity.localizedName)
                             .font(.title3)
@@ -31,6 +31,7 @@ struct AppInfoView: View {
                         } label: {
                             HStack(spacing: 2) {
                                 Text(appURL.path(percentEncoded: false).replacing(/\/$/, with: ""))
+                                    .underline()
 
                                 Image(systemSymbol: .arrowRightCircleFill)
                             }

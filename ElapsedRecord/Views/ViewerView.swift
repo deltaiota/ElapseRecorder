@@ -11,7 +11,7 @@ struct ViewerView: View {
     var whitelistApps: ([WhitelistedAppConfig]) -> Void = { _ in }
     var setCaptureState: (AppCaptureSummary, Bool) -> Void = { _, _ in }
     var removeFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
-    var moveIntoWhitelist: (AppCaptureSummary) -> Void = { _ in }
+    var addToWhitelist: (AppCaptureSummary) -> Void = { _ in }
     var deleteAllCaptures: (AppCaptureSummary) -> Void = { _ in }
 
     @State private var isShowingApplicationSelection = false
@@ -50,16 +50,16 @@ struct ViewerView: View {
     private func appList() -> some View {
         List(selection: $store.selectedBundleIdentifier.sending(\.appSelected)) {
             if !whitelistedApps.isEmpty {
-                Section("Whitelisted") {
+                Section("Whitelist") {
                     ForEach(whitelistedApps) { app in
                         appRow(app, whitelistConfig: whitelistConfig(for: app.bundleIdentifier))
                     }
                 }
             }
 
-            if !staleDataApps.isEmpty {
-                Section("Stale Data") {
-                    ForEach(staleDataApps) { app in
+            if !staleApps.isEmpty {
+                Section("Stale") {
+                    ForEach(staleApps) { app in
                         appRow(app, whitelistConfig: nil)
                     }
                 }
@@ -91,7 +91,12 @@ struct ViewerView: View {
         let isWhitelisted = whitelistConfig != nil
         let isPaused = whitelistConfig?.isEnabled == false
 
-        AppSidebarRow(app: app, isWhitelisted: isWhitelisted, isPaused: isPaused) { isEnabled in
+        AppSidebarRow(
+            app: app,
+            isWhitelisted: isWhitelisted,
+            isPaused: isPaused,
+            captureInterval: whitelistConfig?.captureInterval
+        ) { isEnabled in
             setCaptureState(app, isEnabled)
         }
         .tag(app.bundleIdentifier)
@@ -120,8 +125,8 @@ struct ViewerView: View {
                 }
                 .tint(.gray)
             } else {
-                Button("Whitelist \(app.displayName)", systemSymbol: .plusCircleFill) {
-                    moveIntoWhitelist(app)
+                Button("Add \(app.displayName) to Whitelist", systemSymbol: .plusCircleFill) {
+                    addToWhitelist(app)
                 }
                 .tint(.green)
             }
@@ -142,8 +147,8 @@ struct ViewerView: View {
                     removeFromWhitelist(app)
                 }
             } else {
-                Button("Whitelist App", systemSymbol: .plusCircle) {
-                    moveIntoWhitelist(app)
+                Button("Add \(app.displayName) to Whitelist", systemSymbol: .plusCircle) {
+                    addToWhitelist(app)
                 }
             }
 
@@ -179,7 +184,7 @@ struct ViewerView: View {
                                     Text(session.startedAt, format: .dateTime.hour().minute())
                                     CountSummary(
                                         items: [
-                                            .init(text: sessionDuration(session), systemSymbol: .timer, isMonospaced: true),
+                                            .init(text: sessionDuration(session), systemSymbol: .clock, isMonospaced: true),
                                             .init(value: session.windowCount, systemSymbol: .macwindow),
                                             .init(value: session.screenshotCount, systemSymbol: .photo),
                                         ]
@@ -320,7 +325,7 @@ struct ViewerView: View {
         })
     }
 
-    private var staleDataApps: [AppCaptureSummary] {
+    private var staleApps: [AppCaptureSummary] {
         sortedApps(
             store.apps.filter { !whitelistedBundleIdentifiers.contains($0.bundleIdentifier) }
         )

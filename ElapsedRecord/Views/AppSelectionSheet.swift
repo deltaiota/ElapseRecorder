@@ -7,9 +7,7 @@ import UniformTypeIdentifiers
 struct AppSelectionSheet: View {
     @Environment(\.dismiss) private var dismiss
 
-    let runningApplications: [RunningApplication]
-    let detectedApps: [AppCaptureSummary]
-    let whitelistedBundleIdentifiers: Set<String>
+    let disabledBundleIdentifiers: Set<String>
     let defaultCaptureInterval: TimeInterval
     let addAppsToWhitelist: ([WhitelistedAppConfig]) -> Void
 
@@ -18,21 +16,41 @@ struct AppSelectionSheet: View {
     @State private var chosenFileApplications: [AppSelectionCandidate] = []
     @State private var selectedBundleIdentifiers: Set<String> = []
     @State private var searchText = ""
+    @State private var isImportingApplications = false
     @State private var importError: String?
+    @State private var refreshRunningApplicationsButtonAnimationTrigger: Int = 0
 
     var body: some View {
         NavigationStack {
-            List(selection: $selectedBundleIdentifiers) {
+            List(selection: selectionBinding) {
                 if let importError {
                     Label(importError, systemSymbol: .exclamationmarkTriangle)
                         .foregroundStyle(.orange)
                 }
 
                 ForEach(sections) { section in
-                    Section(section.title) {
+                    Section {
                         ForEach(section.candidates) { candidate in
                             candidateRow(candidate)
                                 .tag(candidate.bundleIdentifier)
+                                .disabled(isDisabled(candidate))
+                        }
+                    } header: {
+                        switch section.source {
+                        case .running:
+                            HStack {
+                                Text(section.title)
+
+                                Button {
+                                    refreshRunningApplications()
+                                    refreshRunningApplicationsButtonAnimationTrigger += 1
+                                } label: {
+                                    Image(systemSymbol: .arrowCounterclockwise)
+                                        .symbolEffect(.rotate, options: .speed(8), value: refreshRunningApplicationsButtonAnimationTrigger)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        default: Text(section.title)
                         }
                     }
                 }
@@ -46,38 +64,45 @@ struct AppSelectionSheet: View {
                     )
                 }
             }
-            .navigationTitle("Installed Apps")
-            .searchable(text: $searchText, prompt: "Search apps…")
             .toolbar {
                 ToolbarItem {
                     Button("Choose App Files…", systemSymbol: .folderBadgePlus) {
-                        chooseApplicationFiles()
+                        isImportingApplications = true
                     }
+                    .controlSize(.large)
                 }
 
                 ToolbarItem(placement: .cancellationAction) {
                     Button(TK.Action.cancel) {
                         dismiss()
                     }
+                    .controlSize(.large)
                 }
 
                 ToolbarItem(placement: .primaryAction) {
                     Button(addButtonTitle) {
                         addSelectedApps()
                     }
-                    .disabled(selectedBundleIdentifiers.isEmpty)
+                    .controlSize(.large)
+                    .disabled(selectableSelectedBundleIdentifiers.isEmpty)
                 }
             }
         }
         .frame(minWidth: 620, minHeight: 560)
         .task {
+            refreshRunningApplications()
             installedApplications = await Task.detached(priority: .userInitiated) {
                 AppSelectionCandidate.installedApplications()
             }.value
-            currentRunningApplications = await MainActor.run {
-                AppSelectionCandidate.runningApplications(fallback: runningApplications)
-            }
         }
+        .fileImporter(
+            isPresented: $isImportingApplications,
+            allowedContentTypes: [.applicationBundle],
+            allowsMultipleSelection: true
+        ) { result in
+            importApplications(result)
+        }
+        .fileDialogDefaultDirectory(Self.defaultApplicationsDirectory)
     }
 
     private func candidateRow(_ candidate: AppSelectionCandidate) -> some View {
@@ -93,6 +118,14 @@ struct AppSelectionSheet: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
                     .lineLimit(1)
+            }
+
+            Spacer()
+
+            if isDisabled(candidate) {
+                Label("Added", systemSymbol: .checkmarkCircle)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
         }
         .padding(.vertical, 2)
@@ -117,8 +150,6 @@ struct AppSelectionSheet: View {
         var candidatesByBundleIdentifier: [String: AppSelectionCandidate] = [:]
 
         func upsert(_ candidate: AppSelectionCandidate) {
-            guard !whitelistedBundleIdentifiers.contains(candidate.bundleIdentifier) else { return }
-
             if let existing = candidatesByBundleIdentifier[candidate.bundleIdentifier] {
                 candidatesByBundleIdentifier[candidate.bundleIdentifier] = existing.merging(candidate)
             } else {
@@ -138,16 +169,24 @@ struct AppSelectionSheet: View {
             upsert(application)
         }
 
-        for app in detectedApps {
-            upsert(.detected(app))
-        }
-
         return Array(candidatesByBundleIdentifier.values)
+    }
+
+    private var selectionBinding: Binding<Set<String>> {
+        Binding {
+            selectedBundleIdentifiers
+        } set: { bundleIdentifiers in
+            selectedBundleIdentifiers = bundleIdentifiers.subtracting(disabledBundleIdentifiers)
+        }
+    }
+
+    private var selectableSelectedBundleIdentifiers: Set<String> {
+        selectedBundleIdentifiers.subtracting(disabledBundleIdentifiers)
     }
 
     private var selectedCandidates: [AppSelectionCandidate] {
         mergedCandidates
-            .filter { selectedBundleIdentifiers.contains($0.bundleIdentifier) }
+            .filter { selectableSelectedBundleIdentifiers.contains($0.bundleIdentifier) }
             .sortedByDisplayName()
     }
 
@@ -169,37 +208,23 @@ struct AppSelectionSheet: View {
         do {
             let imported = try result.get().compactMap(AppSelectionCandidate.appFile)
             chosenFileApplications = chosenFileApplications.merging(imported)
-            selectedBundleIdentifiers.formUnion(imported.map(\.bundleIdentifier))
+            selectedBundleIdentifiers.formUnion(
+                imported
+                    .map(\.bundleIdentifier)
+                    .filter { !disabledBundleIdentifiers.contains($0) }
+            )
             importError = imported.isEmpty ? #tk("No usable app bundles were found.") : nil
         } catch {
             importError = error.localizedDescription
         }
     }
 
-    private func chooseApplicationFiles() {
-        let panel = NSOpenPanel()
-        panel.title = #tk("Choose App Files")
-        panel.message = #tk("Choose one or more app bundles to capture.")
-        panel.prompt = #tk("Choose")
-        panel.directoryURL = Self.defaultApplicationsDirectory
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.allowsMultipleSelection = true
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.canCreateDirectories = false
-        panel.resolvesAliases = true
-        panel.treatsFilePackagesAsDirectories = false
+    private func refreshRunningApplications() {
+        currentRunningApplications = AppSelectionCandidate.runningApplications()
+    }
 
-        let completion: (NSApplication.ModalResponse) -> Void = { response in
-            guard response == .OK else { return }
-            importApplications(.success(panel.urls))
-        }
-
-        if let window = NSApp.keyWindow {
-            panel.beginSheetModal(for: window, completionHandler: completion)
-        } else {
-            panel.begin(completionHandler: completion)
-        }
+    private func isDisabled(_ candidate: AppSelectionCandidate) -> Bool {
+        disabledBundleIdentifiers.contains(candidate.bundleIdentifier)
     }
 
     private static var defaultApplicationsDirectory: URL {
@@ -218,15 +243,15 @@ struct AppSelectionSheet: View {
     }
 
     private var addButtonTitle: String {
-        selectedBundleIdentifiers.count == 1
+        selectableSelectedBundleIdentifiers.count == 1
             ? #tk("Add 1 App")
-            : #tk("Add \(selectedBundleIdentifiers.count) Apps")
+            : #tk("Add \(selectableSelectedBundleIdentifiers.count) Apps")
     }
 
     private var selectionSummary: String {
-        selectedBundleIdentifiers.count == 1
+        selectableSelectedBundleIdentifiers.count == 1
             ? #tk("1 app selected")
-            : #tk("\(selectedBundleIdentifiers.count) apps selected")
+            : #tk("\(selectableSelectedBundleIdentifiers.count) apps selected")
     }
 }
 
@@ -259,7 +284,7 @@ private nonisolated struct AppSelectionCandidate: Identifiable, Hashable {
     }
 
     var primarySource: AppSelectionSource {
-        AppSelectionSource.allCases.first { sources.contains($0) } ?? .detected
+        AppSelectionSource.allCases.first { sources.contains($0) } ?? .installed
     }
 
     @MainActor
@@ -270,36 +295,10 @@ private nonisolated struct AppSelectionCandidate: Identifiable, Hashable {
     }
 
     @MainActor
-    static func running(_ application: RunningApplication) -> Self {
-        let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: application.bundleIdentifier)
-        let identity = InstalledAppIdentity(
-            bundleIdentifier: application.bundleIdentifier,
-            recordedName: application.displayName,
-            appURL: appURL
-        )
-
-        return Self(
-            bundleIdentifier: application.bundleIdentifier,
-            displayName: identity.localizedName,
-            appURL: identity.appURL,
-            sources: [.running]
-        )
-    }
-
-    @MainActor
-    static func runningApplications(fallback applications: [RunningApplication]) -> [Self] {
-        let liveApplications = NSWorkspace.shared.runningApplications
+    static func runningApplications() -> [Self] {
+        NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
             .compactMap(runningApplication)
-            .merging([])
-            .sortedByDisplayName()
-
-        if !liveApplications.isEmpty {
-            return liveApplications
-        }
-
-        return applications
-            .map(running)
             .merging([])
             .sortedByDisplayName()
     }
@@ -322,17 +321,6 @@ private nonisolated struct AppSelectionCandidate: Identifiable, Hashable {
             displayName: identity.localizedName,
             appURL: identity.appURL,
             sources: [.running]
-        )
-    }
-
-    @MainActor
-    static func detected(_ app: AppCaptureSummary) -> Self {
-        let identity = InstalledAppIdentity(app: app)
-        return Self(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: identity.localizedName,
-            appURL: identity.appURL,
-            sources: [.detected]
         )
     }
 
@@ -425,7 +413,6 @@ private nonisolated enum AppSelectionSource: CaseIterable, Hashable, Equatable {
     case chosenFile
     case running
     case installed
-    case detected
 
     var sectionTitle: String {
         switch self {
@@ -435,8 +422,6 @@ private nonisolated enum AppSelectionSource: CaseIterable, Hashable, Equatable {
             return #tk("Running Apps")
         case .installed:
             return #tk("Installed Applications")
-        case .detected:
-            return #tk("Detected Apps")
         }
     }
 
@@ -448,8 +433,6 @@ private nonisolated enum AppSelectionSource: CaseIterable, Hashable, Equatable {
             return #tk("Running")
         case .installed:
             return #tk("Installed")
-        case .detected:
-            return #tk("Detected")
         }
     }
 
@@ -461,8 +444,6 @@ private nonisolated enum AppSelectionSource: CaseIterable, Hashable, Equatable {
             return .playCircle
         case .installed:
             return .trayAndArrowDown
-        case .detected:
-            return .appDashed
         }
     }
 }
@@ -501,23 +482,7 @@ private nonisolated extension Set where Element == AppSelectionSource {
 
 #Preview {
     AppSelectionSheet(
-        runningApplications: [
-            RunningApplication(
-                bundleIdentifier: "com.apple.TextEdit",
-                displayName: "TextEdit",
-                processIdentifier: 42
-            ),
-        ],
-        detectedApps: [
-            AppCaptureSummary(
-                bundleIdentifier: "com.apple.finder",
-                displayName: "Finder",
-                sessionCount: 3,
-                screenshotCount: 48,
-                lastCapturedAt: .now
-            ),
-        ],
-        whitelistedBundleIdentifiers: ["com.apple.Safari"],
+        disabledBundleIdentifiers: ["com.apple.Safari", "com.apple.finder"],
         defaultCaptureInterval: 5,
         addAppsToWhitelist: { _ in }
     )

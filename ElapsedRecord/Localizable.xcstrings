@@ -166,28 +166,6 @@
         }
       }
     },
-    "AppSelectionSource.detected" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Detected"
-          }
-        }
-      }
-    },
-    "AppSelectionSource.detectedApps" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Detected Apps"
-          }
-        }
-      }
-    },
     "AppSelectionSource.installed" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -316,9 +294,6 @@
     "Idle" : {
 
     },
-    "Installed Apps" : {
-
-    },
     "Last Capture" : {
 
     },
@@ -377,9 +352,6 @@
 
     },
     "Screenshots" : {
-
-    },
-    "Search apps…" : {
 
     },
     "Session %@ - PID %d" : {

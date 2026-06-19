@@ -20,13 +20,8 @@ struct AppView: View {
                     state: \.viewer,
                     action: \.viewer
                 ),
-                runningApplications: Array(store.captureEngine.runningApplications.values),
                 whitelistedBundleIdentifiers: Set(store.whitelistConfigs.map(\.bundleIdentifier)),
                 defaultCaptureInterval: store.draftIntervalSeconds,
-                refreshAppSelectionSources: {
-                    store.send(.refreshRunningApplicationsButtonTapped)
-                    store.send(.refreshViewerButtonTapped)
-                },
                 addAppsToWhitelist: { configs in
                     store.send(.addWhitelistConfigsButtonTapped(configs))
                 },

@@ -6,10 +6,8 @@ import TranslateKit
 struct ViewerView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
-    var runningApplications: [RunningApplication] = []
     var whitelistedBundleIdentifiers: Set<String> = []
     var defaultCaptureInterval: TimeInterval = 5
-    var refreshAppSelectionSources: () -> Void = {}
     var addAppsToWhitelist: ([WhitelistedAppConfig]) -> Void = { _ in }
     var removeAppFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
     var addAppToWhitelist: (AppCaptureSummary) -> Void = { _ in }
@@ -24,9 +22,7 @@ struct ViewerView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 225, max: 400)
                 .sheet(isPresented: $isShowingAppSelection) {
                     AppSelectionSheet(
-                        runningApplications: runningApplications,
-                        detectedApps: store.apps,
-                        whitelistedBundleIdentifiers: whitelistedBundleIdentifiers,
+                        disabledBundleIdentifiers: whitelistedBundleIdentifiers.union(store.apps.map(\.bundleIdentifier)),
                         defaultCaptureInterval: defaultCaptureInterval,
                         addAppsToWhitelist: addAppsToWhitelist
                     )
@@ -69,7 +65,6 @@ struct ViewerView: View {
         }
         .safeAreaInset(edge: .bottom) {
             Button {
-                refreshAppSelectionSources()
                 isShowingAppSelection = true
             } label: {
                 Spacer(minLength: 0)

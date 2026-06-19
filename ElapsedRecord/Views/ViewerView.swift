@@ -335,3 +335,10 @@ private extension CGImage {
         CGSize(width: width, height: height)
     }
 }
+
+#Preview {
+    ViewerView(store: .init(initialState: ViewerFeature.State()) {
+        ViewerFeature()
+    })
+    .frame(width: 720, height: 480)
+}

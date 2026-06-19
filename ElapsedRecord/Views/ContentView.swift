@@ -22,4 +22,5 @@ struct ContentView: View {
             AppFeature()
         }
     )
+    .frame(width: 720, height: 480)
 }

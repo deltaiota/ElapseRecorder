@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (%@)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
     "%lld bytes" : {
 
     },
@@ -13,6 +23,446 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$lld sessions • %2$lld screenshots"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.application" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Application"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.bundleIdentifier" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bundle Identifier"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.lastCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last Capture"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.name" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Name"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.notFound" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not found"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.path" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Path"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.recordedName" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Recorded Name"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.screenshots" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Screenshots"
+          }
+        }
+      }
+    },
+    "AppInfoPopover.sessions" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sessions"
+          }
+        }
+      }
+    },
+    "AppSidebarRow.showAppInformation" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Show app information"
+          }
+        }
+      }
+    },
+    "AppView.ActiveCaptureStatus.activeConfigDisplayNameEveryIntActiveConfigCaptureInterval…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ every %2$llds"
+          }
+        }
+      }
+    },
+    "AppView.ActiveCaptureStatus.capturingActiveSessionsCount" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capturing %lld"
+          }
+        }
+      }
+    },
+    "AppView.ActiveCaptureStatus.idle" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Idle"
+          }
+        }
+      }
+    },
+    "AppView.CaptureStatus.ready" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Ready"
+          }
+        }
+      }
+    },
+    "AppView.CaptureStatus.requestScreenRecording" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Request Screen Recording"
+          }
+        }
+      }
+    },
+    "AppView.CaptureStatus.retry" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Retry"
+          }
+        }
+      }
+    },
+    "AppView.CaptureStatus.screenRecordingDenied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Screen Recording denied"
+          }
+        }
+      }
+    },
+    "AppView.DiagnosticsMenu.diagnostics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Diagnostics"
+          }
+        }
+      }
+    },
+    "AppView.LifecycleDiagnostics.noWorkspaceEventYet" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No workspace event yet"
+          }
+        }
+      }
+    },
+    "AppView.LifecycleDiagnostics.storeCaptureEngineRunningApplicationsCountRunningAppsSeen" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%lld running apps seen"
+          }
+        }
+      }
+    },
+    "AppView.RunningApplicationsMenu.addRunningApp" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add running app"
+          }
+        }
+      }
+    },
+    "AppView.RunningApplicationsMenu.noRunningAppsToAdd" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No running apps to add"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.add" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.bundleID" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bundle ID"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.displayName" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Display name"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.everyIntStoreDraftIntervalSecondsS" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Every %llds"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.refreshApps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Refresh apps"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.refreshViewer" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Refresh viewer"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.revealCaptures" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Reveal captures"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistBar.whitelist" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Whitelist"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistRuntimeDetails.matchedRunningAppPIDApplicationProcessIdentifier" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Matched running app - PID %d"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistRuntimeDetails.noRunningProcessMatched" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No running process matched"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistRuntimeDetails.sessionActiveSessionIdUuidStringPrefix8PIDActive…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Session %1$@ - PID %2$d"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.capturing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capturing"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.disabled" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Disabled"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.runningWaitingToStart" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Running, waiting to start"
+          }
+        }
+      }
+    },
+    "AppView.WhitelistStatus.startsOnLaunch" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Starts on launch"
+          }
+        }
+      }
+    },
+    "AppView.WorkspaceEventSummary.lastEventActivatedApplicationDisplayName" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last event: activated %@"
+          }
+        }
+      }
+    },
+    "AppView.WorkspaceEventSummary.lastEventLaunchedApplicationDisplayName" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last event: launched %@"
+          }
+        }
+      }
+    },
+    "AppView.WorkspaceEventSummary.lastEventQuitApplicationDisplayName" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Last event: quit %@"
           }
         }
       }
@@ -72,6 +522,17 @@
         }
       }
     },
+    "ViewerView.DetailPane.allWindows" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "All Windows"
+          }
+        }
+      }
+    },
     "ViewerView.DetailPane.chooseASession" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -79,17 +540,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Choose a session"
-          }
-        }
-      }
-    },
-    "ViewerView.DetailPane.windows" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Windows"
           }
         }
       }
@@ -122,7 +572,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "All screenshots"
+            "value" : "All Screenshots"
           }
         }
       }
@@ -149,24 +599,13 @@
         }
       }
     },
-    "ViewerView.SessionList.deleteSelectedSession" : {
+    "ViewerView.SessionList.deleteSession" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "Delete selected session"
-          }
-        }
-      }
-    },
-    "ViewerView.SessionList.sessions" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Sessions"
+            "value" : "Delete Session"
           }
         }
       }
@@ -192,6 +631,9 @@
           }
         }
       }
+    },
+    "Window" : {
+
     }
   },
   "version" : "1.1"

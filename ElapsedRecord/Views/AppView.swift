@@ -36,7 +36,7 @@ struct AppView: View {
     private func whitelistBar() -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
-                Label(#tk("Whitelist"), systemSymbol: .app)
+                Label("Whitelist", systemSymbol: .app)
                     .font(.headline)
 
                 activeCaptureStatus()
@@ -48,7 +48,7 @@ struct AppView: View {
                 Button {
                     store.send(.revealCaptureRootButtonTapped)
                 } label: {
-                    Label(#tk("Reveal captures"), systemSymbol: .folder)
+                    Label("Reveal captures", systemSymbol: .folder)
                 }
 
                 runningApplicationsMenu()
@@ -56,13 +56,13 @@ struct AppView: View {
                 Button {
                     store.send(.refreshRunningApplicationsButtonTapped)
                 } label: {
-                    Label(#tk("Refresh apps"), systemSymbol: .arrowClockwise)
+                    Label("Refresh apps", systemSymbol: .arrowClockwise)
                 }
 
                 Button {
                     store.send(.refreshViewerButtonTapped)
                 } label: {
-                    Label(#tk("Refresh viewer"), systemSymbol: .arrowClockwise)
+                    Label("Refresh viewer", systemSymbol: .arrowClockwise)
                 }
 
                 diagnosticsMenu()
@@ -72,14 +72,14 @@ struct AppView: View {
 
             HStack(alignment: .center, spacing: 8) {
                 TextField(
-                    #tk("Bundle ID"),
+                    "Bundle ID",
                     text: $store.draftBundleIdentifier.sending(\.draftBundleIdentifierChanged)
                 )
                 .textFieldStyle(.roundedBorder)
                 .frame(minWidth: 240)
 
                 TextField(
-                    #tk("Display name"),
+                    "Display name",
                     text: $store.draftDisplayName.sending(\.draftDisplayNameChanged)
                 )
                 .textFieldStyle(.roundedBorder)
@@ -90,7 +90,7 @@ struct AppView: View {
                     in: 1 ... 3600,
                     step: 1
                 ) {
-                    Text(#tk("Every \(Int(store.draftIntervalSeconds))s"))
+                    Text("Every \(Int(store.draftIntervalSeconds))s")
                         .monospacedDigit()
                 }
                 .frame(width: 130)
@@ -98,7 +98,7 @@ struct AppView: View {
                 Button {
                     store.send(.addDraftWhitelistButtonTapped)
                 } label: {
-                    Label(#tk("Add"), systemSymbol: .plusCircle)
+                    Label("Add", systemSymbol: .plusCircle)
                 }
                 .disabled(!store.canAddDraftWhitelist)
 
@@ -116,7 +116,7 @@ struct AppView: View {
             }
 
 //            if store.whitelistConfigs.isEmpty {
-//                Text(#tk("Add an app to the whitelist. If it is already running, recording starts immediately; otherwise it starts on launch."))
+//                Text("Add an app to the whitelist. If it is already running, recording starts immediately; otherwise it starts on launch.")
 //                    .font(.caption)
 //                    .foregroundStyle(.secondary)
 //            } else {
@@ -135,7 +135,7 @@ struct AppView: View {
     private func runningApplicationsMenu() -> some View {
         Menu {
             if store.runningApplicationsAvailableForWhitelist.isEmpty {
-                Text(#tk("No running apps to add"))
+                Text("No running apps to add")
             } else {
                 ForEach(store.runningApplicationsAvailableForWhitelist) { application in
                     Button {
@@ -146,7 +146,7 @@ struct AppView: View {
                 }
             }
         } label: {
-            Label(#tk("Add running app"), systemSymbol: .plusCircle)
+            Label("Add running app", systemSymbol: .plusCircle)
         }
     }
 
@@ -157,7 +157,7 @@ struct AppView: View {
                     Text(diagnostic)
                 }
             } label: {
-                Label(#tk("Diagnostics"), systemSymbol: .stethoscope)
+                Label("Diagnostics", systemSymbol: .stethoscope)
             }
         }
     }
@@ -197,7 +197,7 @@ struct AppView: View {
 //                in: 1 ... 3600,
 //                step: 1
 //            ) {
-//                Text(#tk("Every \(Int(config.captureInterval))s"))
+//                Text("Every \(Int(config.captureInterval))s")
 //                    .monospacedDigit()
 //            }
 //
@@ -212,23 +212,23 @@ struct AppView: View {
 
     @ViewBuilder private func whitelistStatus(_ config: WhitelistedAppConfig) -> some View {
         if store.captureEngine.activeSessions[config.bundleIdentifier] != nil {
-            Label(#tk("Capturing"), systemSymbol: .recordCircle)
+            Label("Capturing", systemSymbol: .recordCircle)
                 .foregroundStyle(.green)
         } else if !config.isEnabled {
-            Label(#tk("Disabled"), systemSymbol: .pauseCircle)
+            Label("Disabled", systemSymbol: .pauseCircle)
                 .foregroundStyle(.secondary)
         } else if store.captureEngine.runningApplications[config.bundleIdentifier] != nil {
-            Label(#tk("Running, waiting to start"), systemSymbol: .clock)
+            Label("Running, waiting to start", systemSymbol: .clock)
                 .foregroundStyle(.orange)
         } else {
-            Label(#tk("Starts on launch"), systemSymbol: .clock)
+            Label("Starts on launch", systemSymbol: .clock)
                 .foregroundStyle(.secondary)
         }
     }
 
     private func lifecycleDiagnostics() -> some View {
         HStack(spacing: 12) {
-            Label(#tk("\(store.captureEngine.runningApplications.count) running apps seen"), systemSymbol: .app)
+            Label("\(store.captureEngine.runningApplications.count) running apps seen", systemSymbol: .app)
                 .foregroundStyle(.secondary)
 
             if let event = store.captureEngine.lastWorkspaceEvent {
@@ -236,7 +236,7 @@ struct AppView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else {
-                Label(#tk("No workspace event yet"), systemSymbol: .clock)
+                Label("No workspace event yet", systemSymbol: .clock)
                     .foregroundStyle(.secondary)
             }
 
@@ -251,17 +251,17 @@ struct AppView: View {
 
     @ViewBuilder private func whitelistRuntimeDetails(_ config: WhitelistedAppConfig) -> some View {
         if let active = store.captureEngine.activeSessions[config.bundleIdentifier] {
-            Text(#tk("Session \(active.session.id.uuidString.prefix(8)) - PID \(active.application.processIdentifier)"))
+            Text("Session \(active.session.id.uuidString.prefix(8)) - PID \(active.application.processIdentifier)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         } else if let application = store.captureEngine.runningApplications[config.bundleIdentifier] {
-            Text(#tk("Matched running app - PID \(application.processIdentifier)"))
+            Text("Matched running app - PID \(application.processIdentifier)")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         } else {
-            Text(#tk("No running process matched"))
+            Text("No running process matched")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -274,15 +274,15 @@ struct AppView: View {
         }
 
         if activeSessions.isEmpty {
-            Label(#tk("Idle"), systemSymbol: .pauseCircle)
+            Label("Idle", systemSymbol: .pauseCircle)
                 .foregroundStyle(.secondary)
         } else {
             Menu {
                 ForEach(activeSessions, id: \.session.id) { active in
-                    Text(#tk("\(active.config.displayName) every \(Int(active.config.captureInterval))s"))
+                    Text("\(active.config.displayName) every \(Int(active.config.captureInterval))s")
                 }
             } label: {
-                Label(#tk("Capturing \(activeSessions.count)"), systemSymbol: .recordCircle)
+                Label("Capturing \(activeSessions.count)", systemSymbol: .recordCircle)
             }
             .foregroundStyle(.green)
         }
@@ -291,25 +291,25 @@ struct AppView: View {
     @ViewBuilder private func captureStatus() -> some View {
         switch store.captureEngine.permissionStatus {
         case .authorized:
-            Label(#tk("Ready"), systemSymbol: .checkmarkCircle)
+            Label("Ready", systemSymbol: .checkmarkCircle)
                 .foregroundStyle(.secondary)
 
         case .notDetermined:
             Button {
                 store.send(.requestCapturePermissionButtonTapped)
             } label: {
-                Label(#tk("Request Screen Recording"), systemSymbol: .questionmarkCircle)
+                Label("Request Screen Recording", systemSymbol: .questionmarkCircle)
             }
 
         case .denied:
             HStack(spacing: 6) {
-                Label(#tk("Screen Recording denied"), systemSymbol: .exclamationmarkTriangle)
+                Label("Screen Recording denied", systemSymbol: .exclamationmarkTriangle)
                     .foregroundStyle(.orange)
 
                 Button {
                     store.send(.requestCapturePermissionButtonTapped)
                 } label: {
-                    Text(#tk("Retry"))
+                    Text("Retry")
                 }
             }
         }

@@ -20,7 +20,7 @@ struct ViewerView: View {
             detailPane()
                 .navigationSplitViewColumnWidth(min: 300, ideal: 500)
         }
-        .navigationTitle(#tk("Elapsed Record"))
+        .navigationTitle("Elapsed Record")
         .sheet(item: $store.selectedScreenshot.sending(\.screenshotSelected)) { record in
             ScreenshotDetailView(
                 record: record,
@@ -49,7 +49,7 @@ struct ViewerView: View {
                         .font(.caption)
                 }
 
-                Label(#tk("All Screenshots"), systemSymbol: .photoStack)
+                Label("All Screenshots", systemSymbol: .photoStack)
                     .tag(ViewerFeature.State.SessionListSelection.flat)
                     .listRowSeparator(.hidden)
 
@@ -79,7 +79,7 @@ struct ViewerView: View {
                                 Button(role: .destructive) {
                                     store.send(.deleteSessionButtonTapped(session))
                                 } label: {
-                                    Text(#tk("Delete Session"))
+                                    Text("Delete Session")
                                 }
                             }
                         }
@@ -94,9 +94,9 @@ struct ViewerView: View {
         .overlay(alignment: .center) {
             if store.selectedBundleIdentifier == nil {
                 ContentUnavailableView(
-                    #tk("Choose an app"),
+                    "Choose an app",
                     systemSymbol: .app,
-                    description: Text(#tk("Captured sessions will appear here."))
+                    description: Text("Captured sessions will appear here.")
                 )
             }
         }
@@ -110,7 +110,7 @@ struct ViewerView: View {
                     records: store.flatScreenshots,
                     selectScreenshot: { store.send(.screenshotSelected($0)) }
                 )
-                .navigationTitle(#tk("All screenshots"))
+                .navigationTitle("All screenshots")
             } else if store.selectedSessionID != nil {
                 ScreenshotGrid(
                     records: store.windowScreenshots,
@@ -119,7 +119,7 @@ struct ViewerView: View {
                 .safeAreaInset(edge: .top) {
                     VStack(spacing: 0) {
                         Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
-                            Text(#tk("All Windows"))
+                            Text("All Windows")
                                 .tag(ViewerFeature.State.WindowPickerSelection.all)
 
                             if !store.windows.isEmpty {
@@ -148,9 +148,9 @@ struct ViewerView: View {
         .overlay(alignment: .center) {
             if !store.isShowingFlatGallery && store.selectedSessionID == nil {
                 ContentUnavailableView(
-                    #tk("Choose a session"),
+                    "Choose a session",
                     systemSymbol: .clock,
-                    description: Text(#tk("Windows and screenshots will appear here."))
+                    description: Text("Windows and screenshots will appear here.")
                 )
             }
         }
@@ -220,7 +220,7 @@ private struct AppSidebarRow: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .help(#tk("Show app information"))
+            .help("Show app information")
             .popover(isPresented: $isShowingInfo, arrowEdge: .trailing) {
                 AppInfoPopover(app: app, identity: identity)
             }
@@ -251,42 +251,42 @@ private struct AppInfoPopover: View {
 
     var body: some View {
         Form {
-            LabeledContent(#tk("Name")) {
+            LabeledContent("Name") {
                 Text(identity.localizedName)
             }
 
-            LabeledContent(#tk("Bundle Identifier")) {
+            LabeledContent("Bundle Identifier") {
                 Text(identity.bundleIdentifier)
                     .textSelection(.enabled)
             }
 
-            LabeledContent(#tk("Recorded Name")) {
+            LabeledContent("Recorded Name") {
                 Text(identity.recordedName)
             }
 
             if let appURL = identity.appURL {
-                LabeledContent(#tk("Path")) {
+                LabeledContent("Path") {
                     Text(appURL.path(percentEncoded: false))
                         .lineLimit(3)
                         .textSelection(.enabled)
                 }
             } else {
-                LabeledContent(#tk("Application")) {
-                    Text(#tk("Not found"))
+                LabeledContent("Application") {
+                    Text("Not found")
                         .foregroundStyle(.secondary)
                 }
             }
 
-            LabeledContent(#tk("Sessions")) {
+            LabeledContent("Sessions") {
                 Text(app.sessionCount, format: .number)
             }
 
-            LabeledContent(#tk("Screenshots")) {
+            LabeledContent("Screenshots") {
                 Text(app.screenshotCount, format: .number)
             }
 
             if let lastCapturedAt = app.lastCapturedAt {
-                LabeledContent(#tk("Last Capture")) {
+                LabeledContent("Last Capture") {
                     Text(lastCapturedAt, format: .dateTime)
                 }
             }
@@ -378,9 +378,9 @@ private struct ScreenshotGrid: View {
         .overlay {
             if records.isEmpty {
                 ContentUnavailableView(
-                    #tk("No screenshots"),
-                    systemImage: "photo",
-                    description: Text(#tk("Captured frames will appear here."))
+                    "No screenshots",
+                    systemSymbol: .photo,
+                    description: Text("Captured frames will appear here.")
                 )
             }
         }
@@ -407,7 +407,7 @@ private struct ScreenshotDetailView: View {
                         .scaledToFit()
                 } else if let errorMessage {
                     ContentUnavailableView(
-                        #tk("Could not load image"),
+                        "Could not load image",
                         systemImage: "exclamationmark.triangle",
                         description: Text(errorMessage)
                     )
@@ -429,7 +429,7 @@ private struct ScreenshotDetailView: View {
 
             HStack {
                 Spacer()
-                Button(#tk("Reveal in Finder")) {
+                Button("Reveal in Finder") {
                     revealInFinder()
                 }
             }

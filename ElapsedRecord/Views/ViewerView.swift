@@ -6,6 +6,11 @@ import TranslateKit
 struct ViewerView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
+    var whitelistedBundleIdentifiers: Set<String> = []
+    var removeAppFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
+    var addAppToWhitelist: (AppCaptureSummary) -> Void = { _ in }
+    var deleteApp: (AppCaptureSummary) -> Void = { _ in }
+
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
 
     var body: some View {
@@ -32,11 +37,68 @@ struct ViewerView: View {
 
     private func appList() -> some View {
         List(selection: $store.selectedBundleIdentifier.sending(\.appSelected)) {
-            ForEach(store.apps) { app in
-                AppSidebarRow(app: app)
-                    .tag(app.bundleIdentifier)
+            if !whitelistedApps.isEmpty {
+                Section("Whitelisted") {
+                    ForEach(whitelistedApps) { app in
+                        appRow(app, isWhitelisted: true)
+                    }
+                }
+            }
+
+            if !removedApps.isEmpty {
+                Section("Removed from Whitelist") {
+                    ForEach(removedApps) { app in
+                        appRow(app, isWhitelisted: false)
+                    }
+                }
             }
         }
+    }
+
+    private func appRow(
+        _ app: AppCaptureSummary,
+        isWhitelisted: Bool
+    ) -> some View {
+        AppSidebarRow(app: app, isWhitelisted: isWhitelisted)
+            .tag(app.bundleIdentifier)
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button(role: .destructive) {
+                    deleteApp(app)
+                } label: {
+                    Label("Delete All Captures", systemSymbol: .trash)
+                }
+
+                if isWhitelisted {
+                    Button("Remove from Whitelist", systemSymbol: .pauseFill) {
+                        removeAppFromWhitelist(app)
+                    }
+                    .tint(.orange)
+                } else {
+                    Button("Add to Whitelist", systemSymbol: .playFill) {
+                        addAppToWhitelist(app)
+                    }
+                    .tint(.green)
+                }
+            }
+            .contextMenu {
+                if isWhitelisted {
+                    Button("Remove from Whitelist", systemSymbol: .pause) {
+                        removeAppFromWhitelist(app)
+                    }
+                } else {
+                    Button("Add to Whitelist", systemSymbol: .play) {
+                        addAppToWhitelist(app)
+                    }
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    deleteApp(app)
+                } label: {
+                    Label("Delete All Captures", systemSymbol: .trash)
+                }
+            }
     }
 
     private func sessionList() -> some View {
@@ -84,7 +146,7 @@ struct ViewerView: View {
                                 Button(role: .destructive) {
                                     store.send(.deleteSessionButtonTapped(session))
                                 } label: {
-                                    Text("Delete Session")
+                                    Label("Delete Session", systemSymbol: .trash)
                                 }
                             }
                         }
@@ -126,7 +188,7 @@ struct ViewerView: View {
                         Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
                             Text("All Windows")
                                 .tag(ViewerFeature.State.WindowPickerSelection.all)
-                            
+
                             if !store.windows.isEmpty {
                                 Divider()
 
@@ -182,6 +244,30 @@ struct ViewerView: View {
             }
     }
 
+    private var whitelistedApps: [AppCaptureSummary] {
+        sortedApps(
+            store.apps.filter { whitelistedBundleIdentifiers.contains($0.bundleIdentifier) }
+        )
+    }
+
+    private var removedApps: [AppCaptureSummary] {
+        sortedApps(
+            store.apps.filter { !whitelistedBundleIdentifiers.contains($0.bundleIdentifier) }
+        )
+    }
+
+    private func sortedApps(_ apps: [AppCaptureSummary]) -> [AppCaptureSummary] {
+        apps.sorted { lhs, rhs in
+            let lhsName = InstalledAppIdentity(app: lhs).localizedName
+            let rhsName = InstalledAppIdentity(app: rhs).localizedName
+            let comparison = lhsName.localizedStandardCompare(rhsName)
+            if comparison == .orderedSame {
+                return lhs.bundleIdentifier < rhs.bundleIdentifier
+            }
+            return comparison == .orderedAscending
+        }
+    }
+
     private func sessionDuration(_ session: CaptureSessionSummary) -> String {
         Duration.seconds(session.duration)
             .formatted(.time(pattern: .hourMinuteSecond))
@@ -192,15 +278,6 @@ struct ViewerView: View {
             return #tk("Window \(window.displayNumber): \(label)")
         }
         return #tk("Window \(window.displayNumber)")
-    }
-}
-
-struct SessionDaySection: Identifiable {
-    var day: Date
-    var sessions: [CaptureSessionSummary]
-    
-    var id: Date {
-        day
     }
 }
 

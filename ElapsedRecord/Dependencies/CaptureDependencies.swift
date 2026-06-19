@@ -59,6 +59,7 @@ nonisolated struct FileStorageClient {
     var screenshotURL: @Sendable (_ session: CaptureSession, _ window: MonitoredWindow, _ capturedAt: Date, _ format: CaptureImageFormat) throws -> URL
     var write: @Sendable (_ data: Data, _ url: URL) async throws -> Int
     var deleteSessionCaptures: @Sendable (_ bundleIdentifier: String, _ sessionID: UUID) async throws -> Void
+    var deleteAppCaptures: @Sendable (_ bundleIdentifier: String) async throws -> Void
 }
 
 nonisolated struct PersistenceClient {
@@ -66,6 +67,7 @@ nonisolated struct PersistenceClient {
     var closeSession: @Sendable (_ sessionID: UUID, _ endedAt: Date) async throws -> Void
     var closeOpenSessions: @Sendable (_ endedAt: Date) async throws -> Int
     var deleteSession: @Sendable (_ sessionID: UUID) async throws -> Void
+    var deleteApp: @Sendable (_ bundleIdentifier: String) async throws -> Void
     var upsertWindow: @Sendable (_ window: MonitoredWindow) async throws -> Void
     var recordScreenshot: @Sendable (_ record: ScreenshotRecord) async throws -> Void
     var apps: @Sendable () async throws -> [AppCaptureSummary]
@@ -274,6 +276,14 @@ extension FileStorageClient: DependencyKey {
             )
             guard FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)) else { return }
             try FileManager.default.removeItem(at: directory)
+        },
+        deleteAppCaptures: { bundleIdentifier in
+            let directory = try FileStoragePaths.appDirectory(
+                bundleIdentifier: bundleIdentifier,
+                create: false
+            )
+            guard FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)) else { return }
+            try FileManager.default.removeItem(at: directory)
         }
     )
 }
@@ -296,9 +306,22 @@ nonisolated enum FileStoragePaths {
         sessionID: UUID,
         create: Bool
     ) throws -> URL {
+        let directory = try appDirectory(bundleIdentifier: bundleIdentifier, create: create)
+            .appending(path: sessionID.uuidString, directoryHint: .isDirectory)
+
+        if create {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+
+        return directory
+    }
+
+    static func appDirectory(
+        bundleIdentifier: String,
+        create: Bool
+    ) throws -> URL {
         let directory = try captureRoot()
             .appending(path: bundleIdentifier, directoryHint: .isDirectory)
-            .appending(path: sessionID.uuidString, directoryHint: .isDirectory)
 
         if create {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -490,6 +513,7 @@ nonisolated extension PersistenceClient {
             return 0
         },
         deleteSession: { _ in reportIssue("PersistenceClient.deleteSession is unimplemented") },
+        deleteApp: { _ in reportIssue("PersistenceClient.deleteApp is unimplemented") },
         upsertWindow: { _ in reportIssue("PersistenceClient.upsertWindow is unimplemented") },
         recordScreenshot: { _ in reportIssue("PersistenceClient.recordScreenshot is unimplemented") },
         apps: {

@@ -157,6 +157,105 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testViewerAppWhitelistActionsPersistChanges() async {
+        let savedConfigs = LockIsolated([[WhitelistedAppConfig]]())
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: "com.example.ViewerApp",
+            displayName: "Viewer App",
+            captureInterval: 5,
+            isEnabled: true
+        )
+        let app = AppCaptureSummary(
+            bundleIdentifier: config.bundleIdentifier,
+            displayName: config.displayName,
+            sessionCount: 2,
+            screenshotCount: 10,
+            lastCapturedAt: Date(timeIntervalSince1970: 100)
+        )
+        var state = AppFeature.State()
+        state.whitelistConfigs = [config]
+        state.captureEngine.whitelist = [config.bundleIdentifier: config]
+        state.draftIntervalSeconds = 9
+
+        let store = TestStore(initialState: state) {
+            AppFeature()
+        } withDependencies: {
+            $0.whitelistConfigurationClient.save = { configs in
+                savedConfigs.withValue { $0.append(configs) }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.removeViewerAppFromWhitelistButtonTapped(app))
+        await store.receive(.captureEngine(.whitelistUpdated([])))
+        XCTAssertEqual(store.state.whitelistConfigs, [])
+        XCTAssertEqual(store.state.captureEngine.whitelist, [:])
+
+        let readdedConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 9,
+            isEnabled: true
+        )
+        await store.send(.addViewerAppToWhitelistButtonTapped(app))
+        await store.receive(.captureEngine(.whitelistUpdated([readdedConfig])))
+        XCTAssertEqual(store.state.whitelistConfigs, [readdedConfig])
+        XCTAssertEqual(store.state.captureEngine.whitelist, [readdedConfig.bundleIdentifier: readdedConfig])
+
+        XCTAssertEqual(savedConfigs.value, [[], [readdedConfig]])
+    }
+
+    @MainActor
+    func testDeletingViewerAppRemovesWhitelistFilesAndMetadataThenRefreshes() async {
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: "com.example.DeleteApp",
+            displayName: "Delete App",
+            captureInterval: 5,
+            isEnabled: true
+        )
+        let app = AppCaptureSummary(
+            bundleIdentifier: config.bundleIdentifier,
+            displayName: config.displayName,
+            sessionCount: 2,
+            screenshotCount: 10,
+            lastCapturedAt: Date(timeIntervalSince1970: 100)
+        )
+        let savedConfigs = LockIsolated([[WhitelistedAppConfig]]())
+        let deletedCaptureApps = LockIsolated([String]())
+        let deletedMetadataApps = LockIsolated([String]())
+        var state = AppFeature.State()
+        state.whitelistConfigs = [config]
+        state.captureEngine.whitelist = [config.bundleIdentifier: config]
+
+        let store = TestStore(initialState: state) {
+            AppFeature()
+        } withDependencies: {
+            $0.fileStorageClient.deleteAppCaptures = { bundleIdentifier in
+                deletedCaptureApps.withValue { $0.append(bundleIdentifier) }
+            }
+            $0.persistenceClient.deleteApp = { bundleIdentifier in
+                deletedMetadataApps.withValue { $0.append(bundleIdentifier) }
+            }
+            $0.persistenceClient.apps = { [] }
+            $0.whitelistConfigurationClient.save = { configs in
+                savedConfigs.withValue { $0.append(configs) }
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.deleteViewerAppButtonTapped(app))
+        await store.receive(.captureEngine(.whitelistUpdated([])))
+        await store.receive(.viewer(.refresh))
+        await store.receive(.viewer(.appsLoaded([])))
+        XCTAssertEqual(store.state.whitelistConfigs, [])
+        XCTAssertEqual(store.state.captureEngine.whitelist, [:])
+
+        XCTAssertEqual(savedConfigs.value, [[]])
+        XCTAssertEqual(deletedCaptureApps.value, [app.bundleIdentifier])
+        XCTAssertEqual(deletedMetadataApps.value, [app.bundleIdentifier])
+    }
+
+    @MainActor
     func testRequestCapturePermissionButtonForwardsToCaptureEngine() async {
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()

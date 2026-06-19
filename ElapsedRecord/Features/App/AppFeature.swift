@@ -32,12 +32,16 @@ struct AppFeature: Reducer {
         case captureRootRevealFailed(String)
         case refreshRunningApplicationsButtonTapped
         case refreshViewerButtonTapped
+        case removeViewerAppFromWhitelistButtonTapped(AppCaptureSummary)
+        case addViewerAppToWhitelistButtonTapped(AppCaptureSummary)
+        case deleteViewerAppButtonTapped(AppCaptureSummary)
         case savedWhitelistLoaded([WhitelistedAppConfig])
         case whitelistSaveFailed(String)
     }
 
     @Dependency(\.fileRevealClient) private var fileReveal
     @Dependency(\.fileStorageClient) private var fileStorage
+    @Dependency(\.persistenceClient) private var persistence
     @Dependency(\.whitelistConfigurationClient) private var whitelistConfiguration
 
     var body: some Reducer<State, Action> {
@@ -151,6 +155,28 @@ struct AppFeature: Reducer {
             case .refreshViewerButtonTapped:
                 return .send(.viewer(.refresh))
 
+            case let .removeViewerAppFromWhitelistButtonTapped(app):
+                state.whitelistConfigs.removeAll { $0.bundleIdentifier == app.bundleIdentifier }
+                state.whitelistError = nil
+                return persistWhitelist(state.whitelistConfigs)
+
+            case let .addViewerAppToWhitelistButtonTapped(app):
+                state.upsertWhitelistConfig(
+                    WhitelistedAppConfig(
+                        bundleIdentifier: app.bundleIdentifier,
+                        displayName: app.displayName,
+                        captureInterval: state.draftIntervalSeconds,
+                        isEnabled: true
+                    )
+                )
+                state.whitelistError = nil
+                return persistWhitelist(state.whitelistConfigs)
+
+            case let .deleteViewerAppButtonTapped(app):
+                state.whitelistConfigs.removeAll { $0.bundleIdentifier == app.bundleIdentifier }
+                state.whitelistError = nil
+                return deleteApp(app, remainingWhitelistConfigs: state.whitelistConfigs)
+
             case let .savedWhitelistLoaded(configs):
                 state.setWhitelistConfigs(configs)
                 if let config = state.whitelistConfigs.first {
@@ -174,6 +200,29 @@ struct AppFeature: Reducer {
             .run { send in
                 do {
                     try await whitelistConfiguration.save(configs)
+                } catch {
+                    await send(.whitelistSaveFailed(error.localizedDescription))
+                }
+            }
+        )
+    }
+
+    private func deleteApp(
+        _ app: AppCaptureSummary,
+        remainingWhitelistConfigs: [WhitelistedAppConfig]
+    ) -> Effect<Action> {
+        let fileStorage = fileStorage
+        let persistence = persistence
+        let whitelistConfiguration = whitelistConfiguration
+
+        return .merge(
+            .send(.captureEngine(.whitelistUpdated(remainingWhitelistConfigs))),
+            .run { send in
+                do {
+                    try await whitelistConfiguration.save(remainingWhitelistConfigs)
+                    try await fileStorage.deleteAppCaptures(app.bundleIdentifier)
+                    try await persistence.deleteApp(app.bundleIdentifier)
+                    await send(.viewer(.refresh))
                 } catch {
                     await send(.whitelistSaveFailed(error.localizedDescription))
                 }

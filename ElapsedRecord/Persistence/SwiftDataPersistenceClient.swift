@@ -66,6 +66,19 @@ final class SwiftDataPersistenceStore {
         try context.save()
     }
 
+    func deleteApp(_ bundleIdentifier: String) throws {
+        let context = ModelContext(modelContainer)
+        let sessions = try context.fetch(FetchDescriptor<CaptureSessionModel>())
+            .filter { $0.bundleIdentifier == bundleIdentifier }
+
+        for session in sessions {
+            context.delete(session)
+        }
+
+        guard !sessions.isEmpty else { return }
+        try context.save()
+    }
+
     func upsertWindow(_ window: MonitoredWindow) throws {
         let context = ModelContext(modelContainer)
         guard let session = try sessionModel(id: window.sessionID, context: context) else {
@@ -237,6 +250,9 @@ extension PersistenceClient {
             deleteSession: { sessionID in
                 try await store.deleteSession(sessionID)
             },
+            deleteApp: { bundleIdentifier in
+                try await store.deleteApp(bundleIdentifier)
+            },
             upsertWindow: { window in
                 try await store.upsertWindow(window)
             },
@@ -269,6 +285,7 @@ extension PersistenceClient {
         closeSession: { _, _ in throw CaptureEngineError.persistenceUnavailable },
         closeOpenSessions: { _ in throw CaptureEngineError.persistenceUnavailable },
         deleteSession: { _ in throw CaptureEngineError.persistenceUnavailable },
+        deleteApp: { _ in throw CaptureEngineError.persistenceUnavailable },
         upsertWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordScreenshot: { _ in throw CaptureEngineError.persistenceUnavailable },
         apps: { throw CaptureEngineError.persistenceUnavailable },

@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Foundation
 import SFSafeSymbols
 import SwiftUI
 import TranslateKit
@@ -18,10 +19,24 @@ struct AppView: View {
                 store: store.scope(
                     state: \.viewer,
                     action: \.viewer
-                )
+                ),
+                whitelistedBundleIdentifiers: Set(store.whitelistConfigs.map(\.bundleIdentifier)),
+                removeAppFromWhitelist: { app in
+                    store.send(.removeViewerAppFromWhitelistButtonTapped(app))
+                },
+                addAppToWhitelist: { app in
+                    store.send(.addViewerAppToWhitelistButtonTapped(app))
+                },
+                deleteApp: { app in
+                    store.send(.deleteViewerAppButtonTapped(app))
+                }
             )
         }
         .task {
+            guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
+                return
+            }
+
             await store.send(.task).finish()
         }
     }

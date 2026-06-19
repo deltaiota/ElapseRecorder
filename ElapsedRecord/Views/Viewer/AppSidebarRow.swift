@@ -3,6 +3,7 @@ import SwiftUI
 
 struct AppSidebarRow: View {
     let app: AppCaptureSummary
+    var isWhitelisted = true
 
     @State private var isShowingInfo = false
 
@@ -44,6 +45,7 @@ struct AppSidebarRow: View {
                 AppInfoView(app: app, identity: identity)
             }
         }
+        .opacity(isWhitelisted ? 1 : 0.45)
     }
 }
 

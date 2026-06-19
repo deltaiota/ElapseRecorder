@@ -24,6 +24,7 @@ struct CaptureEngineFeature: Reducer {
 
     enum Action: Equatable {
         case task
+        case refreshRunningApplications
         case whitelistUpdated([WhitelistedAppConfig])
         case runningApplicationsLoaded([RunningApplication])
         case workspaceEvent(WorkspaceEvent)
@@ -62,15 +63,20 @@ struct CaptureEngineFeature: Reducer {
                     .run { send in
                         await send(.permissionResolved(await permission.status(), nil))
                     },
-                    .run { send in
-                        await send(.runningApplicationsLoaded(await workspace.runningApplications()))
-                    },
+                    .send(.refreshRunningApplications),
                     .run { send in
                         for await event in workspace.events() {
                             await send(.workspaceEvent(event))
                         }
                     }
+                    .cancellable(id: workspaceEventsID, cancelInFlight: true)
                 )
+
+            case .refreshRunningApplications:
+                let workspace = workspace
+                return .run { send in
+                    await send(.runningApplicationsLoaded(await workspace.runningApplications()))
+                }
 
             case let .whitelistUpdated(configs):
                 state.whitelist = Dictionary(
@@ -376,6 +382,10 @@ struct CaptureEngineFeature: Reducer {
 
     private func captureCycleID(_ sessionID: UUID) -> String {
         "capture-cycle-\(sessionID.uuidString)"
+    }
+
+    private var workspaceEventsID: String {
+        "workspace-events"
     }
 }
 

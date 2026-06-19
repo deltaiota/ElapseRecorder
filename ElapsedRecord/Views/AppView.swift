@@ -8,7 +8,7 @@ struct AppView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            testCaptureBar
+            whitelistBar
                 .padding()
                 .background(.regularMaterial)
 
@@ -26,77 +26,182 @@ struct AppView: View {
         }
     }
 
-    private var testCaptureBar: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Label(#tk("Capture test"), systemSymbol: .camera)
-                .font(.headline)
+    private var whitelistBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 12) {
+                Label(#tk("Whitelist"), systemSymbol: .app)
+                    .font(.headline)
 
-            TextField(
-                #tk("Bundle ID"),
-                text: $store.testBundleIdentifier.sending(\.testBundleIdentifierChanged)
-            )
-            .textFieldStyle(.roundedBorder)
-            .frame(minWidth: 220)
+                activeCaptureStatus
 
-            TextField(
-                #tk("Display name"),
-                text: $store.testDisplayName.sending(\.testDisplayNameChanged)
-            )
-            .textFieldStyle(.roundedBorder)
-            .frame(width: 140)
+                captureStatus
+
+                Spacer()
+
+                runningApplicationsMenu
+
+                Button {
+                    store.send(.refreshRunningApplicationsButtonTapped)
+                } label: {
+                    Label(#tk("Refresh apps"), systemSymbol: .arrowClockwise)
+                }
+
+                Button {
+                    store.send(.refreshViewerButtonTapped)
+                } label: {
+                    Label(#tk("Refresh viewer"), systemSymbol: .arrowClockwise)
+                }
+
+                diagnosticsMenu
+            }
+
+            HStack(alignment: .center, spacing: 8) {
+                TextField(
+                    #tk("Bundle ID"),
+                    text: $store.draftBundleIdentifier.sending(\.draftBundleIdentifierChanged)
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(minWidth: 240)
+
+                TextField(
+                    #tk("Display name"),
+                    text: $store.draftDisplayName.sending(\.draftDisplayNameChanged)
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 160)
+
+                Stepper(
+                    value: $store.draftIntervalSeconds.sending(\.draftIntervalSecondsChanged),
+                    in: 1 ... 3600,
+                    step: 1
+                ) {
+                    Text(#tk("Every \(Int(store.draftIntervalSeconds))s"))
+                        .monospacedDigit()
+                }
+                .frame(width: 130)
+
+                Button {
+                    store.send(.addDraftWhitelistButtonTapped)
+                } label: {
+                    Label(#tk("Add"), systemSymbol: .plusCircle)
+                }
+                .disabled(!store.canAddDraftWhitelist)
+
+                if let whitelistError = store.whitelistError {
+                    Label(whitelistError, systemSymbol: .exclamationmarkTriangle)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                }
+            }
+
+            if store.whitelistConfigs.isEmpty {
+                Text(#tk("Add an app to the whitelist. If it is already running, recording starts immediately; otherwise it starts on launch."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(store.sortedWhitelistConfigs) { config in
+                            whitelistConfigCard(config)
+                        }
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+    }
+
+    private var runningApplicationsMenu: some View {
+        Menu {
+            if store.runningApplicationsAvailableForWhitelist.isEmpty {
+                Text(#tk("No running apps to add"))
+            } else {
+                ForEach(store.runningApplicationsAvailableForWhitelist) { application in
+                    Button {
+                        store.send(.addRunningApplicationButtonTapped(application.bundleIdentifier))
+                    } label: {
+                        Text("\(application.displayName) (\(application.bundleIdentifier))")
+                    }
+                }
+            }
+        } label: {
+            Label(#tk("Add running app"), systemSymbol: .plusCircle)
+        }
+    }
+
+    @ViewBuilder
+    private var diagnosticsMenu: some View {
+        if !store.captureEngine.recentDiagnostics.isEmpty {
+            Menu {
+                ForEach(Array(store.captureEngine.recentDiagnostics.enumerated()), id: \.offset) { _, diagnostic in
+                    Text(diagnostic)
+                }
+            } label: {
+                Label(#tk("Diagnostics"), systemSymbol: .stethoscope)
+            }
+        }
+    }
+
+    private func whitelistConfigCard(_ config: WhitelistedAppConfig) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Toggle(
+                    isOn: Binding(
+                        get: { config.isEnabled },
+                        set: { store.send(.whitelistEnabledChanged(config.bundleIdentifier, $0)) }
+                    )
+                ) {
+                    Text(config.displayName)
+                        .font(.headline)
+                        .lineLimit(1)
+                }
+
+                Button {
+                    store.send(.removeWhitelistButtonTapped(config.bundleIdentifier))
+                } label: {
+                    Image(systemSymbol: .trash)
+                }
+                .buttonStyle(.borderless)
+            }
+
+            Text(config.bundleIdentifier)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
             Stepper(
-                value: $store.testIntervalSeconds.sending(\.testIntervalSecondsChanged),
+                value: Binding(
+                    get: { config.captureInterval },
+                    set: { store.send(.whitelistIntervalChanged(config.bundleIdentifier, $0)) }
+                ),
                 in: 1 ... 3600,
                 step: 1
             ) {
-                Text(#tk("Every \(Int(store.testIntervalSeconds))s"))
+                Text(#tk("Every \(Int(config.captureInterval))s"))
                     .monospacedDigit()
             }
-            .frame(width: 120)
 
-            if store.isTestCaptureEnabled {
-                Button {
-                    store.send(.stopTestCaptureButtonTapped)
-                } label: {
-                    Label(#tk("Stop"), systemSymbol: .stopCircle)
-                }
-            } else {
-                Button {
-                    store.send(.startTestCaptureButtonTapped)
-                } label: {
-                    Label(#tk("Start"), systemSymbol: .recordCircle)
-                }
-                .disabled(!store.canStartTestCapture)
-            }
+            whitelistStatus(config)
+        }
+        .padding(10)
+        .frame(width: 260, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+    }
 
-            Button {
-                store.send(.refreshViewerButtonTapped)
-            } label: {
-                Label(#tk("Refresh"), systemSymbol: .arrowClockwise)
-            }
-
-            Spacer()
-
-            activeCaptureStatus
-
-            captureStatus
-
-            if let whitelistError = store.whitelistError {
-                Label(whitelistError, systemSymbol: .exclamationmarkTriangle)
-                    .foregroundStyle(.orange)
-                    .lineLimit(1)
-            }
-
-            if !store.captureEngine.recentDiagnostics.isEmpty {
-                Menu {
-                    ForEach(Array(store.captureEngine.recentDiagnostics.enumerated()), id: \.offset) { _, diagnostic in
-                        Text(diagnostic)
-                    }
-                } label: {
-                    Label(#tk("Diagnostics"), systemSymbol: .stethoscope)
-                }
-            }
+    @ViewBuilder
+    private func whitelistStatus(_ config: WhitelistedAppConfig) -> some View {
+        if store.captureEngine.activeSessions[config.bundleIdentifier] != nil {
+            Label(#tk("Capturing"), systemSymbol: .recordCircle)
+                .foregroundStyle(.green)
+        } else if !config.isEnabled {
+            Label(#tk("Disabled"), systemSymbol: .pauseCircle)
+                .foregroundStyle(.secondary)
+        } else if store.captureEngine.runningApplications[config.bundleIdentifier] != nil {
+            Label(#tk("Running, waiting to start"), systemSymbol: .clock)
+                .foregroundStyle(.orange)
+        } else {
+            Label(#tk("Starts on launch"), systemSymbol: .clock)
+                .foregroundStyle(.secondary)
         }
     }
 

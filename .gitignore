@@ -1,0 +1,20 @@
+# Local instructions and scratch files
+instructions.md
+
+# macOS
+.DS_Store
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+
+# Build products
+DerivedData/
+build/
+*.app
+*.dSYM
+
+# Swift Package Manager workspace state
+.swiftpm/
+.build/
+.github/copilot-instructions.md

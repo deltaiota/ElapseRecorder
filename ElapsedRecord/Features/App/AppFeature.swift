@@ -44,11 +44,11 @@ struct AppFeature: Reducer {
         Scope(state: \.captureEngine, action: \.captureEngine) {
             CaptureEngineFeature()
         }
-        
+
         Scope(state: \.viewer, action: \.viewer) {
             ViewerFeature()
         }
-        
+
         Reduce { state, action in
             switch action {
             case .task:

@@ -115,6 +115,9 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         let windowScreenshots = try await client.screenshotsForWindow(secondWindow.id)
         XCTAssertEqual(windowScreenshots.map(\.id), [oldScreenshot.id, newerScreenshot.id])
 
+        let sessionScreenshots = try await client.screenshotsForSession(appSession.id)
+        XCTAssertEqual(sessionScreenshots.map(\.id), [oldScreenshot.id, newerScreenshot.id])
+
         let appScreenshots = try await client.screenshotsForApp("com.example.ArtApp")
         XCTAssertEqual(appScreenshots.map(\.id), [oldScreenshot.id, newerScreenshot.id, laterScreenshot.id])
     }

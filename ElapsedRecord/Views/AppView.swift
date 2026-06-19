@@ -25,7 +25,7 @@ struct AppView: View {
             await store.send(.task).finish()
         }
     }
-    
+
 //    var body: some View {
 //        ViewerView(store: store.scope(
 //            state: \.viewer,
@@ -33,7 +33,7 @@ struct AppView: View {
 //        ))
 //    }
 
-    @ViewBuilder private func whitelistBar() -> some View {
+    private func whitelistBar() -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
                 Label(#tk("Whitelist"), systemSymbol: .app)
@@ -132,7 +132,7 @@ struct AppView: View {
         }
     }
 
-    @ViewBuilder private func runningApplicationsMenu() -> some View {
+    private func runningApplicationsMenu() -> some View {
         Menu {
             if store.runningApplicationsAvailableForWhitelist.isEmpty {
                 Text(#tk("No running apps to add"))
@@ -226,7 +226,7 @@ struct AppView: View {
         }
     }
 
-    @ViewBuilder private func lifecycleDiagnostics() -> some View {
+    private func lifecycleDiagnostics() -> some View {
         HStack(spacing: 12) {
             Label(#tk("\(store.captureEngine.runningApplications.count) running apps seen"), systemSymbol: .app)
                 .foregroundStyle(.secondary)
@@ -331,5 +331,5 @@ struct AppView: View {
     AppView(store: .init(initialState: AppFeature.State()) {
         AppFeature()
     })
-    .frame(width: 720, height: 480)
+    .frame(width: 1080, height: 720)
 }

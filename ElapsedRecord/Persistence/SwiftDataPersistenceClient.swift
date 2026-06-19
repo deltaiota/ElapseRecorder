@@ -156,6 +156,17 @@ final class SwiftDataPersistenceStore {
             .map(\.summaryValue)
     }
 
+    func screenshotsForSession(_ sessionID: UUID) throws -> [ScreenshotRecord] {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: sessionID, context: context) else {
+            throw CaptureEngineError.sessionNotFound(sessionID)
+        }
+
+        return session.screenshots
+            .sorted { $0.capturedAt < $1.capturedAt }
+            .compactMap(\.domainValue)
+    }
+
     func screenshotsForWindow(_ windowID: UUID) throws -> [ScreenshotRecord] {
         let context = ModelContext(modelContainer)
         guard let window = try windowModel(id: windowID, context: context) else { return [] }
@@ -232,6 +243,9 @@ extension PersistenceClient {
             windows: { sessionID in
                 try await store.windows(sessionID: sessionID)
             },
+            screenshotsForSession: { sessionID in
+                try await store.screenshotsForSession(sessionID)
+            },
             screenshotsForWindow: { windowID in
                 try await store.screenshotsForWindow(windowID)
             },
@@ -251,6 +265,7 @@ extension PersistenceClient {
         apps: { throw CaptureEngineError.persistenceUnavailable },
         sessions: { _ in throw CaptureEngineError.persistenceUnavailable },
         windows: { _ in throw CaptureEngineError.persistenceUnavailable },
+        screenshotsForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         screenshotsForWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
         screenshotsForApp: { _ in throw CaptureEngineError.persistenceUnavailable }
     )

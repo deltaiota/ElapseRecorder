@@ -5,6 +5,116 @@ import XCTest
 
 final class ViewerFeatureTests: XCTestCase {
     @MainActor
+    func testSelectingSessionDefaultsToAllWindowsAndLoadsSessionScreenshots() async throws {
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000601"))
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000602"))
+        let screenshotID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000603"))
+        let window = WindowCaptureSummary(
+            id: windowID,
+            displayNumber: 1,
+            label: "Canvas",
+            firstSeenAt: Date(timeIntervalSince1970: 100),
+            lastSeenAt: Date(timeIntervalSince1970: 200),
+            screenshotCount: 1
+        )
+        let screenshot = ScreenshotRecord(
+            id: screenshotID,
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: Date(timeIntervalSince1970: 150),
+            fileURL: URL(filePath: "/tmp/session.heic"),
+            fileSizeBytes: 1024
+        )
+        var state = ViewerFeature.State()
+        state.selectedBundleIdentifier = "com.example.ArtApp"
+
+        let store = TestStore(initialState: state) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.windows = { _ in [window] }
+            $0.persistenceClient.screenshotsForSession = { _ in
+                try await Task.sleep(nanoseconds: 1_000_000)
+                return [screenshot]
+            }
+        }
+
+        await store.send(.sessionSelected(sessionID)) {
+            $0.selectedSessionID = sessionID
+            $0.selectedWindowID = nil
+            $0.windows = []
+            $0.windowScreenshots = []
+            $0.selectedScreenshot = nil
+            $0.isShowingFlatGallery = false
+            $0.isLoading = true
+        }
+        await store.receive(.windowsLoaded([window])) {
+            $0.windows = [window]
+            $0.isLoading = false
+        }
+        await store.receive(.windowScreenshotsLoaded([screenshot])) {
+            $0.windowScreenshots = [screenshot]
+            $0.isLoading = false
+        }
+        XCTAssertEqual(store.state.windowPickerSelection, .all)
+    }
+
+    @MainActor
+    func testWindowPickerSwitchesBetweenWindowAndAllScreenshots() async throws {
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000604"))
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000605"))
+        let allScreenshot = try ScreenshotRecord(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000606")),
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: Date(timeIntervalSince1970: 150),
+            fileURL: URL(filePath: "/tmp/all.heic"),
+            fileSizeBytes: 1024
+        )
+        let windowScreenshot = try ScreenshotRecord(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000607")),
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: Date(timeIntervalSince1970: 175),
+            fileURL: URL(filePath: "/tmp/window.heic"),
+            fileSizeBytes: 2048
+        )
+        var state = ViewerFeature.State()
+        state.selectedSessionID = sessionID
+        state.windowScreenshots = [allScreenshot]
+
+        let store = TestStore(initialState: state) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.screenshotsForWindow = { _ in [windowScreenshot] }
+            $0.persistenceClient.screenshotsForSession = { _ in [allScreenshot] }
+        }
+
+        await store.send(.windowPickerSelectionChanged(.window(id: windowID))) {
+            $0.selectedWindowID = windowID
+            $0.windowScreenshots = []
+            $0.selectedScreenshot = nil
+            $0.isShowingFlatGallery = false
+            $0.isLoading = true
+        }
+        await store.receive(.windowScreenshotsLoaded([windowScreenshot])) {
+            $0.windowScreenshots = [windowScreenshot]
+            $0.isLoading = false
+        }
+
+        await store.send(.windowPickerSelectionChanged(.all)) {
+            $0.selectedWindowID = nil
+            $0.selectedScreenshot = nil
+            $0.isShowingFlatGallery = false
+            $0.windowScreenshots = []
+            $0.isLoading = true
+        }
+        await store.receive(.windowScreenshotsLoaded([allScreenshot])) {
+            $0.windowScreenshots = [allScreenshot]
+            $0.isLoading = false
+        }
+    }
+
+    @MainActor
     func testDeleteSelectedEndedSessionDeletesFilesAndMetadataThenRefreshes() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000501"))
         let session = CaptureSessionSummary(
@@ -46,6 +156,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.persistenceClient.sessions = { _ in [] }
             $0.persistenceClient.windows = { _ in [] }
             $0.persistenceClient.screenshotsForApp = { _ in [] }
+            $0.persistenceClient.screenshotsForSession = { _ in [] }
             $0.persistenceClient.screenshotsForWindow = { _ in [] }
         }
         store.exhaustivity = .off
@@ -108,6 +219,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.persistenceClient.sessions = { _ in [] }
             $0.persistenceClient.windows = { _ in [] }
             $0.persistenceClient.screenshotsForApp = { _ in [] }
+            $0.persistenceClient.screenshotsForSession = { _ in [] }
             $0.persistenceClient.screenshotsForWindow = { _ in [] }
         }
         store.exhaustivity = .off

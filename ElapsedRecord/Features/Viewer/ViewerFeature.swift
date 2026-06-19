@@ -22,6 +22,11 @@ struct ViewerFeature: Reducer {
             case session(id: UUID)
         }
 
+        enum WindowPickerSelection: Hashable {
+            case all
+            case window(id: UUID)
+        }
+
         var sessionListSelection: SessionListSelection? {
             get {
                 if isShowingFlatGallery {
@@ -45,6 +50,21 @@ struct ViewerFeature: Reducer {
                 }
             }
         }
+
+        var windowPickerSelection: WindowPickerSelection {
+            get {
+                guard let selectedWindowID else { return .all }
+                return .window(id: selectedWindowID)
+            }
+            set {
+                switch newValue {
+                case .all:
+                    selectedWindowID = nil
+                case let .window(id):
+                    selectedWindowID = id
+                }
+            }
+        }
     }
 
     @CasePathable
@@ -56,6 +76,7 @@ struct ViewerFeature: Reducer {
         case sessionSelected(UUID?)
         case windowsLoaded([WindowCaptureSummary])
         case windowSelected(UUID?)
+        case windowPickerSelectionChanged(State.WindowPickerSelection)
         case windowScreenshotsLoaded([ScreenshotRecord])
         case sessionListSelectionChanged(State.SessionListSelection?)
         case flatGallerySelected
@@ -138,14 +159,18 @@ struct ViewerFeature: Reducer {
                 return .none
 
             case let .windowSelected(windowID):
-                state.selectedWindowID = windowID
-                state.windowScreenshots = []
-                state.selectedScreenshot = nil
-                state.isShowingFlatGallery = false
+                if let windowID {
+                    return selectWindow(windowID, state: &state)
+                }
+                return selectAllWindows(state: &state)
 
-                guard let windowID else { return .none }
-                state.isLoading = true
-                return loadWindowScreenshots(windowID: windowID)
+            case let .windowPickerSelectionChanged(selection):
+                switch selection {
+                case .all:
+                    return selectAllWindows(state: &state)
+                case let .window(id):
+                    return selectWindow(id, state: &state)
+                }
 
             case let .windowScreenshotsLoaded(records):
                 state.windowScreenshots = records
@@ -227,6 +252,10 @@ struct ViewerFeature: Reducer {
 
         if let sessionID = state.selectedSessionID {
             effects.append(loadWindows(sessionID: sessionID))
+
+            if state.selectedWindowID == nil {
+                effects.append(loadSessionScreenshots(sessionID: sessionID))
+            }
         }
 
         if let windowID = state.selectedWindowID {
@@ -249,7 +278,10 @@ struct ViewerFeature: Reducer {
 
         guard let sessionID else { return .none }
         state.isLoading = true
-        return loadWindows(sessionID: sessionID)
+        return .merge(
+            loadWindows(sessionID: sessionID),
+            loadSessionScreenshots(sessionID: sessionID)
+        )
     }
 
     private func selectFlatGallery(state: inout State) -> Effect<Action> {
@@ -261,6 +293,29 @@ struct ViewerFeature: Reducer {
         state.flatScreenshots = []
         state.isLoading = true
         return loadFlatScreenshots(bundleIdentifier: bundleIdentifier)
+    }
+
+    private func selectAllWindows(state: inout State) -> Effect<Action> {
+        state.selectedWindowID = nil
+        state.selectedScreenshot = nil
+        state.isShowingFlatGallery = false
+
+        guard let sessionID = state.selectedSessionID else { return .none }
+        state.windowScreenshots = []
+        state.isLoading = true
+        return loadSessionScreenshots(sessionID: sessionID)
+    }
+
+    private func selectWindow(
+        _ windowID: UUID,
+        state: inout State
+    ) -> Effect<Action> {
+        state.selectedWindowID = windowID
+        state.windowScreenshots = []
+        state.selectedScreenshot = nil
+        state.isShowingFlatGallery = false
+        state.isLoading = true
+        return loadWindowScreenshots(windowID: windowID)
     }
 
     private func deleteSession(
@@ -313,6 +368,17 @@ struct ViewerFeature: Reducer {
             do {
                 let windows = try await persistence.windows(sessionID)
                 await send(.windowsLoaded(windows))
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+            }
+        }
+    }
+
+    private func loadSessionScreenshots(sessionID: UUID) -> Effect<Action> {
+        .run { send in
+            do {
+                let records = try await persistence.screenshotsForSession(sessionID)
+                await send(.windowScreenshotsLoaded(records))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }

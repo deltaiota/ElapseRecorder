@@ -6,15 +6,18 @@ import TranslateKit
 struct ViewerView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
+    @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
+
     var body: some View {
         NavigationSplitView {
             appList()
-                .navigationSplitViewColumnWidth(min: 180, ideal: 240)
+                .navigationSplitViewColumnWidth(min: 150, ideal: 200, max: 300)
         } content: {
             sessionList()
-                .navigationSplitViewColumnWidth(min: 240, ideal: 300)
+                .navigationSplitViewColumnWidth(min: 180, ideal: 300)
         } detail: {
             detailPane()
+                .navigationSplitViewColumnWidth(min: 300, ideal: 500)
         }
         .navigationTitle(#tk("Elapsed Record"))
         .sheet(item: $store.selectedScreenshot.sending(\.screenshotSelected)) { record in
@@ -54,44 +57,48 @@ struct ViewerView: View {
                         .font(.caption)
                 }
 
-                Label(#tk("All screenshots"), systemSymbol: .photoStack)
+                Label(#tk("All Screenshots"), systemSymbol: .photoStack)
                     .tag(ViewerFeature.State.SessionListSelection.flat)
                     .listRowSeparator(.hidden)
 
-                Section {
-                    ForEach(store.sessions) { session in
-                        Label {
-                            VStack(alignment: .leading) {
-                                Text(session.startedAt, format: .dateTime.month().day().hour().minute())
-                                Text(sessionSummary(session))
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
+                ForEach(sessionDaySections) { section in
+                    Section(isExpanded: $collapsedSessionDaySections[contains: section.id].negate()) {
+                        ForEach(section.sessions) { session in
+                            Label {
+                                VStack(alignment: .leading) {
+                                    Text(session.startedAt, format: .dateTime.hour().minute())
+                                    Text(sessionSummary(session))
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption)
+                                }
+                            } icon: {
+                                Image(systemSymbol: .clock)
                             }
-                        } icon: {
-                            Image(systemSymbol: .clock)
-                        }
-                        .tag(ViewerFeature.State.SessionListSelection.session(id: session.id))
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                store.send(.deleteSessionButtonTapped(session))
-                            } label: {
-                                Label(TK.Action.delete, systemSymbol: .trash)
+                            .tag(ViewerFeature.State.SessionListSelection.session(id: session.id))
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    store.send(.deleteSessionButtonTapped(session))
+                                } label: {
+                                    Label(TK.Action.delete, systemSymbol: .trash)
+                                }
+                                .tint(.red)
                             }
-                            .tint(.red)
-                        }
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                store.send(.deleteSessionButtonTapped(session))
-                            } label: {
-                                Text(#tk("Delete Session"))
+                            .contextMenu {
+                                Button(role: .destructive) {
+                                    store.send(.deleteSessionButtonTapped(session))
+                                } label: {
+                                    Text(#tk("Delete Session"))
+                                }
                             }
                         }
+                    } header: {
+                        Text(section.day, format: .dateTime.year().month().day())
                     }
-                } header: {
-                    Label(#tk("Sessions"), systemSymbol: .clock)
                 }
             }
         }
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
         .overlay(alignment: .center) {
             if store.selectedBundleIdentifier == nil {
                 ContentUnavailableView(
@@ -101,51 +108,57 @@ struct ViewerView: View {
                 )
             }
         }
+        .background(.windowBackground)
     }
 
-    @ViewBuilder private func detailPane() -> some View {
-        if store.isShowingFlatGallery {
-            ScreenshotGrid(
-                records: store.flatScreenshots,
-                selectScreenshot: { store.send(.screenshotSelected($0)) }
-            )
-            .navigationTitle(#tk("All screenshots"))
-        } else if store.selectedSessionID != nil {
-            ScreenshotGrid(
-                records: store.windowScreenshots,
-                selectScreenshot: { store.send(.screenshotSelected($0)) }
-            )
-            .safeAreaInset(edge: .top) {
-                VStack(spacing: 0) {
-                    Picker("Window", selection: $store.selectedWindowID.sending(\.windowSelected)) {
-                        Text("All Windows")
+    private func detailPane() -> some View {
+        Group {
+            if store.isShowingFlatGallery {
+                ScreenshotGrid(
+                    records: store.flatScreenshots,
+                    selectScreenshot: { store.send(.screenshotSelected($0)) }
+                )
+                .navigationTitle(#tk("All screenshots"))
+            } else if store.selectedSessionID != nil {
+                ScreenshotGrid(
+                    records: store.windowScreenshots,
+                    selectScreenshot: { store.send(.screenshotSelected($0)) }
+                )
+                .safeAreaInset(edge: .top) {
+                    VStack(spacing: 0) {
+                        Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
+                            Text(#tk("All Windows"))
+                                .tag(ViewerFeature.State.WindowPickerSelection.all)
 
-                        if !store.windows.isEmpty {
-                            Divider()
+                            if !store.windows.isEmpty {
+                                Divider()
 
-                            ForEach(store.windows) { window in
-                                Button {} label: {
-                                    Text(windowTitle(window))
-
-                                    Text("\(window.screenshotCount) screenshots")
+                                ForEach(store.windows) { window in
+                                    Text("\(windowTitle(window)) - \(window.screenshotCount) screenshots")
+                                        .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
                                 }
-                                .tag(window.id)
                             }
                         }
-                    }
-                    .padding()
-                    .background(.windowBackground)
+                        .padding()
+                        .background(.bar)
 
-                    Divider()
+                        Divider()
+                    }
                 }
+            } else {
+                Color.clear
             }
-        } else {
-            ContentUnavailableView(
-                #tk("Choose a session"),
-                systemSymbol: .clock,
-                description: Text(#tk("Windows and screenshots will appear here."))
-            )
         }
+        .overlay(alignment: .center) {
+            if !store.isShowingFlatGallery && store.selectedSessionID == nil {
+                ContentUnavailableView(
+                    #tk("Choose a session"),
+                    systemSymbol: .clock,
+                    description: Text(#tk("Windows and screenshots will appear here."))
+                )
+            }
+        }
+        .background(.background)
     }
 
     private func sessionSummary(_ session: CaptureSessionSummary) -> String {
@@ -155,11 +168,36 @@ struct ViewerView: View {
         return "\(duration) • \(session.windowCount) windows • \(session.screenshotCount) screenshots"
     }
 
+    private var sessionDaySections: [SessionDaySection] {
+        let calendar = Calendar.current
+        let groupedSessions = Dictionary(grouping: store.sessions) { session in
+            calendar.startOfDay(for: session.startedAt)
+        }
+
+        return groupedSessions.keys
+            .sorted(by: >)
+            .map { day in
+                SessionDaySection(
+                    day: day,
+                    sessions: (groupedSessions[day] ?? []).sorted { $0.startedAt > $1.startedAt }
+                )
+            }
+    }
+
     private func windowTitle(_ window: WindowCaptureSummary) -> String {
         if let label = window.label, !label.isEmpty {
             return #tk("Window \(window.displayNumber): \(label)")
         }
         return #tk("Window \(window.displayNumber)")
+    }
+}
+
+private struct SessionDaySection: Identifiable {
+    var day: Date
+    var sessions: [CaptureSessionSummary]
+
+    var id: Date {
+        day
     }
 }
 
@@ -307,5 +345,5 @@ private extension CGImage {
     ViewerView(store: .init(initialState: ViewerFeature.State()) {
         ViewerFeature()
     })
-    .frame(width: 720, height: 480)
+    .frame(width: 1080, height: 720)
 }

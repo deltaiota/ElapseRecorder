@@ -71,6 +71,7 @@ nonisolated struct PersistenceClient {
     var apps: @Sendable () async throws -> [AppCaptureSummary]
     var sessions: @Sendable (_ bundleIdentifier: String) async throws -> [CaptureSessionSummary]
     var windows: @Sendable (_ sessionID: UUID) async throws -> [WindowCaptureSummary]
+    var screenshotsForSession: @Sendable (_ sessionID: UUID) async throws -> [ScreenshotRecord]
     var screenshotsForWindow: @Sendable (_ windowID: UUID) async throws -> [ScreenshotRecord]
     var screenshotsForApp: @Sendable (_ bundleIdentifier: String) async throws -> [ScreenshotRecord]
 }
@@ -501,6 +502,10 @@ nonisolated extension PersistenceClient {
         },
         windows: { _ in
             reportIssue("PersistenceClient.windows is unimplemented")
+            return []
+        },
+        screenshotsForSession: { _ in
+            reportIssue("PersistenceClient.screenshotsForSession is unimplemented")
             return []
         },
         screenshotsForWindow: { _ in

@@ -24,6 +24,7 @@ struct AppFeature: Reducer {
         case draftIntervalSecondsChanged(Double)
         case addDraftWhitelistButtonTapped
         case addRunningApplicationButtonTapped(String)
+        case addWhitelistConfigsButtonTapped([WhitelistedAppConfig])
         case removeWhitelistButtonTapped(String)
         case whitelistEnabledChanged(String, Bool)
         case whitelistIntervalChanged(String, Double)
@@ -108,6 +109,14 @@ struct AppFeature: Reducer {
                         isEnabled: true
                     )
                 )
+                state.whitelistError = nil
+                return persistWhitelist(state.whitelistConfigs)
+
+            case let .addWhitelistConfigsButtonTapped(configs):
+                guard !configs.isEmpty else { return .none }
+                for config in configs {
+                    state.upsertWhitelistConfig(config)
+                }
                 state.whitelistError = nil
                 return persistWhitelist(state.whitelistConfigs)
 

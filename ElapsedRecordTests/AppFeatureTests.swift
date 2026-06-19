@@ -108,6 +108,43 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testAddingMultipleWhitelistConfigsPersistsChanges() async {
+        let savedConfigs = LockIsolated([[WhitelistedAppConfig]]())
+        let firstConfig = WhitelistedAppConfig(
+            bundleIdentifier: "com.example.FirstApp",
+            displayName: "First App",
+            captureInterval: 5,
+            isEnabled: true
+        )
+        let secondConfig = WhitelistedAppConfig(
+            bundleIdentifier: "com.example.SecondApp",
+            displayName: "Second App",
+            captureInterval: 9,
+            isEnabled: true
+        )
+
+        let store = TestStore(initialState: AppFeature.State()) {
+            AppFeature()
+        } withDependencies: {
+            $0.whitelistConfigurationClient.save = { configs in
+                savedConfigs.withValue { $0.append(configs) }
+            }
+        }
+
+        await store.send(.addWhitelistConfigsButtonTapped([firstConfig, secondConfig])) {
+            $0.whitelistConfigs = [firstConfig, secondConfig]
+        }
+        await store.receive(.captureEngine(.whitelistUpdated([firstConfig, secondConfig]))) {
+            $0.captureEngine.whitelist = [
+                firstConfig.bundleIdentifier: firstConfig,
+                secondConfig.bundleIdentifier: secondConfig,
+            ]
+        }
+
+        XCTAssertEqual(savedConfigs.value, [[firstConfig, secondConfig]])
+    }
+
+    @MainActor
     func testWhitelistEnableAndIntervalChangesPersistAndUpdateCaptureEngine() async {
         let savedConfigs = LockIsolated([[WhitelistedAppConfig]]())
         let config = WhitelistedAppConfig(

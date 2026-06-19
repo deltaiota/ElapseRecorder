@@ -9,16 +9,20 @@ struct InstalledAppIdentity {
     let icon: NSImage?
 
     init(app: AppCaptureSummary) {
-        let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier)
+        self.init(bundleIdentifier: app.bundleIdentifier, recordedName: app.displayName)
+    }
 
-        bundleIdentifier = app.bundleIdentifier
-        recordedName = app.displayName
+    init(bundleIdentifier: String, recordedName: String, appURL: URL? = nil) {
+        let appURL = appURL ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+
+        self.bundleIdentifier = bundleIdentifier
+        self.recordedName = recordedName
         self.appURL = appURL
-        localizedName = Self.localizedName(appURL: appURL) ?? app.displayName
+        localizedName = Self.localizedName(appURL: appURL) ?? recordedName
         icon = Self.icon(appURL: appURL)
     }
 
-    private static func localizedName(appURL: URL?) -> String? {
+    nonisolated static func localizedName(appURL: URL?) -> String? {
         guard let appURL else { return nil }
 
         let bundle = Bundle(url: appURL)
@@ -31,7 +35,7 @@ struct InstalledAppIdentity {
         return bundleName ?? FileManager.default.displayName(atPath: appURL.path(percentEncoded: false))
     }
 
-    private static func icon(appURL: URL?) -> NSImage? {
+    static func icon(appURL: URL?) -> NSImage? {
         guard let appURL else { return nil }
 
         let icon = NSWorkspace.shared.icon(forFile: appURL.path(percentEncoded: false))

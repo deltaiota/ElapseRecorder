@@ -9,11 +9,11 @@ struct AppIconView: View {
         if let icon {
             Image(nsImage: icon)
                 .resizable()
-                .aspectRatio(1/1, contentMode: .fit)
+                .aspectRatio(1 / 1, contentMode: .fit)
                 .scaledToFit()
         } else {
             Image(systemSymbol: .app)
-                .aspectRatio(1/1, contentMode: .fit)
+                .aspectRatio(1 / 1, contentMode: .fit)
                 .foregroundStyle(.secondary)
         }
     }

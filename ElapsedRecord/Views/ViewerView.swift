@@ -6,17 +6,31 @@ import TranslateKit
 struct ViewerView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
+    var runningApplications: [RunningApplication] = []
     var whitelistedBundleIdentifiers: Set<String> = []
+    var defaultCaptureInterval: TimeInterval = 5
+    var refreshAppSelectionSources: () -> Void = {}
+    var addAppsToWhitelist: ([WhitelistedAppConfig]) -> Void = { _ in }
     var removeAppFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
     var addAppToWhitelist: (AppCaptureSummary) -> Void = { _ in }
     var deleteApp: (AppCaptureSummary) -> Void = { _ in }
 
+    @State private var isShowingAppSelection = false
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
 
     var body: some View {
         NavigationSplitView {
             appList()
                 .navigationSplitViewColumnWidth(min: 180, ideal: 225, max: 400)
+                .sheet(isPresented: $isShowingAppSelection) {
+                    AppSelectionSheet(
+                        runningApplications: runningApplications,
+                        detectedApps: store.apps,
+                        whitelistedBundleIdentifiers: whitelistedBundleIdentifiers,
+                        defaultCaptureInterval: defaultCaptureInterval,
+                        addAppsToWhitelist: addAppsToWhitelist
+                    )
+                }
         } content: {
             sessionList()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 275)
@@ -52,6 +66,23 @@ struct ViewerView: View {
                     }
                 }
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                refreshAppSelectionSources()
+                isShowingAppSelection = true
+            } label: {
+                Spacer(minLength: 0)
+
+                Label("More Apps…", systemSymbol: .plusApp)
+                    .fixedSize()
+
+                Spacer(minLength: 0)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.extraLarge)
+            .background(.thinMaterial, in: .buttonBorder)
+            .padding()
         }
     }
 

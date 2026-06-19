@@ -27,23 +27,13 @@
     "%lld running apps seen" : {
 
     },
-    "%lld screenshots" : {
-
-    },
-    "%lld sessions • %lld screenshots" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$lld sessions • %2$lld screenshots"
-          }
-        }
-      }
-    },
     "Add" : {
 
     },
     "Add running app" : {
+
+    },
+    "Add to Whitelist" : {
 
     },
     "All screenshots" : {
@@ -55,8 +45,192 @@
     "All Windows" : {
 
     },
-    "Application" : {
-
+    "AppSelectionSheet.1AppSelected" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "1 app selected"
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.add1App" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add 1 App"
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.addSelectedBundleIdentifiersCountApps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Add %lld Apps"
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.chooseAppFilesManuallyIfTheAppYouWantIs…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose app files manually if the app you want is not listed."
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.ImportApplications.noUsableAppBundlesWereFound" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No usable app bundles were found."
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.noAppsAvailable" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No apps available"
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.noMatchingApps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No matching apps"
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.selectedBundleIdentifiersCountAppsSelected" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%lld apps selected"
+          }
+        }
+      }
+    },
+    "AppSelectionSheet.tryADifferentAppNameOrBundleIdentifier" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Try a different app name or bundle identifier."
+          }
+        }
+      }
+    },
+    "AppSelectionSource.chosen" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Chosen"
+          }
+        }
+      }
+    },
+    "AppSelectionSource.chosenAppFiles" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Chosen App Files"
+          }
+        }
+      }
+    },
+    "AppSelectionSource.detected" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Detected"
+          }
+        }
+      }
+    },
+    "AppSelectionSource.detectedApps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Detected Apps"
+          }
+        }
+      }
+    },
+    "AppSelectionSource.installed" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Installed"
+          }
+        }
+      }
+    },
+    "AppSelectionSource.installedApplications" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Installed Applications"
+          }
+        }
+      }
+    },
+    "AppSelectionSource.running" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Running"
+          }
+        }
+      }
+    },
+    "AppSelectionSource.runningApps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Running Apps"
+          }
+        }
+      }
     },
     "AppView.WorkspaceEventSummary.lastEventActivatedApplicationDisplayName" : {
       "extractionState" : "extracted_with_value",
@@ -94,9 +268,6 @@
     "Bundle ID" : {
 
     },
-    "Bundle Identifier" : {
-
-    },
     "Captured frames will appear here." : {
 
     },
@@ -115,7 +286,13 @@
     "Choose an app" : {
 
     },
+    "Choose App Files…" : {
+
+    },
     "Could not load image" : {
+
+    },
+    "Delete All Captures" : {
 
     },
     "Delete Session" : {
@@ -139,13 +316,16 @@
     "Idle" : {
 
     },
+    "Installed Apps" : {
+
+    },
     "Last Capture" : {
 
     },
     "Matched running app - PID %d" : {
 
     },
-    "Name" : {
+    "More Apps…" : {
 
     },
     "No running apps to add" : {
@@ -160,12 +340,6 @@
     "No workspace event yet" : {
 
     },
-    "Not found" : {
-
-    },
-    "Path" : {
-
-    },
     "Ready" : {
 
     },
@@ -176,6 +350,12 @@
 
     },
     "Refresh viewer" : {
+
+    },
+    "Remove from Whitelist" : {
+
+    },
+    "Removed from Whitelist" : {
 
     },
     "Request Screen Recording" : {
@@ -197,6 +377,9 @@
 
     },
     "Screenshots" : {
+
+    },
+    "Search apps…" : {
 
     },
     "Session %@ - PID %d" : {
@@ -241,6 +424,9 @@
       }
     },
     "Whitelist" : {
+
+    },
+    "Whitelisted" : {
 
     },
     "Window" : {

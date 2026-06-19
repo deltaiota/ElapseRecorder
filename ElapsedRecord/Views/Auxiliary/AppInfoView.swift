@@ -11,27 +11,27 @@ struct AppInfoView: View {
             HStack {
                 AppIconView(icon: identity.icon)
                     .frame(height: 54)
-                
+
                 VStack(alignment: .leading) {
                     VStack(alignment: .leading, spacing: -4) {
                         Text(identity.localizedName)
                             .font(.title3)
                             .bold()
-                        
+
                         Text(identity.bundleIdentifier)
                             .textSelection(.enabled)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .monospaced()
                     }
-                    
+
                     if let appURL = identity.appURL {
                         Button {
                             NSWorkspace.shared.activateFileViewerSelecting([appURL])
                         } label: {
                             HStack(spacing: 2) {
                                 Text(appURL.path(percentEncoded: false).replacing(/\/$/, with: ""))
-                                
+
                                 Image(systemSymbol: .arrowRightCircleFill)
                             }
                         }
@@ -43,7 +43,7 @@ struct AppInfoView: View {
                     }
                 }
             }
-            
+
             Spacer(minLength: 16)
 
             Form {
@@ -52,18 +52,18 @@ struct AppInfoView: View {
                         Text(app.sessionCount, format: .number)
                             .monospaced()
                     }
-                    
+
                     LabeledContent("Screenshots") {
                         Text(app.screenshotCount, format: .number)
                             .monospaced()
                     }
                 }
-                
+
                 Section {
                     LabeledContent("Recorded Name") {
                         Text(identity.recordedName)
                     }
-                    
+
                     if let lastCapturedAt = app.lastCapturedAt {
                         LabeledContent("Last Capture") {
                             Text(lastCapturedAt, format: .dateTime)

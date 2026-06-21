@@ -41,7 +41,7 @@ struct MenuBarView: View {
                 guard !isTesting else {
                     return
                 }
-                
+
                 await store.send(.task).finish()
             }
             .onAppear {
@@ -54,15 +54,15 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private func frontmostAppSection() -> some View {
-        if let frontmostApplication {
-            Section(frontmostApplication.displayName) {
-                if let config = whitelistConfig(for: frontmostApplication.bundleIdentifier) {
+        if let context = frontmostAppContext {
+            Section(context.application.displayName) {
+                if let config = context.config {
                     Label(
-                        frontmostCaptureStatusTitle(config),
-                        systemSymbol: isCapturing(frontmostApplication) ? .recordCircle : .pauseCircle
+                        frontmostCaptureStatusTitle(context),
+                        systemSymbol: context.isCapturing ? .recordCircle : .pauseCircle
                     )
 
-                    Picker("Capture Mode", selection: captureModeBinding(for: frontmostApplication)) {
+                    Picker("Capture Mode", selection: captureModeBinding(for: context.application.bundleIdentifier)) {
                         Text("Auto Capture")
                             .tag(CaptureMode.auto)
 
@@ -70,14 +70,14 @@ struct MenuBarView: View {
                             .tag(CaptureMode.manual)
                     }
 
-                    frontmostCaptureControl(frontmostApplication, config: config)
+                    frontmostCaptureControl(context, config: config)
 
-                    Button("Remove \(frontmostApplication.displayName) from Whitelist", systemSymbol: .minusCircle) {
-                        removeFromWhitelist(frontmostApplication)
+                    Button("Remove \(context.application.displayName) from Whitelist", systemSymbol: .minusCircle) {
+                        removeFromWhitelist(context.application)
                     }
                 } else {
-                    Button("Add \(frontmostApplication.displayName) to Whitelist", systemSymbol: .plusCircle) {
-                        addToWhitelist(frontmostApplication)
+                    Button("Add \(context.application.displayName) to Whitelist", systemSymbol: .plusCircle) {
+                        addToWhitelist(context.application)
                     }
                 }
             }
@@ -86,31 +86,22 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private func frontmostCaptureControl(
-        _ application: RunningApplication,
+        _ context: FrontmostAppContext,
         config: WhitelistedAppConfig
     ) -> some View {
         switch config.captureMode {
         case .auto:
             Toggle(
                 "Auto Capture",
-                isOn: Binding(
-                    get: { config.isEnabled },
-                    set: { store.send(.whitelistEnabledChanged(application.bundleIdentifier, $0)) }
-                )
+                isOn: autoCaptureBinding(for: context.application.bundleIdentifier)
             )
 
         case .manual:
-            let isCapturing = isCapturing(application)
             Button(
-                isCapturing ? "Stop Capture" : "Start Capture",
-                systemSymbol: isCapturing ? .stopFill : .recordCircle
+                context.isCapturing ? "Stop Capture" : "Start Capture",
+                systemSymbol: context.isCapturing ? .stopFill : .recordCircle
             ) {
-                if isCapturing {
-                    store.send(.captureEngine(.manualCaptureStop(application.bundleIdentifier)))
-                } else {
-                    store.send(.captureEngine(.runningApplicationsLoaded([application])))
-                    store.send(.captureEngine(.manualCaptureStart(application.bundleIdentifier)))
-                }
+                toggleManualCapture(for: context)
             }
         }
     }
@@ -150,6 +141,18 @@ struct MenuBarView: View {
         )
     }
 
+    private var frontmostAppContext: FrontmostAppContext? {
+        guard let application = frontmostApplication else {
+            return nil
+        }
+
+        return FrontmostAppContext(
+            application: application,
+            config: whitelistConfig(for: application.bundleIdentifier),
+            isCapturing: store.captureEngine.activeSessions[application.bundleIdentifier] != nil
+        )
+    }
+
     private var captureCountTitle: String {
         #tk("Capturing \(store.captureEngine.activeSessions.count) Apps")
     }
@@ -172,30 +175,39 @@ struct MenuBarView: View {
         store.whitelistConfigs.first { $0.bundleIdentifier == bundleIdentifier }
     }
 
-    private func isCapturing(_ application: RunningApplication) -> Bool {
-        store.captureEngine.activeSessions[application.bundleIdentifier] != nil
-    }
-
-    private func frontmostCaptureStatusTitle(_ config: WhitelistedAppConfig) -> String {
-        if store.captureEngine.activeSessions[config.bundleIdentifier] != nil {
+    private func frontmostCaptureStatusTitle(_ context: FrontmostAppContext) -> String {
+        if context.isCapturing {
             return #tk("Capturing")
         }
 
-        switch config.captureMode {
+        switch context.config?.captureMode {
         case .auto:
-            return config.isEnabled ? #tk("Auto Capture Ready") : #tk("Auto Capture Paused")
+            return context.config?.isEnabled == true ? #tk("Auto Capture Ready") : #tk("Auto Capture Paused")
         case .manual:
             return #tk("Manual Capture Stopped")
+        case nil:
+            return #tk("Not Whitelisted")
         }
     }
 
-    private func captureModeBinding(for application: RunningApplication) -> Binding<CaptureMode> {
+    private func autoCaptureBinding(for bundleIdentifier: String) -> Binding<Bool> {
         Binding(
             get: {
-                whitelistConfig(for: application.bundleIdentifier)?.captureMode ?? .auto
+                whitelistConfig(for: bundleIdentifier)?.isEnabled ?? false
             },
             set: {
-                store.send(.whitelistCaptureModeChanged(application.bundleIdentifier, $0))
+                store.send(.whitelistEnabledChanged(bundleIdentifier, $0))
+            }
+        )
+    }
+
+    private func captureModeBinding(for bundleIdentifier: String) -> Binding<CaptureMode> {
+        Binding(
+            get: {
+                whitelistConfig(for: bundleIdentifier)?.captureMode ?? .auto
+            },
+            set: {
+                store.send(.whitelistCaptureModeChanged(bundleIdentifier, $0))
             }
         )
     }
@@ -221,6 +233,15 @@ struct MenuBarView: View {
         )
     }
 
+    private func toggleManualCapture(for context: FrontmostAppContext) {
+        if context.isCapturing {
+            store.send(.captureEngine(.manualCaptureStop(context.application.bundleIdentifier)))
+        } else {
+            store.send(.captureEngine(.runningApplicationsLoaded([context.application])))
+            store.send(.captureEngine(.manualCaptureStart(context.application.bundleIdentifier)))
+        }
+    }
+
     private func applyScreenshotQualityPreset(_ preset: ScreenshotQualityPreset) {
         selectedImageFormat = preset.format
         selectedHEICQuality = preset.heicQuality
@@ -237,6 +258,12 @@ struct MenuBarView: View {
         var subtitle: String
         var format: CaptureImageFormat
         var heicQuality: Double
+    }
+
+    private struct FrontmostAppContext {
+        var application: RunningApplication
+        var config: WhitelistedAppConfig?
+        var isCapturing: Bool
     }
 
     private static let defaultScreenshotQualityPreset = ScreenshotQualityPreset(

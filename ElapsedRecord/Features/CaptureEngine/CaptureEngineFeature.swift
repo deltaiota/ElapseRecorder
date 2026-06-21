@@ -34,6 +34,7 @@ struct CaptureEngineFeature: Reducer {
         case staleOpenSessionCloseFailed(String)
         case whitelistUpdated([WhitelistedAppConfig])
         case runningApplicationsLoaded([RunningApplication])
+        case runningApplicationRegistered(RunningApplication)
         case workspaceEvent(WorkspaceEvent)
         case permissionResolved(CapturePermissionStatus, RunningApplication?)
         case sessionOpened(CaptureSession, RunningApplication)
@@ -65,22 +66,27 @@ struct CaptureEngineFeature: Reducer {
             switch action {
             case .task:
                 let date = date
+                let logger = logger
                 let permission = permission
                 let persistence = persistence
                 let workspace = workspace
 
                 return .merge(
                     .run { send in
+                        // Close sessions left open by a previous run BEFORE resolving
+                        // permission or enumerating running apps, so the stale cleanup can
+                        // never race with — and accidentally close — a freshly opened
+                        // session for the current run.
                         do {
-                            try await send(.staleOpenSessionsClosed(await persistence.closeOpenSessions(date.now())))
+                            let closed = try await persistence.closeOpenSessions(date.now())
+                            await send(.staleOpenSessionsClosed(closed))
                         } catch {
                             await send(.staleOpenSessionCloseFailed(error.localizedDescription))
                         }
-                    },
-                    .run { send in
+                        logger.log(.info, "Capture engine started", [:])
                         await send(.permissionResolved(await permission.status(), nil))
+                        await send(.refreshRunningApplications)
                     },
-                    .send(.refreshRunningApplications),
                     .run { send in
                         for await event in workspace.events() {
                             await send(.workspaceEvent(event))
@@ -177,6 +183,14 @@ struct CaptureEngineFeature: Reducer {
                 )
                 return .merge(applications.map { attemptAutoStart($0, state: &state) })
 
+            case let .runningApplicationRegistered(application):
+                // Merge a single known-running app into the table without discarding the
+                // others. Used by menu actions that need the app present before a manual
+                // capture start; sending runningApplicationsLoaded([app]) there would wipe
+                // every other running app from state.
+                state.runningApplications[application.bundleIdentifier] = application
+                return attemptAutoStart(application, state: &state)
+
             case let .workspaceEvent(.launched(application)):
                 state.lastWorkspaceEvent = .launched(application)
                 state.runningApplications[application.bundleIdentifier] = application
@@ -225,9 +239,19 @@ struct CaptureEngineFeature: Reducer {
                 guard let active = state.activeSessions[application.bundleIdentifier],
                       active.session.id == session.id
                 else {
+                    logger.log(
+                        .info,
+                        "Closing orphaned session",
+                        ["bundle": .string(application.bundleIdentifier), "session": .string(session.id.uuidString)]
+                    )
                     return closeAbandonedSession(session)
                 }
 
+                logger.log(
+                    .info,
+                    "Session capture started",
+                    ["bundle": .string(application.bundleIdentifier), "session": .string(session.id.uuidString)]
+                )
                 return captureLoop(
                     bundleIdentifier: application.bundleIdentifier,
                     interval: active.config.sanitizedInterval
@@ -413,6 +437,11 @@ struct CaptureEngineFeature: Reducer {
             config: config,
             session: session
         )
+        logger.log(
+            .info,
+            "Opening session",
+            ["bundle": .string(application.bundleIdentifier), "session": .string(session.id.uuidString)]
+        )
 
         let persistence = persistence
         return .run { send in
@@ -429,7 +458,16 @@ struct CaptureEngineFeature: Reducer {
         _ active: State.ActiveSession,
         endedAt: Date
     ) -> Effect<Action> {
+        let logger = logger
         let persistence = persistence
+        logger.log(
+            .info,
+            "Closing session",
+            [
+                "bundle": .string(active.config.bundleIdentifier),
+                "session": .string(active.session.id.uuidString),
+            ]
+        )
 
         return .merge(
             .cancel(id: captureLoopID(active.config.bundleIdentifier)),

@@ -214,6 +214,42 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testRunningApplicationRegisteredMergesWithoutClearingOtherApps() async {
+        let existing = RunningApplication(
+            bundleIdentifier: "com.example.ExistingApp",
+            displayName: "Existing App",
+            processIdentifier: 210
+        )
+        let registered = RunningApplication(
+            bundleIdentifier: "com.example.RegisteredApp",
+            displayName: "Registered App",
+            processIdentifier: 211
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: registered.bundleIdentifier,
+            displayName: registered.displayName,
+            captureInterval: 60,
+            captureMode: .manual,
+            isEnabled: false
+        )
+
+        var initialState = CaptureEngineFeature.State()
+        initialState.permissionStatus = .authorized
+        initialState.whitelist = [config.bundleIdentifier: config]
+        initialState.runningApplications = [existing.bundleIdentifier: existing]
+
+        let store = TestStore(initialState: initialState) {
+            CaptureEngineFeature()
+        }
+
+        // Manual config: registering must merge the app in without dropping the existing
+        // one, and must not auto-start a session (manual apps wait for an explicit start).
+        await store.send(.runningApplicationRegistered(registered)) {
+            $0.runningApplications[registered.bundleIdentifier] = registered
+        }
+    }
+
+    @MainActor
     func testDuplicateSessionOpenedIsClosedInsteadOfReplacingActiveSession() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.DuplicateOpenedApp",

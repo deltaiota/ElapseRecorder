@@ -413,6 +413,10 @@ extension LoggingClient: DependencyKey {
     static let liveValue = Self { level, message, metadata in
         Logger.shared.log(message, level: level, tags: [.capture], metadata: metadata)
     }
+
+    /// Logging is a fire-and-forget diagnostic side effect, so tests get a silent no-op
+    /// by default instead of having to override it everywhere a logged path is exercised.
+    static let testValue = Self { _, _, _ in }
 }
 
 extension DependencyValues {

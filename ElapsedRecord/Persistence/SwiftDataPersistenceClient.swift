@@ -40,8 +40,12 @@ final class SwiftDataPersistenceStore {
 
     func closeOpenSessions(endedAt: Date) throws -> Int {
         let context = ModelContext(modelContainer)
+        // Only close sessions that were opened before this cutoff (the app's launch
+        // time). Sessions started at or after the cutoff belong to the current run and
+        // must never be closed by stale cleanup, even if the cleanup races with the
+        // capture engine opening a fresh session at startup.
         let sessions = try context.fetch(FetchDescriptor<CaptureSessionModel>())
-            .filter { $0.endedAt == nil }
+            .filter { $0.endedAt == nil && $0.startedAt < endedAt }
 
         for session in sessions {
             if session.isEmpty {

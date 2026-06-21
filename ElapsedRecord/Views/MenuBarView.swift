@@ -213,7 +213,7 @@ struct MenuBarView: View {
     }
 
     private func addToWhitelist(_ application: RunningApplication) {
-        store.send(.captureEngine(.runningApplicationsLoaded([application])))
+        store.send(.captureEngine(.runningApplicationRegistered(application)))
         store.send(
             .addWhitelistConfigsButtonTapped([
                 WhitelistedAppConfig(
@@ -227,7 +227,7 @@ struct MenuBarView: View {
     }
 
     private func removeFromWhitelist(_ application: RunningApplication) {
-        store.send(.captureEngine(.runningApplicationsLoaded([application])))
+        store.send(.captureEngine(.runningApplicationRegistered(application)))
         store.send(
             .removeWhitelistButtonTapped(application.bundleIdentifier)
         )
@@ -237,7 +237,7 @@ struct MenuBarView: View {
         if context.isCapturing {
             store.send(.captureEngine(.captureStop(context.application.bundleIdentifier)))
         } else {
-            store.send(.captureEngine(.runningApplicationsLoaded([context.application])))
+            store.send(.captureEngine(.runningApplicationRegistered(context.application)))
             store.send(.captureEngine(.captureStart(context.application.bundleIdentifier)))
         }
     }

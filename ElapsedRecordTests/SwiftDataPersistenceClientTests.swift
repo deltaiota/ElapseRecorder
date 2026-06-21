@@ -214,6 +214,57 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
     }
 
     @MainActor
+    func testCloseOpenSessionsSkipsSessionsStartedAfterCutoff() async throws {
+        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let priorRunSession = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000501"),
+            bundleIdentifier: "com.example.CutoffApp",
+            displayName: "Cutoff App",
+            processIdentifier: 501,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        let currentRunSession = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000502"),
+            bundleIdentifier: "com.example.CutoffApp",
+            displayName: "Cutoff App",
+            processIdentifier: 502,
+            startedAt: Date(timeIntervalSince1970: 400)
+        )
+        let currentWindow = try MonitoredWindow(
+            id: uuid("00000000-0000-0000-0000-000000000503"),
+            sessionID: currentRunSession.id,
+            systemWindowID: 503,
+            displayNumber: 1,
+            label: "Main",
+            firstSeenAt: Date(timeIntervalSince1970: 410),
+            lastSeenAt: Date(timeIntervalSince1970: 420)
+        )
+        let currentScreenshot = try ScreenshotRecord(
+            id: uuid("00000000-0000-0000-0000-000000000504"),
+            windowID: currentWindow.id,
+            sessionID: currentRunSession.id,
+            capturedAt: Date(timeIntervalSince1970: 415),
+            fileURL: URL(filePath: "/tmp/current.heic"),
+            fileSizeBytes: 40
+        )
+
+        try await client.openSession(priorRunSession)
+        try await client.openSession(currentRunSession)
+        try await client.upsertWindow(currentWindow)
+        try await client.recordScreenshot(currentScreenshot)
+
+        // The cutoff sits between the two runs: only sessions started before it are stale.
+        // The prior run's empty session is cleaned up while the current run's session
+        // (started after launch) is left open.
+        let closedCount = try await client.closeOpenSessions(Date(timeIntervalSince1970: 300))
+        XCTAssertEqual(closedCount, 1)
+
+        let sessions = try await client.sessions("com.example.CutoffApp")
+        XCTAssertEqual(sessions.map(\.id), [currentRunSession.id])
+        XCTAssertTrue(sessions.allSatisfy { $0.endedAt == nil })
+    }
+
+    @MainActor
     func testClosingEmptySessionDeletesIt() async throws {
         let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
         let emptySession = try CaptureSession(

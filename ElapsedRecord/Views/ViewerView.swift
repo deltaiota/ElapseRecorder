@@ -94,115 +94,112 @@ struct ViewerView: View {
         _ app: AppCaptureSummary,
         whitelistConfig: WhitelistedAppConfig?
     ) -> some View {
-        let isManualCapturing = activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
+        let context = appRowContext(app, whitelistConfig: whitelistConfig)
 
         AppSidebarRow(
             model: .init(
-                app: app,
-                whitelistConfig: whitelistConfig,
-                isRunning: runningApplicationBundleIdentifiers.contains(app.bundleIdentifier),
-                isManualCapturing: isManualCapturing
+                app: context.app,
+                whitelistConfig: context.whitelistConfig,
+                isRunning: context.isRunning,
+                isManualCapturing: context.isManualCapturing
             ),
             actions: .init(
                 setAutoCaptureEnabled: { isEnabled in
-                    setCaptureState(app, isEnabled)
+                    setCaptureState(context.app, isEnabled)
                 },
                 startManualCapture: {
-                    startManualCapture(app)
+                    startManualCapture(context.app)
                 },
                 stopManualCapture: {
-                    stopManualCapture(app)
+                    stopManualCapture(context.app)
                 }
             )
         )
-        .tag(app.bundleIdentifier)
+        .tag(context.app.bundleIdentifier)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
-                deleteAllCaptures(app)
+                deleteAllCaptures(context.app)
             } label: {
                 Label("Delete All Captures", systemSymbol: .trash)
             }
 
-            if let whitelistConfig {
-                switch whitelistConfig.captureMode {
-                case .auto:
-                    if whitelistConfig.isEnabled {
-                        Button("Pause Capture", systemSymbol: .pauseFill) {
-                            setCaptureState(app, false)
-                        }
-                        .tint(.orange)
-                    } else {
-                        Button("Resume Capture", systemSymbol: .playFill) {
-                            setCaptureState(app, true)
-                        }
-                        .tint(.orange)
-                    }
-                case .manual:
-                    if isManualCapturing {
-                        Button("Stop Capture", systemSymbol: .stopCircle) {
-                            stopManualCapture(app)
-                        }
-                        .tint(.red)
-                    } else {
-                        Button("Start Capture", systemSymbol: .recordCircle) {
-                            startManualCapture(app)
-                        }
-                        .tint(.red)
-                    }
+            if let action = captureAction(for: context) {
+                Button(action.title, systemSymbol: action.systemSymbol) {
+                    perform(action, for: context.app)
                 }
+                .tint(action.tint)
 
-                Button("Remove \(app.displayName) from Whitelist", systemSymbol: .minusCircle) {
-                    removeFromWhitelist(app)
+                Button("Remove \(context.app.displayName) from Whitelist", systemSymbol: .minusCircle) {
+                    removeFromWhitelist(context.app)
                 }
                 .tint(.gray)
             } else {
-                Button("Add \(app.displayName) to Whitelist", systemSymbol: .plusCircleFill) {
-                    addToWhitelist(app)
+                Button("Add \(context.app.displayName) to Whitelist", systemSymbol: .plusCircleFill) {
+                    addToWhitelist(context.app)
                 }
                 .tint(.green)
             }
         }
         .contextMenu {
-            if let whitelistConfig {
-                switch whitelistConfig.captureMode {
-                case .auto:
-                    if whitelistConfig.isEnabled {
-                        Button("Pause Capture", systemSymbol: .pauseFill) {
-                            setCaptureState(app, false)
-                        }
-                    } else {
-                        Button("Resume Capture", systemSymbol: .playFill) {
-                            setCaptureState(app, true)
-                        }
-                    }
-                case .manual:
-                    if isManualCapturing {
-                        Button("Stop Capture", systemSymbol: .stopCircle) {
-                            stopManualCapture(app)
-                        }
-                    } else {
-                        Button("Start Capture", systemSymbol: .recordCircle) {
-                            startManualCapture(app)
-                        }
-                    }
+            if let action = captureAction(for: context) {
+                Button(action.title, systemSymbol: action.systemSymbol) {
+                    perform(action, for: context.app)
                 }
 
-                Button("Remove \(app.displayName) from Whitelist", systemSymbol: .minusCircle) {
-                    removeFromWhitelist(app)
+                Button("Remove \(context.app.displayName) from Whitelist", systemSymbol: .minusCircle) {
+                    removeFromWhitelist(context.app)
                 }
             } else {
-                Button("Add \(app.displayName) to Whitelist", systemSymbol: .plusCircle) {
-                    addToWhitelist(app)
+                Button("Add \(context.app.displayName) to Whitelist", systemSymbol: .plusCircle) {
+                    addToWhitelist(context.app)
                 }
             }
 
             Divider()
 
             Button(role: .destructive) {
-                deleteAllCaptures(app)
+                deleteAllCaptures(context.app)
             } label: {
                 Label("Delete All Captures", systemSymbol: .trash)
             }
+        }
+    }
+
+    private func appRowContext(
+        _ app: AppCaptureSummary,
+        whitelistConfig: WhitelistedAppConfig?
+    ) -> AppRowContext {
+        AppRowContext(
+            app: app,
+            whitelistConfig: whitelistConfig,
+            isRunning: runningApplicationBundleIdentifiers.contains(app.bundleIdentifier),
+            isManualCapturing: activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
+        )
+    }
+
+    private func captureAction(for context: AppRowContext) -> AppRowCaptureAction? {
+        guard let whitelistConfig = context.whitelistConfig else {
+            return nil
+        }
+
+        switch whitelistConfig.captureMode {
+        case .auto:
+            return whitelistConfig.isEnabled ? .pauseAuto : .resumeAuto
+        case .manual:
+            return context.isManualCapturing ? .stopManual : .startManual
+        }
+    }
+
+    private func perform(_ action: AppRowCaptureAction, for app: AppCaptureSummary) {
+        switch action {
+        case .pauseAuto:
+            setCaptureState(app, false)
+        case .resumeAuto:
+            setCaptureState(app, true)
+        case .startManual:
+            startManualCapture(app)
+        case .stopManual:
+            stopManualCapture(app)
         }
     }
 
@@ -353,79 +350,12 @@ struct ViewerView: View {
 
     @ViewBuilder
     private func captureSettings() -> some View {
-        if let selectedApp {
+        if let context = selectedAppContext {
             HStack {
-                if let whitelistConfig = whitelistConfig(for: selectedApp.bundleIdentifier) {
+                if context.isWhitelisted {
                     VStack(spacing: 12) {
-                        VStack(alignment: .leading) {
-                            Label("Capture Interval", systemSymbol: .timer)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            HStack {
-                                Stepper(
-                                    value: captureIntervalSecondsBinding(for: selectedApp),
-                                    in: Self.captureIntervalSecondsRange,
-                                    step: 1
-                                ) {
-                                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                                        Text("Every")
-
-                                        TextField(
-                                            "Seconds",
-                                            value: captureIntervalSecondsBinding(for: selectedApp),
-                                            format: .number
-                                        )
-                                        .monospaced()
-                                        .multilineTextAlignment(.trailing)
-                                        .frame(width: 48)
-                                        .textFieldStyle(.plain)
-
-                                        Text("s")
-                                    }
-                                }
-                                .controlSize(.small)
-                                .fixedSize()
-
-                                Spacer(minLength: 12)
-
-                                Slider(
-                                    value: captureIntervalPresetBinding(for: selectedApp),
-                                    in: Self.captureIntervalPresetIndexRange,
-                                    step: 1
-                                ) {
-                                    Text("Capture Interval")
-                                } minimumValueLabel: {
-                                    Text("1s")
-                                } maximumValueLabel: {
-                                    Text("1h")
-                                }
-                                .labelsHidden()
-                            }
-                        }
-
-                        VStack(alignment: .leading) {
-                            Label("Capture Mode", systemSymbol: .camera)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            HStack {
-                                Picker("Capture Mode", selection: captureModeBinding(for: selectedApp)) {
-                                    Text("Auto")
-                                        .tag(CaptureMode.auto)
-
-                                    Text("Manual")
-                                        .tag(CaptureMode.manual)
-                                }
-                                .pickerStyle(.segmented)
-                                .labelsHidden()
-                                .fixedSize()
-
-                                Spacer(minLength: 12)
-
-                                captureModeControl(for: selectedApp, whitelistConfig: whitelistConfig)
-                            }
-                        }
+                        captureIntervalSettings(for: context)
+                        captureModeSettings(for: context)
                     }
                 } else {
                     Label("Whitelist this app to configure capture.", systemSymbol: .minusCircle)
@@ -439,15 +369,88 @@ struct ViewerView: View {
     }
 
     @ViewBuilder
-    private func captureModeControl(
-        for app: AppCaptureSummary,
-        whitelistConfig: WhitelistedAppConfig
-    ) -> some View {
-        switch whitelistConfig.captureMode {
+    private func captureIntervalSettings(for context: SelectedAppContext) -> some View {
+        VStack(alignment: .leading) {
+            Label("Capture Interval", systemSymbol: .timer)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Stepper(
+                    value: captureIntervalSecondsBinding(for: context.app),
+                    in: Self.captureIntervalSecondsRange,
+                    step: 1
+                ) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("Every")
+
+                        TextField(
+                            "Seconds",
+                            value: captureIntervalSecondsBinding(for: context.app),
+                            format: .number
+                        )
+                        .monospaced()
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 48)
+                        .textFieldStyle(.plain)
+
+                        Text("s")
+                    }
+                }
+                .controlSize(.small)
+                .fixedSize()
+
+                Spacer(minLength: 12)
+
+                Slider(
+                    value: captureIntervalPresetBinding(for: context.app),
+                    in: Self.captureIntervalPresetIndexRange,
+                    step: 1
+                ) {
+                    Text("Capture Interval")
+                } minimumValueLabel: {
+                    Text("1s")
+                } maximumValueLabel: {
+                    Text("1h")
+                }
+                .labelsHidden()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func captureModeSettings(for context: SelectedAppContext) -> some View {
+        VStack(alignment: .leading) {
+            Label("Capture Mode", systemSymbol: .camera)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Picker("Capture Mode", selection: captureModeBinding(for: context.app)) {
+                    Text("Auto")
+                        .tag(CaptureMode.auto)
+
+                    Text("Manual")
+                        .tag(CaptureMode.manual)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+
+                Spacer(minLength: 12)
+
+                captureModeControl(for: context)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func captureModeControl(for context: SelectedAppContext) -> some View {
+        switch context.whitelistConfig?.captureMode {
         case .auto:
-            if whitelistConfig.isEnabled {
+            if context.whitelistConfig?.isEnabled == true {
                 Button {
-                    setCaptureState(app, false)
+                    setCaptureState(context.app, false)
                 } label: {
                     Text("Pause")
 
@@ -455,7 +458,7 @@ struct ViewerView: View {
                 }
             } else {
                 Button {
-                    setCaptureState(app, true)
+                    setCaptureState(context.app, true)
                 } label: {
                     Text("Resume")
 
@@ -464,12 +467,10 @@ struct ViewerView: View {
             }
 
         case .manual:
-            let isCapturing = activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
-
             Group {
-                if isCapturing {
+                if context.isCapturing {
                     Button {
-                        stopManualCapture(app)
+                        stopManualCapture(context.app)
                     } label: {
                         Text("Stop")
 
@@ -479,7 +480,7 @@ struct ViewerView: View {
                     .tint(.red)
                 } else {
                     Button {
-                        startManualCapture(app)
+                        startManualCapture(context.app)
                     } label: {
                         Text("Start")
 
@@ -487,7 +488,10 @@ struct ViewerView: View {
                     }
                 }
             }
-            .disabled(!runningApplicationBundleIdentifiers.contains(app.bundleIdentifier))
+            .disabled(!context.isRunning)
+
+        case nil:
+            EmptyView()
         }
     }
 
@@ -539,6 +543,19 @@ struct ViewerView: View {
         return (whitelistedApps + staleApps).first { $0.bundleIdentifier == selectedBundleIdentifier }
     }
 
+    private var selectedAppContext: SelectedAppContext? {
+        guard let selectedApp else {
+            return nil
+        }
+
+        return SelectedAppContext(
+            app: selectedApp,
+            whitelistConfig: whitelistConfig(for: selectedApp.bundleIdentifier),
+            isRunning: runningApplicationBundleIdentifiers.contains(selectedApp.bundleIdentifier),
+            isCapturing: activeCaptureBundleIdentifiers.contains(selectedApp.bundleIdentifier)
+        )
+    }
+
     private var whitelistedBundleIdentifiers: Set<String> {
         Set(whitelistConfigs.map(\.bundleIdentifier))
     }
@@ -549,17 +566,6 @@ struct ViewerView: View {
 
     private func captureInterval(for app: AppCaptureSummary) -> TimeInterval {
         whitelistConfig(for: app.bundleIdentifier)?.captureInterval ?? defaultCaptureInterval
-    }
-
-    private func captureIntervalBinding(for app: AppCaptureSummary) -> Binding<TimeInterval> {
-        Binding(
-            get: {
-                captureInterval(for: app)
-            },
-            set: {
-                setCaptureInterval(app, $0)
-            }
-        )
     }
 
     private func captureIntervalSecondsBinding(for app: AppCaptureSummary) -> Binding<Int> {
@@ -630,6 +636,66 @@ struct ViewerView: View {
             return #tk("Window \(window.displayNumber): \(label)")
         }
         return #tk("Window \(window.displayNumber)")
+    }
+
+    private struct AppRowContext {
+        var app: AppCaptureSummary
+        var whitelistConfig: WhitelistedAppConfig?
+        var isRunning: Bool
+        var isManualCapturing: Bool
+    }
+
+    private enum AppRowCaptureAction {
+        case pauseAuto
+        case resumeAuto
+        case startManual
+        case stopManual
+
+        var title: String {
+            switch self {
+            case .pauseAuto:
+                #tk("Pause Capture")
+            case .resumeAuto:
+                #tk("Resume Capture")
+            case .startManual:
+                #tk("Start Capture")
+            case .stopManual:
+                #tk("Stop Capture")
+            }
+        }
+
+        var systemSymbol: SFSymbol {
+            switch self {
+            case .pauseAuto:
+                .pauseFill
+            case .resumeAuto:
+                .playFill
+            case .startManual:
+                .recordCircle
+            case .stopManual:
+                .stopCircle
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .pauseAuto, .resumeAuto:
+                .orange
+            case .startManual, .stopManual:
+                .red
+            }
+        }
+    }
+
+    private struct SelectedAppContext {
+        var app: AppCaptureSummary
+        var whitelistConfig: WhitelistedAppConfig?
+        var isRunning: Bool
+        var isCapturing: Bool
+
+        var isWhitelisted: Bool {
+            whitelistConfig != nil
+        }
     }
 
     private static let captureIntervalSecondsRange: ClosedRange<Int> = 1 ... 3600

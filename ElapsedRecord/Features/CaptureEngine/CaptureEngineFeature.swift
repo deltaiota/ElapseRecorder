@@ -8,6 +8,7 @@ struct CaptureEngineFeature: Reducer {
         var whitelist: [String: WhitelistedAppConfig] = [:]
         var runningApplications: [String: RunningApplication] = [:]
         var activeSessions: [String: ActiveSession] = [:]
+        var pendingSessionBundleIdentifiers: Set<String> = []
         var permissionStatus: CapturePermissionStatus = .notDetermined
         var lastError: String?
         var lastWorkspaceEvent: WorkspaceEvent?
@@ -20,6 +21,7 @@ struct CaptureEngineFeature: Reducer {
             var nextWindowNumber: Int = 1
             var windowsBySystemID: [Int: MonitoredWindow] = [:]
             var isCaptureInFlight = false
+            var captureUnavailableReason: CaptureUnavailableReason?
         }
     }
 
@@ -36,12 +38,13 @@ struct CaptureEngineFeature: Reducer {
         case workspaceEvent(WorkspaceEvent)
         case permissionResolved(CapturePermissionStatus, RunningApplication?)
         case sessionOpened(CaptureSession, RunningApplication)
-        case sessionOpenFailed(String)
+        case sessionOpenFailed(String?, String)
         case captureTick(String)
         case windowsFailed(String, String)
         case windowsLoaded(String, [CapturableWindow])
         case screenshotFailed(String, String)
         case screenshotRecorded(ScreenshotRecord)
+        case captureUnavailableRecorded(CaptureUnavailableRecord)
         case captureCycleFinished(String)
         case sessionClosed(String)
     }
@@ -110,6 +113,9 @@ struct CaptureEngineFeature: Reducer {
                 guard state.activeSessions[bundleIdentifier] == nil else {
                     return .none
                 }
+                guard !state.pendingSessionBundleIdentifiers.contains(bundleIdentifier) else {
+                    return .none
+                }
                 guard config.allowsSessionStart else {
                     return .none
                 }
@@ -123,6 +129,7 @@ struct CaptureEngineFeature: Reducer {
                         }
                     }
                 }
+                state.pendingSessionBundleIdentifiers.insert(bundleIdentifier)
                 return openSession(application, config: config)
 
             case let .captureStop(bundleIdentifier):
@@ -147,6 +154,9 @@ struct CaptureEngineFeature: Reducer {
                     configs.map { ($0.bundleIdentifier, $0) },
                     uniquingKeysWith: { _, latest in latest }
                 )
+                state.pendingSessionBundleIdentifiers = state.pendingSessionBundleIdentifiers.filter { bundleIdentifier in
+                    state.whitelist[bundleIdentifier]?.allowsSessionStart == true
+                }
 
                 var effects: [Effect<Action>] = []
                 for (bundleIdentifier, active) in state.activeSessions {
@@ -199,6 +209,7 @@ struct CaptureEngineFeature: Reducer {
             case let .workspaceEvent(.terminated(application)):
                 state.lastWorkspaceEvent = .terminated(application)
                 state.runningApplications[application.bundleIdentifier] = nil
+                state.pendingSessionBundleIdentifiers.remove(application.bundleIdentifier)
                 guard let active = state.activeSessions.removeValue(forKey: application.bundleIdentifier) else {
                     return .none
                 }
@@ -229,8 +240,10 @@ struct CaptureEngineFeature: Reducer {
                 return attemptAutoStart(application, state: &state)
 
             case let .sessionOpened(session, application):
+                state.pendingSessionBundleIdentifiers.remove(application.bundleIdentifier)
                 guard let config = state.whitelist[application.bundleIdentifier],
-                      config.allowsSessionStart
+                      config.allowsSessionStart,
+                      state.runningApplications[application.bundleIdentifier] == application
                 else {
                     return closeAbandonedSession(session)
                 }
@@ -243,7 +256,10 @@ struct CaptureEngineFeature: Reducer {
 
                 return captureLoop(bundleIdentifier: application.bundleIdentifier, interval: config.sanitizedInterval)
 
-            case let .sessionOpenFailed(message):
+            case let .sessionOpenFailed(bundleIdentifier, message):
+                if let bundleIdentifier {
+                    state.pendingSessionBundleIdentifiers.remove(bundleIdentifier)
+                }
                 state.recordDiagnostic(message)
                 return .none
 
@@ -273,8 +289,23 @@ struct CaptureEngineFeature: Reducer {
 
                 let seenAt = date.now()
                 var monitoredWindows: [MonitoredWindow] = []
+                let capturableWindows = CapturableWindow.capturableWindows(from: windows)
 
-                for window in CapturableWindow.capturableWindows(from: windows) {
+                let windowsUnavailable = !windows.isEmpty && capturableWindows.isEmpty
+                let previouslySeenWindowsUnavailable = windows.isEmpty && !active.windowsBySystemID.isEmpty
+                if windowsUnavailable || previouslySeenWindowsUnavailable {
+                    state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
+                    state.activeSessions[bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+                    return recordCaptureUnavailable(
+                        in: active.session,
+                        reason: .windowMinimized,
+                        at: seenAt
+                    )
+                }
+
+                active.captureUnavailableReason = nil
+
+                for window in capturableWindows {
                     if var monitoredWindow = active.windowsBySystemID[window.systemWindowID] {
                         monitoredWindow.lastSeenAt = seenAt
                         active.windowsBySystemID[window.systemWindowID] = monitoredWindow
@@ -313,11 +344,20 @@ struct CaptureEngineFeature: Reducer {
                 return .none
 
             case let .screenshotRecorded(record):
+                for (bundleIdentifier, active) in state.activeSessions where active.session.id == record.sessionID {
+                    state.activeSessions[bundleIdentifier]?.captureUnavailableReason = nil
+                }
                 logger.log(
                     .debug,
                     "Recorded screenshot",
                     ["path": .string(record.fileURL.path(percentEncoded: false))]
                 )
+                return .none
+
+            case let .captureUnavailableRecorded(record):
+                for (bundleIdentifier, active) in state.activeSessions where active.session.id == record.sessionID {
+                    state.activeSessions[bundleIdentifier]?.captureUnavailableReason = record.reason
+                }
                 return .none
 
             case let .screenshotFailed(_, message):
@@ -351,6 +391,9 @@ struct CaptureEngineFeature: Reducer {
         guard state.activeSessions[application.bundleIdentifier] == nil else {
             return .none
         }
+        guard !state.pendingSessionBundleIdentifiers.contains(application.bundleIdentifier) else {
+            return .none
+        }
 
         let permission = permission
         guard state.permissionStatus == .authorized else {
@@ -359,6 +402,7 @@ struct CaptureEngineFeature: Reducer {
             }
         }
 
+        state.pendingSessionBundleIdentifiers.insert(application.bundleIdentifier)
         return openSession(application, config: config)
     }
 
@@ -380,7 +424,7 @@ struct CaptureEngineFeature: Reducer {
                 try await persistence.openSession(session)
                 await send(.sessionOpened(session, application))
             } catch {
-                await send(.sessionOpenFailed(error.localizedDescription))
+                await send(.sessionOpenFailed(application.bundleIdentifier, error.localizedDescription))
             }
         }
     }
@@ -399,7 +443,7 @@ struct CaptureEngineFeature: Reducer {
                     try await persistence.closeSession(active.session.id, endedAt)
                     await send(.sessionClosed(active.config.bundleIdentifier))
                 } catch {
-                    await send(.sessionOpenFailed(error.localizedDescription))
+                    await send(.sessionOpenFailed(nil, error.localizedDescription))
                 }
             }
         )
@@ -414,7 +458,7 @@ struct CaptureEngineFeature: Reducer {
                 try await persistence.closeSession(session.id, date.now())
                 await send(.sessionClosed(session.bundleIdentifier))
             } catch {
-                await send(.sessionOpenFailed(error.localizedDescription))
+                await send(.sessionOpenFailed(nil, error.localizedDescription))
             }
         }
     }
@@ -453,13 +497,37 @@ struct CaptureEngineFeature: Reducer {
         let storage = storage
 
         return .run { send in
+            func recordUnavailablePlaceholder() async {
+                let unavailableAt = date.now()
+                let unavailableRecord = CaptureUnavailableRecord(
+                    id: ids.uuid(),
+                    sessionID: session.id,
+                    startedAt: unavailableAt,
+                    endedAt: unavailableAt,
+                    reason: .windowMinimized
+                )
+                do {
+                    try await persistence.recordCaptureUnavailable(unavailableRecord)
+                    await send(.captureUnavailableRecorded(unavailableRecord))
+                } catch {
+                    await send(.screenshotFailed(bundleIdentifier, error.localizedDescription))
+                }
+            }
+
             for window in windows {
                 do {
                     try await persistence.upsertWindow(window)
 
                     let options = preferences.encodingOptions()
                     let capturedAt = date.now()
-                    let image = try await screenCapture.capture(window.systemWindowID)
+                    let image: CapturedImage
+                    do {
+                        image = try await screenCapture.capture(window.systemWindowID)
+                    } catch {
+                        await send(.screenshotFailed(bundleIdentifier, error.localizedDescription))
+                        await recordUnavailablePlaceholder()
+                        continue
+                    }
                     let data = try await encoder.encode(image, options)
                     let url = try storage.screenshotURL(session, window, capturedAt, options.format)
                     let fileSize = try await storage.write(data, url)
@@ -480,6 +548,38 @@ struct CaptureEngineFeature: Reducer {
             await send(.captureCycleFinished(bundleIdentifier))
         }
         .cancellable(id: captureCycleID(session.id), cancelInFlight: true)
+    }
+
+    private func recordCaptureUnavailable(
+        in session: CaptureSession,
+        reason: CaptureUnavailableReason,
+        at date: Date
+    ) -> Effect<Action> {
+        let persistence = persistence
+        let record = unavailableRecord(in: session, reason: reason, at: date)
+
+        return .run { send in
+            do {
+                try await persistence.recordCaptureUnavailable(record)
+                await send(.captureUnavailableRecorded(record))
+            } catch {
+                await send(.screenshotFailed(session.bundleIdentifier, error.localizedDescription))
+            }
+        }
+    }
+
+    private func unavailableRecord(
+        in session: CaptureSession,
+        reason: CaptureUnavailableReason,
+        at date: Date
+    ) -> CaptureUnavailableRecord {
+        CaptureUnavailableRecord(
+            id: ids.uuid(),
+            sessionID: session.id,
+            startedAt: date,
+            endedAt: date,
+            reason: reason
+        )
     }
 
     private func captureLoopID(_ bundleIdentifier: String) -> String {

@@ -16,6 +16,9 @@ final class CaptureSessionModel {
     @Relationship(deleteRule: .cascade, inverse: \ScreenshotRecordModel.session)
     var screenshots: [ScreenshotRecordModel]
 
+    @Relationship(deleteRule: .cascade, inverse: \CaptureUnavailableRecordModel.session)
+    var unavailableRecords: [CaptureUnavailableRecordModel]
+
     init(
         id: UUID,
         bundleIdentifier: String,
@@ -32,6 +35,7 @@ final class CaptureSessionModel {
         self.endedAt = endedAt
         windows = []
         screenshots = []
+        unavailableRecords = []
     }
 }
 
@@ -94,17 +98,41 @@ final class ScreenshotRecordModel {
     }
 }
 
+@Model
+final class CaptureUnavailableRecordModel {
+    @Attribute(.unique) var id: UUID
+    var startedAt: Date
+    var endedAt: Date
+    var reason: String
+    var session: CaptureSessionModel?
+
+    init(
+        id: UUID,
+        startedAt: Date,
+        endedAt: Date,
+        reason: CaptureUnavailableReason,
+        session: CaptureSessionModel?
+    ) {
+        self.id = id
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.reason = reason.rawValue
+        self.session = session
+    }
+}
+
 extension Schema {
     static let elapsedRecord = Schema([
         CaptureSessionModel.self,
         MonitoredWindowModel.self,
         ScreenshotRecordModel.self,
+        CaptureUnavailableRecordModel.self,
     ])
 }
 
 extension CaptureSessionModel {
     var isEmpty: Bool {
-        windows.isEmpty && screenshots.isEmpty
+        windows.isEmpty && screenshots.isEmpty && unavailableRecords.isEmpty
     }
 
     var domainValue: CaptureSession {
@@ -169,6 +197,24 @@ extension ScreenshotRecordModel {
             capturedAt: capturedAt,
             fileURL: URL(filePath: filePath),
             fileSizeBytes: fileSizeBytes
+        )
+    }
+}
+
+extension CaptureUnavailableRecordModel {
+    var domainValue: CaptureUnavailableRecord? {
+        guard let sessionID = session?.id,
+              let reason = CaptureUnavailableReason(rawValue: reason)
+        else {
+            return nil
+        }
+
+        return CaptureUnavailableRecord(
+            id: id,
+            sessionID: sessionID,
+            startedAt: startedAt,
+            endedAt: endedAt,
+            reason: reason
         )
     }
 }

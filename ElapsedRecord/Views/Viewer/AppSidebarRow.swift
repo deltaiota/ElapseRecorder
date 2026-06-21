@@ -7,6 +7,7 @@ struct AppSidebarRow: View {
     var actions = Actions()
 
     @State private var isShowingInfo = false
+    @State private var isShowingCaptureUnavailableReason = false
 
     private var identity: InstalledAppIdentity {
         InstalledAppIdentity(app: model.app)
@@ -38,9 +39,25 @@ struct AppSidebarRow: View {
                 }
 
             VStack(alignment: .leading) {
-                Text(identity.localizedName)
-                    .lineLimit(1)
-                    .foregroundStyle(model.isWhitelisted ? AnyShapeStyle(.primary) : AnyShapeStyle(.placeholder))
+                HStack(spacing: 5) {
+                    if let indicator = model.captureIndicator {
+                        Circle()
+                            .fill(indicator.color)
+                            .frame(width: 7, height: 7)
+                            .popover(isPresented: $isShowingCaptureUnavailableReason, arrowEdge: .trailing) {
+                                Text(indicator.reason?.title ?? "")
+                                    .font(.caption)
+                                    .padding(8)
+                            }
+                            .onHover { isHovering in
+                                isShowingCaptureUnavailableReason = isHovering && indicator.reason != nil
+                            }
+                    }
+
+                    Text(identity.localizedName)
+                        .lineLimit(1)
+                        .foregroundStyle(model.isWhitelisted ? AnyShapeStyle(.primary) : AnyShapeStyle(.placeholder))
+                }
 
                 CountSummary(
                     items: countSummaryItems
@@ -152,10 +169,18 @@ struct AppSidebarRow: View {
             app: AppCaptureSummary,
             whitelistConfig: WhitelistedAppConfig?,
             isRunning: Bool,
-            isCapturing: Bool
+            isCapturing: Bool,
+            unavailableReason: CaptureUnavailableReason? = nil
         ) {
             self.app = app
             captureInterval = whitelistConfig?.captureInterval
+            captureIndicator = if let unavailableReason {
+                .unavailable(unavailableReason)
+            } else if isCapturing {
+                .capturing
+            } else {
+                nil
+            }
 
             guard let whitelistConfig else {
                 captureState = .stale(isRunning: isRunning)
@@ -169,6 +194,8 @@ struct AppSidebarRow: View {
                 .manual(isRunning: isRunning, isCapturing: isCapturing)
             }
         }
+
+        let captureIndicator: CaptureIndicator?
 
         var isWhitelisted: Bool {
             if case .stale = captureState {
@@ -205,6 +232,29 @@ struct AppSidebarRow: View {
         case stale(isRunning: Bool)
         case auto(isRunning: Bool, isEnabled: Bool)
         case manual(isRunning: Bool, isCapturing: Bool)
+    }
+
+    enum CaptureIndicator: Equatable {
+        case capturing
+        case unavailable(CaptureUnavailableReason)
+
+        var color: Color {
+            switch self {
+            case .capturing:
+                .red
+            case .unavailable:
+                .yellow
+            }
+        }
+
+        var reason: CaptureUnavailableReason? {
+            switch self {
+            case .capturing:
+                nil
+            case let .unavailable(reason):
+                reason
+            }
+        }
     }
 
     struct Actions {

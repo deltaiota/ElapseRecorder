@@ -7,8 +7,8 @@ struct ViewerFeature: Reducer {
         var apps: [AppCaptureSummary] = []
         var sessions: [CaptureSessionSummary] = []
         var windows: [WindowCaptureSummary] = []
-        var windowScreenshots: [ScreenshotRecord] = []
-        var flatScreenshots: [ScreenshotRecord] = []
+        var windowTimelineEntries: [CaptureTimelineEntry] = []
+        var flatTimelineEntries: [CaptureTimelineEntry] = []
         var selectedBundleIdentifier: String?
         var selectedSessionID: UUID?
         var selectedWindowID: UUID?
@@ -77,10 +77,10 @@ struct ViewerFeature: Reducer {
         case windowsLoaded([WindowCaptureSummary])
         case windowSelected(UUID?)
         case windowPickerSelectionChanged(State.WindowPickerSelection)
-        case windowScreenshotsLoaded([ScreenshotRecord])
+        case timelineEntriesLoaded([CaptureTimelineEntry])
         case sessionListSelectionChanged(State.SessionListSelection?)
         case flatGallerySelected
-        case flatScreenshotsLoaded([ScreenshotRecord])
+        case flatTimelineEntriesLoaded([CaptureTimelineEntry])
         case screenshotSelected(ScreenshotRecord?)
         case refresh
         case revealSelectedScreenshotInFinderButtonTapped
@@ -120,8 +120,8 @@ struct ViewerFeature: Reducer {
                 state.selectedWindowID = nil
                 state.sessions = []
                 state.windows = []
-                state.windowScreenshots = []
-                state.flatScreenshots = []
+                state.windowTimelineEntries = []
+                state.flatTimelineEntries = []
                 state.selectedScreenshot = nil
                 state.isShowingFlatGallery = false
 
@@ -138,7 +138,7 @@ struct ViewerFeature: Reducer {
                     state.selectedWindowID = nil
                     state.selectedScreenshot = nil
                     state.windows = []
-                    state.windowScreenshots = []
+                    state.windowTimelineEntries = []
                 }
                 state.isLoading = false
                 return .none
@@ -153,7 +153,7 @@ struct ViewerFeature: Reducer {
                 {
                     state.selectedWindowID = nil
                     state.selectedScreenshot = nil
-                    state.windowScreenshots = []
+                    state.windowTimelineEntries = []
                 }
                 state.isLoading = false
                 return .none
@@ -176,8 +176,8 @@ struct ViewerFeature: Reducer {
                     return selectWindow(id, state: &state)
                 }
 
-            case let .windowScreenshotsLoaded(records):
-                state.windowScreenshots = records
+            case let .timelineEntriesLoaded(entries):
+                state.windowTimelineEntries = entries
                 state.isLoading = false
                 return .none
 
@@ -193,16 +193,16 @@ struct ViewerFeature: Reducer {
                     state.selectedScreenshot = nil
                     state.isShowingFlatGallery = false
                     state.windows = []
-                    state.windowScreenshots = []
-                    state.flatScreenshots = []
+                    state.windowTimelineEntries = []
+                    state.flatTimelineEntries = []
                     return .none
                 }
 
             case .flatGallerySelected:
                 return selectFlatGallery(state: &state)
 
-            case let .flatScreenshotsLoaded(records):
-                state.flatScreenshots = records
+            case let .flatTimelineEntriesLoaded(entries):
+                state.flatTimelineEntries = entries
                 state.isLoading = false
                 return .none
 
@@ -230,7 +230,7 @@ struct ViewerFeature: Reducer {
                     state.selectedWindowID = nil
                     state.selectedScreenshot = nil
                     state.windows = []
-                    state.windowScreenshots = []
+                    state.windowTimelineEntries = []
                 }
                 state.isLoading = false
                 return .send(.refresh)
@@ -250,7 +250,7 @@ struct ViewerFeature: Reducer {
             effects.append(loadSessions(bundleIdentifier: bundleIdentifier))
 
             if state.isShowingFlatGallery {
-                effects.append(loadFlatScreenshots(bundleIdentifier: bundleIdentifier))
+                effects.append(loadFlatTimeline(bundleIdentifier: bundleIdentifier))
             }
         }
 
@@ -258,12 +258,14 @@ struct ViewerFeature: Reducer {
             effects.append(loadWindows(sessionID: sessionID))
 
             if state.selectedWindowID == nil {
-                effects.append(loadSessionScreenshots(sessionID: sessionID))
+                effects.append(loadSessionTimeline(sessionID: sessionID))
             }
         }
 
         if let windowID = state.selectedWindowID {
-            effects.append(loadWindowScreenshots(windowID: windowID))
+            if let sessionID = state.selectedSessionID {
+                effects.append(loadWindowTimeline(sessionID: sessionID, windowID: windowID))
+            }
         }
 
         return .merge(effects)
@@ -276,7 +278,7 @@ struct ViewerFeature: Reducer {
         state.selectedSessionID = sessionID
         state.selectedWindowID = nil
         state.windows = []
-        state.windowScreenshots = []
+        state.windowTimelineEntries = []
         state.selectedScreenshot = nil
         state.isShowingFlatGallery = false
 
@@ -284,7 +286,7 @@ struct ViewerFeature: Reducer {
         state.isLoading = true
         return .merge(
             loadWindows(sessionID: sessionID),
-            loadSessionScreenshots(sessionID: sessionID)
+            loadSessionTimeline(sessionID: sessionID)
         )
     }
 
@@ -294,9 +296,9 @@ struct ViewerFeature: Reducer {
         state.selectedWindowID = nil
         state.selectedScreenshot = nil
         state.isShowingFlatGallery = true
-        state.flatScreenshots = []
+        state.flatTimelineEntries = []
         state.isLoading = true
-        return loadFlatScreenshots(bundleIdentifier: bundleIdentifier)
+        return loadFlatTimeline(bundleIdentifier: bundleIdentifier)
     }
 
     private func selectAllWindows(state: inout State) -> Effect<Action> {
@@ -305,9 +307,9 @@ struct ViewerFeature: Reducer {
         state.isShowingFlatGallery = false
 
         guard let sessionID = state.selectedSessionID else { return .none }
-        state.windowScreenshots = []
+        state.windowTimelineEntries = []
         state.isLoading = true
-        return loadSessionScreenshots(sessionID: sessionID)
+        return loadSessionTimeline(sessionID: sessionID)
     }
 
     private func selectWindow(
@@ -315,11 +317,12 @@ struct ViewerFeature: Reducer {
         state: inout State
     ) -> Effect<Action> {
         state.selectedWindowID = windowID
-        state.windowScreenshots = []
+        state.windowTimelineEntries = []
         state.selectedScreenshot = nil
         state.isShowingFlatGallery = false
         state.isLoading = true
-        return loadWindowScreenshots(windowID: windowID)
+        guard let sessionID = state.selectedSessionID else { return .none }
+        return loadWindowTimeline(sessionID: sessionID, windowID: windowID)
     }
 
     private func deleteSession(
@@ -378,33 +381,33 @@ struct ViewerFeature: Reducer {
         }
     }
 
-    private func loadSessionScreenshots(sessionID: UUID) -> Effect<Action> {
+    private func loadSessionTimeline(sessionID: UUID) -> Effect<Action> {
         .run { send in
             do {
-                let records = try await persistence.screenshotsForSession(sessionID)
-                await send(.windowScreenshotsLoaded(records))
+                let entries = try await persistence.timelineForSession(sessionID)
+                await send(.timelineEntriesLoaded(entries))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
         }
     }
 
-    private func loadWindowScreenshots(windowID: UUID) -> Effect<Action> {
+    private func loadWindowTimeline(sessionID: UUID, windowID: UUID) -> Effect<Action> {
         .run { send in
             do {
-                let records = try await persistence.screenshotsForWindow(windowID)
-                await send(.windowScreenshotsLoaded(records))
+                let entries = try await persistence.timelineForWindow(sessionID, windowID)
+                await send(.timelineEntriesLoaded(entries))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
         }
     }
 
-    private func loadFlatScreenshots(bundleIdentifier: String) -> Effect<Action> {
+    private func loadFlatTimeline(bundleIdentifier: String) -> Effect<Action> {
         .run { send in
             do {
-                let records = try await persistence.screenshotsForApp(bundleIdentifier)
-                await send(.flatScreenshotsLoaded(records))
+                let entries = try await persistence.timelineForApp(bundleIdentifier)
+                await send(.flatTimelineEntriesLoaded(entries))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
@@ -426,7 +429,7 @@ extension ViewerFeature.State {
         isShowingFlatGallery = false
         sessions = []
         windows = []
-        windowScreenshots = []
-        flatScreenshots = []
+        windowTimelineEntries = []
+        flatTimelineEntries = []
     }
 }

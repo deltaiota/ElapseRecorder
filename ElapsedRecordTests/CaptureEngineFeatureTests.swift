@@ -50,6 +50,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
         }
         await store.send(.runningApplicationsLoaded([app])) {
             $0.runningApplications = [app.bundleIdentifier: app]
+            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
         }
 
         let expectedSession = CaptureSession(
@@ -61,6 +62,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
         )
 
         await store.receive(.sessionOpened(expectedSession, app)) {
+            $0.pendingSessionBundleIdentifiers = []
             $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
                 application: app,
                 config: config,
@@ -74,6 +76,84 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
         }
 
+        await store.send(.workspaceEvent(.terminated(app))) {
+            $0.lastWorkspaceEvent = .terminated(app)
+            $0.runningApplications[app.bundleIdentifier] = nil
+            $0.activeSessions[app.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(app.bundleIdentifier))
+    }
+
+    @MainActor
+    func testDuplicateStartRequestsAreIgnoredWhileSessionOpenIsPending() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.RacyAutoApp",
+            displayName: "Racy Auto App",
+            processIdentifier: 142
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000054"))
+        let startedAt = Date(timeIntervalSince1970: 540)
+        let clock = TestClock()
+        let openedSessions = LockIsolated([CaptureSession]())
+
+        var initialState = CaptureEngineFeature.State()
+        initialState.whitelist = [config.bundleIdentifier: config]
+        initialState.permissionStatus = .authorized
+
+        let store = TestStore(initialState: initialState) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.capturePermissionClient.status = { .authorized }
+            $0.capturePermissionClient.request = { .authorized }
+            $0.continuousClock = clock
+            $0.dateClient.now = { startedAt }
+            $0.idGeneratorClient.uuid = { sessionID }
+            $0.persistenceClient.closeSession = { _, _ in }
+            $0.persistenceClient.openSession = { session in
+                try await clock.sleep(for: .seconds(1))
+                openedSessions.withValue { $0.append(session) }
+            }
+            $0.screenCaptureClient.windows = { _ in [] }
+        }
+
+        await store.send(.runningApplicationsLoaded([app])) {
+            $0.runningApplications = [app.bundleIdentifier: app]
+            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
+        }
+        await Task.yield()
+        await store.send(.whitelistUpdated([config]))
+        XCTAssertEqual(openedSessions.value.map(\.id), [])
+        await clock.advance(by: .seconds(1))
+
+        let expectedSession = CaptureSession(
+            id: sessionID,
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: startedAt
+        )
+        await store.receive(.sessionOpened(expectedSession, app)) {
+            $0.pendingSessionBundleIdentifiers = []
+            $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+                application: app,
+                config: config,
+                session: expectedSession
+            )
+        }
+        await store.receive(.captureTick(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+        }
+
+        XCTAssertEqual(openedSessions.value.map(\.id), [sessionID])
         await store.send(.workspaceEvent(.terminated(app))) {
             $0.lastWorkspaceEvent = .terminated(app)
             $0.runningApplications[app.bundleIdentifier] = nil
@@ -152,7 +232,9 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.screenCaptureClient.windows = { _ in [] }
         }
 
-        await store.send(.captureStart(app.bundleIdentifier))
+        await store.send(.captureStart(app.bundleIdentifier)) {
+            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
+        }
 
         let expectedSession = CaptureSession(
             id: sessionID,
@@ -163,6 +245,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
         )
 
         await store.receive(.sessionOpened(expectedSession, app)) {
+            $0.pendingSessionBundleIdentifiers = []
             $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
                 application: app,
                 config: config,
@@ -356,6 +439,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
         await store.receive(.permissionResolved(.authorized, nil)) {
             $0.permissionStatus = .authorized
             $0.lastError = nil
+            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
         }
 
         let expectedSession = CaptureSession(
@@ -366,6 +450,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
             startedAt: startedAt
         )
         await store.receive(.sessionOpened(expectedSession, app)) {
+            $0.pendingSessionBundleIdentifiers = []
             $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
                 application: app,
                 config: config,
@@ -446,7 +531,9 @@ final class CaptureEngineFeatureTests: XCTestCase {
         )
         let firstWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000011"))
         let secondWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000012"))
-        let ids = UUIDSequence([firstWindowID, secondWindowID])
+        let firstUnavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
+        let secondUnavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
+        let ids = UUIDSequence([firstWindowID, secondWindowID, firstUnavailableID, secondUnavailableID])
 
         var state = CaptureEngineFeature.State()
         state.whitelist = [config.bundleIdentifier: config]
@@ -466,6 +553,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.fileStorageClient.write = { data, _ in data.count }
             $0.imageEncodingClient.encode = { _, _ in Data() }
             $0.idGeneratorClient.uuid = { ids.next() }
+            $0.persistenceClient.recordCaptureUnavailable = { _ in }
             $0.persistenceClient.upsertWindow = { _ in }
             $0.screenCaptureClient.capture = { _ in throw CaptureEngineError.windowCaptureFailed(systemWindowID: -1) }
             $0.loggingClient.log = { _, _, _ in }
@@ -538,7 +626,8 @@ final class CaptureEngineFeatureTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1)
         )
         let parentWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000031"))
-        let ids = UUIDSequence([parentWindowID])
+        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000032"))
+        let ids = UUIDSequence([parentWindowID, unavailableID])
 
         var state = CaptureEngineFeature.State()
         state.whitelist = [config.bundleIdentifier: config]
@@ -558,6 +647,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.fileStorageClient.write = { data, _ in data.count }
             $0.imageEncodingClient.encode = { _, _ in Data() }
             $0.idGeneratorClient.uuid = { ids.next() }
+            $0.persistenceClient.recordCaptureUnavailable = { _ in }
             $0.persistenceClient.upsertWindow = { _ in }
             $0.screenCaptureClient.capture = { _ in throw CaptureEngineError.windowCaptureFailed(systemWindowID: -1) }
             $0.loggingClient.log = { _, _, _ in }
@@ -598,6 +688,250 @@ final class CaptureEngineFeatureTests: XCTestCase {
             )
             $0.activeSessions[app.bundleIdentifier] = active
         }
+    }
+
+    @MainActor
+    func testUnavailableWindowsRecordPlaceholderWithoutStoppingSession() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.HiddenApp",
+            displayName: "Hidden App",
+            processIdentifier: 101
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000060")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000061"))
+        let seenAt = Date(timeIntervalSince1970: 60)
+        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session,
+            isCaptureInFlight: true
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { seenAt }
+            $0.idGeneratorClient.uuid = { unavailableID }
+            $0.persistenceClient.recordCaptureUnavailable = { record in
+                recordedPlaceholders.withValue { $0.append(record) }
+            }
+        }
+
+        let expectedRecord = CaptureUnavailableRecord(
+            id: unavailableID,
+            sessionID: session.id,
+            startedAt: seenAt,
+            endedAt: seenAt,
+            reason: .windowMinimized
+        )
+
+        await store.send(
+            .windowsLoaded(
+                app.bundleIdentifier,
+                [
+                    CapturableWindow(
+                        systemWindowID: 901,
+                        title: nil,
+                        frame: CGRect(x: 0, y: 0, width: 1200, height: 900),
+                        layer: 0,
+                        isOnScreen: true,
+                        isCaptureUnavailable: true
+                    ),
+                ]
+            )
+        ) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+        }
+        await store.receive(.captureUnavailableRecorded(expectedRecord))
+
+        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
+    }
+
+    @MainActor
+    func testPreviouslySeenWindowsDisappearingRecordUnavailablePlaceholder() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.NormalMinimizeApp",
+            displayName: "Normal Minimize App",
+            processIdentifier: 103
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000080")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let window = try MonitoredWindow(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000081")),
+            sessionID: session.id,
+            systemWindowID: 921,
+            displayNumber: 1,
+            label: "Main",
+            firstSeenAt: Date(timeIntervalSince1970: 10),
+            lastSeenAt: Date(timeIntervalSince1970: 10)
+        )
+        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000082"))
+        let seenAt = Date(timeIntervalSince1970: 80)
+        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session,
+            windowsBySystemID: [window.systemWindowID: window],
+            isCaptureInFlight: true
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { seenAt }
+            $0.idGeneratorClient.uuid = { unavailableID }
+            $0.persistenceClient.recordCaptureUnavailable = { record in
+                recordedPlaceholders.withValue { $0.append(record) }
+            }
+        }
+
+        let expectedRecord = CaptureUnavailableRecord(
+            id: unavailableID,
+            sessionID: session.id,
+            startedAt: seenAt,
+            endedAt: seenAt,
+            reason: .windowMinimized
+        )
+
+        await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+        }
+        await store.receive(.captureUnavailableRecorded(expectedRecord))
+
+        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
+    }
+
+    @MainActor
+    func testCaptureFailureRecordsUnavailablePlaceholderWithoutStoppingSession() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.MinimizedCaptureApp",
+            displayName: "Minimized Capture App",
+            processIdentifier: 102
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000070")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let window = try MonitoredWindow(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000071")),
+            sessionID: session.id,
+            systemWindowID: 911,
+            displayNumber: 1,
+            label: "Main",
+            firstSeenAt: Date(timeIntervalSince1970: 10),
+            lastSeenAt: Date(timeIntervalSince1970: 10)
+        )
+        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000072"))
+        let failedAt = Date(timeIntervalSince1970: 70)
+        let error = CaptureEngineError.windowCaptureFailed(systemWindowID: window.systemWindowID)
+        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session,
+            windowsBySystemID: [window.systemWindowID: window],
+            isCaptureInFlight: true
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
+            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
+            $0.dateClient.now = { failedAt }
+            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
+            $0.fileStorageClient.write = { data, _ in data.count }
+            $0.imageEncodingClient.encode = { _, _ in Data() }
+            $0.idGeneratorClient.uuid = { unavailableID }
+            $0.persistenceClient.recordCaptureUnavailable = { record in
+                recordedPlaceholders.withValue { $0.append(record) }
+            }
+            $0.persistenceClient.upsertWindow = { _ in }
+            $0.screenCaptureClient.capture = { _ in throw error }
+            $0.loggingClient.log = { _, _, _ in }
+        }
+
+        let expectedRecord = CaptureUnavailableRecord(
+            id: unavailableID,
+            sessionID: session.id,
+            startedAt: failedAt,
+            endedAt: failedAt,
+            reason: .windowMinimized
+        )
+
+        await store.send(
+            .windowsLoaded(
+                app.bundleIdentifier,
+                [
+                    CapturableWindow(
+                        systemWindowID: window.systemWindowID,
+                        title: window.label,
+                        frame: CGRect(x: 0, y: 0, width: 1000, height: 700),
+                        layer: 0,
+                        isOnScreen: true
+                    ),
+                ]
+            )
+        ) {
+            $0.activeSessions[app.bundleIdentifier]?.windowsBySystemID[window.systemWindowID]?.lastSeenAt = failedAt
+        }
+        await store.receive(.screenshotFailed(app.bundleIdentifier, error.localizedDescription)) {
+            $0.lastError = error.localizedDescription
+            $0.recentDiagnostics = [error.localizedDescription]
+        }
+        await store.receive(.captureUnavailableRecorded(expectedRecord)) {
+            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+        }
+        await store.receive(.captureCycleFinished(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+        }
+
+        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
     }
 
     @MainActor

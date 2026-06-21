@@ -70,12 +70,16 @@ nonisolated struct PersistenceClient {
     var deleteApp: @Sendable (_ bundleIdentifier: String) async throws -> Void
     var upsertWindow: @Sendable (_ window: MonitoredWindow) async throws -> Void
     var recordScreenshot: @Sendable (_ record: ScreenshotRecord) async throws -> Void
+    var recordCaptureUnavailable: @Sendable (_ record: CaptureUnavailableRecord) async throws -> Void
     var apps: @Sendable () async throws -> [AppCaptureSummary]
     var sessions: @Sendable (_ bundleIdentifier: String) async throws -> [CaptureSessionSummary]
     var windows: @Sendable (_ sessionID: UUID) async throws -> [WindowCaptureSummary]
     var screenshotsForSession: @Sendable (_ sessionID: UUID) async throws -> [ScreenshotRecord]
     var screenshotsForWindow: @Sendable (_ windowID: UUID) async throws -> [ScreenshotRecord]
     var screenshotsForApp: @Sendable (_ bundleIdentifier: String) async throws -> [ScreenshotRecord]
+    var timelineForSession: @Sendable (_ sessionID: UUID) async throws -> [CaptureTimelineEntry]
+    var timelineForWindow: @Sendable (_ sessionID: UUID, _ windowID: UUID) async throws -> [CaptureTimelineEntry]
+    var timelineForApp: @Sendable (_ bundleIdentifier: String) async throws -> [CaptureTimelineEntry]
 }
 
 nonisolated struct ThumbnailClient {
@@ -499,8 +503,19 @@ nonisolated extension CapturableWindow {
             title: window.title,
             frame: window.frame,
             layer: window.windowLayer,
-            isOnScreen: window.isOnScreen
+            isOnScreen: window.isOnScreen,
+            isCaptureUnavailable: window.isStageManagerOrMinimizedProxy
         )
+    }
+}
+
+private nonisolated extension SCWindow {
+    var isStageManagerOrMinimizedProxy: Bool {
+        isOnScreen
+            && windowLayer == 0
+            && frame.width >= 512
+            && frame.height >= 512
+            && (title?.isEmpty ?? true)
     }
 }
 
@@ -516,6 +531,7 @@ nonisolated extension PersistenceClient {
         deleteApp: { _ in reportIssue("PersistenceClient.deleteApp is unimplemented") },
         upsertWindow: { _ in reportIssue("PersistenceClient.upsertWindow is unimplemented") },
         recordScreenshot: { _ in reportIssue("PersistenceClient.recordScreenshot is unimplemented") },
+        recordCaptureUnavailable: { _ in reportIssue("PersistenceClient.recordCaptureUnavailable is unimplemented") },
         apps: {
             reportIssue("PersistenceClient.apps is unimplemented")
             return []
@@ -538,6 +554,18 @@ nonisolated extension PersistenceClient {
         },
         screenshotsForApp: { _ in
             reportIssue("PersistenceClient.screenshotsForApp is unimplemented")
+            return []
+        },
+        timelineForSession: { _ in
+            reportIssue("PersistenceClient.timelineForSession is unimplemented")
+            return []
+        },
+        timelineForWindow: { _, _ in
+            reportIssue("PersistenceClient.timelineForWindow is unimplemented")
+            return []
+        },
+        timelineForApp: { _ in
+            reportIssue("PersistenceClient.timelineForApp is unimplemented")
             return []
         }
     )

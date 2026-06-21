@@ -90,7 +90,8 @@ struct ViewerView: View {
                 app: context.app,
                 whitelistConfig: context.whitelistConfig,
                 isRunning: context.isRunning,
-                isCapturing: context.isCapturing
+                isCapturing: context.isCapturing,
+                unavailableReason: context.unavailableReason
             ),
             actions: .init(
                 setAutoCaptureEnabled: { isEnabled in
@@ -162,7 +163,8 @@ struct ViewerView: View {
             app: app,
             whitelistConfig: whitelistConfig,
             isRunning: runningApplicationBundleIdentifiers.contains(app.bundleIdentifier),
-            isCapturing: activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
+            isCapturing: activeCaptureBundleIdentifiers.contains(app.bundleIdentifier),
+            unavailableReason: captureUnavailableReasonsByBundleIdentifier[app.bundleIdentifier]
         )
     }
 
@@ -279,13 +281,13 @@ struct ViewerView: View {
         Group {
             if store.isShowingFlatGallery {
                 ScreenshotGrid(
-                    records: store.flatScreenshots,
+                    entries: store.flatTimelineEntries,
                     selectScreenshot: { store.send(.screenshotSelected($0)) }
                 )
                 .navigationTitle("All Screenshots")
             } else if store.selectedSessionID != nil {
                 ScreenshotGrid(
-                    records: store.windowScreenshots,
+                    entries: store.windowTimelineEntries,
                     selectScreenshot: { store.send(.screenshotSelected($0)) }
                 )
                 .safeAreaInset(edge: .bottom) {
@@ -500,6 +502,10 @@ struct ViewerView: View {
         captureConfiguration.runningApplicationBundleIdentifiers
     }
 
+    private var captureUnavailableReasonsByBundleIdentifier: [String: CaptureUnavailableReason] {
+        captureConfiguration.unavailableReasonsByBundleIdentifier
+    }
+
     private func whitelistApps(_ configs: [WhitelistedAppConfig]) {
         actions.whitelistApps(configs)
     }
@@ -684,6 +690,7 @@ struct ViewerView: View {
         var defaultCaptureInterval: TimeInterval = 5
         var activeCaptureBundleIdentifiers: Set<String> = []
         var runningApplicationBundleIdentifiers: Set<String> = []
+        var unavailableReasonsByBundleIdentifier: [String: CaptureUnavailableReason] = [:]
     }
 
     struct Actions {
@@ -703,6 +710,7 @@ struct ViewerView: View {
         var whitelistConfig: WhitelistedAppConfig?
         var isRunning: Bool
         var isCapturing: Bool
+        var unavailableReason: CaptureUnavailableReason?
     }
 
     private enum AppRowCaptureAction {

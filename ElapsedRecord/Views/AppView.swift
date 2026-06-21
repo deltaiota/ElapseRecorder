@@ -55,6 +55,7 @@ struct AppView: View {
             HStack(spacing: -8) {
                 Image(systemSymbol: .recordCircle)
                     .foregroundStyle(.red)
+                    .zIndex(-1)
 
                 Group {
                     switch store.captureEngine.permissionStatus {
@@ -73,7 +74,7 @@ struct AppView: View {
                 }
             }
         }
-        .background(.selection, in: .buttonBorder)
+        .background(.selection.secondary, in: .buttonBorder)
         .popover(isPresented: $isShowingRecordingPermissionHint, arrowEdge: .bottom) {
             recordingPermissionHint()
         }
@@ -139,10 +140,10 @@ struct AppView: View {
                     .font(.headline)
 
                 diagnosticsSection("Capture") {
-                    diagnosticsRow("Permission", permissionStatusText, systemSymbol: .recordCircle)
+                    diagnosticsRow("Permission", permissionStatusText, systemSymbol: .checkmarkSeal)
                     diagnosticsRow("Active sessions", activeCaptureSessions.count.formatted(), systemSymbol: .recordCircle)
-                    diagnosticsRow("Whitelist", store.whitelistConfigs.count.formatted(), systemSymbol: .app)
-                    diagnosticsRow("Running apps seen", store.captureEngine.runningApplications.count.formatted(), systemSymbol: .app)
+                    diagnosticsRow("Whitelist", store.whitelistConfigs.count.formatted(), systemSymbol: .listClipboard)
+                    diagnosticsRow("Running apps seen", store.captureEngine.runningApplications.count.formatted(), systemSymbol: .appBadgeClock)
                 }
 
                 if !activeCaptureSessions.isEmpty {
@@ -181,7 +182,9 @@ struct AppView: View {
                     }
                 }
 
-                recentDiagnostics()
+                diagnosticsSection("Recent Diagnostics") {
+                    recentDiagnostics()
+                }
             }
             .frame(width: Self.diagnosticsPopoverContentWidth, alignment: .leading)
             .padding(Self.diagnosticsPopoverPadding)
@@ -199,6 +202,7 @@ struct AppView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(.caption)
+                .bold()
                 .foregroundStyle(.secondary)
 
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 3) {
@@ -228,24 +232,16 @@ struct AppView: View {
 
     @ViewBuilder
     private func recentDiagnostics() -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Recent Diagnostics")
-                .font(.caption)
+        if store.captureEngine.recentDiagnostics.isEmpty {
+            Text("No recent diagnostics")
                 .foregroundStyle(.secondary)
-
-            if store.captureEngine.recentDiagnostics.isEmpty {
-                Text("No recent diagnostics")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(Array(store.captureEngine.recentDiagnostics.reversed().enumerated()), id: \.offset) { _, diagnostic in
-                    Text(diagnostic)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+        } else {
+            ForEach(Array(store.captureEngine.recentDiagnostics.reversed().enumerated()), id: \.offset) { _, diagnostic in
+                Text(diagnostic)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(.caption)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -278,7 +274,8 @@ struct AppView: View {
             whitelistConfigs: store.whitelistConfigs,
             defaultCaptureInterval: store.draftIntervalSeconds,
             activeCaptureBundleIdentifiers: Set(store.captureEngine.activeSessions.keys),
-            runningApplicationBundleIdentifiers: Set(store.captureEngine.runningApplications.keys)
+            runningApplicationBundleIdentifiers: Set(store.captureEngine.runningApplications.keys),
+            unavailableReasonsByBundleIdentifier: store.captureEngine.activeSessions.compactMapValues(\.captureUnavailableReason)
         )
     }
 

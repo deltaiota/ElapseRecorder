@@ -91,6 +91,48 @@ nonisolated struct ScreenshotRecord: Equatable, Identifiable {
     var fileSizeBytes: Int
 }
 
+nonisolated struct CaptureUnavailableRecord: Equatable, Identifiable {
+    var id: UUID
+    var sessionID: UUID
+    var startedAt: Date
+    var endedAt: Date
+    var reason: CaptureUnavailableReason
+}
+
+nonisolated enum CaptureUnavailableReason: String, Codable, Equatable {
+    case windowMinimized
+
+    var title: String {
+        switch self {
+        case .windowMinimized:
+            "Window minimized or hidden by Stage Manager"
+        }
+    }
+}
+
+nonisolated enum CaptureTimelineEntry: Equatable, Identifiable {
+    case screenshot(ScreenshotRecord)
+    case unavailable(CaptureUnavailableRecord)
+
+    var id: UUID {
+        switch self {
+        case let .screenshot(record):
+            record.id
+        case let .unavailable(record):
+            record.id
+        }
+    }
+
+    var occurredAt: Date {
+        switch self {
+        case let .screenshot(record):
+            record.capturedAt
+        case let .unavailable(record):
+            record.startedAt
+        }
+    }
+}
+
 nonisolated struct CapturableWindow: Equatable, Identifiable {
     var id: Int {
         systemWindowID
@@ -101,9 +143,11 @@ nonisolated struct CapturableWindow: Equatable, Identifiable {
     var frame: CGRect
     var layer: Int
     var isOnScreen: Bool
+    var isCaptureUnavailable: Bool = false
 
     var shouldCapture: Bool {
         isOnScreen
+            && !isCaptureUnavailable
             && layer == 0
             && frame.width >= 80
             && frame.height >= 80

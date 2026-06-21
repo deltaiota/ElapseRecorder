@@ -127,6 +127,24 @@ final class SwiftDataPersistenceStore {
         try context.save()
     }
 
+    func recordCaptureUnavailable(_ record: CaptureUnavailableRecord) throws {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: record.sessionID, context: context) else {
+            throw CaptureEngineError.sessionNotFound(record.sessionID)
+        }
+
+        context.insert(
+            CaptureUnavailableRecordModel(
+                id: record.id,
+                startedAt: record.startedAt,
+                endedAt: record.endedAt,
+                reason: record.reason,
+                session: session
+            )
+        )
+        try context.save()
+    }
+
     func apps() throws -> [AppCaptureSummary] {
         let sessions = try allSessions()
         let grouped = Dictionary(grouping: sessions, by: \.bundleIdentifier)
@@ -205,6 +223,43 @@ final class SwiftDataPersistenceStore {
             .compactMap(\.domainValue)
     }
 
+    func timelineForSession(_ sessionID: UUID) throws -> [CaptureTimelineEntry] {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: sessionID, context: context) else {
+            throw CaptureEngineError.sessionNotFound(sessionID)
+        }
+
+        return timelineEntries(
+            screenshots: session.screenshots.compactMap(\.domainValue),
+            unavailableRecords: session.unavailableRecords.compactMap(\.domainValue)
+        )
+    }
+
+    func timelineForWindow(sessionID: UUID, windowID: UUID) throws -> [CaptureTimelineEntry] {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: sessionID, context: context) else {
+            throw CaptureEngineError.sessionNotFound(sessionID)
+        }
+        guard let window = try windowModel(id: windowID, context: context) else {
+            return []
+        }
+
+        return timelineEntries(
+            screenshots: window.screenshots.compactMap(\.domainValue),
+            unavailableRecords: session.unavailableRecords.compactMap(\.domainValue)
+        )
+    }
+
+    func timelineForApp(_ bundleIdentifier: String) throws -> [CaptureTimelineEntry] {
+        let sessions = try allSessions()
+            .filter { $0.bundleIdentifier == bundleIdentifier }
+
+        return timelineEntries(
+            screenshots: sessions.flatMap(\.screenshots).compactMap(\.domainValue),
+            unavailableRecords: sessions.flatMap(\.unavailableRecords).compactMap(\.domainValue)
+        )
+    }
+
     private func allSessions() throws -> [CaptureSessionModel] {
         let context = ModelContext(modelContainer)
         return try context.fetch(FetchDescriptor<CaptureSessionModel>())
@@ -219,6 +274,17 @@ final class SwiftDataPersistenceStore {
     private func windowModel(id: UUID, context: ModelContext) throws -> MonitoredWindowModel? {
         try context.fetch(FetchDescriptor<MonitoredWindowModel>())
             .first { $0.id == id }
+    }
+
+    private func timelineEntries(
+        screenshots: [ScreenshotRecord],
+        unavailableRecords: [CaptureUnavailableRecord]
+    ) -> [CaptureTimelineEntry] {
+        (
+            screenshots.map(CaptureTimelineEntry.screenshot)
+                + unavailableRecords.map(CaptureTimelineEntry.unavailable)
+        )
+        .sorted { $0.occurredAt < $1.occurredAt }
     }
 }
 
@@ -259,6 +325,9 @@ extension PersistenceClient {
             recordScreenshot: { record in
                 try await store.recordScreenshot(record)
             },
+            recordCaptureUnavailable: { record in
+                try await store.recordCaptureUnavailable(record)
+            },
             apps: {
                 try await store.apps()
             },
@@ -276,6 +345,15 @@ extension PersistenceClient {
             },
             screenshotsForApp: { bundleIdentifier in
                 try await store.screenshotsForApp(bundleIdentifier)
+            },
+            timelineForSession: { sessionID in
+                try await store.timelineForSession(sessionID)
+            },
+            timelineForWindow: { sessionID, windowID in
+                try await store.timelineForWindow(sessionID: sessionID, windowID: windowID)
+            },
+            timelineForApp: { bundleIdentifier in
+                try await store.timelineForApp(bundleIdentifier)
             }
         )
     }
@@ -288,11 +366,15 @@ extension PersistenceClient {
         deleteApp: { _ in throw CaptureEngineError.persistenceUnavailable },
         upsertWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordScreenshot: { _ in throw CaptureEngineError.persistenceUnavailable },
+        recordCaptureUnavailable: { _ in throw CaptureEngineError.persistenceUnavailable },
         apps: { throw CaptureEngineError.persistenceUnavailable },
         sessions: { _ in throw CaptureEngineError.persistenceUnavailable },
         windows: { _ in throw CaptureEngineError.persistenceUnavailable },
         screenshotsForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         screenshotsForWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
-        screenshotsForApp: { _ in throw CaptureEngineError.persistenceUnavailable }
+        screenshotsForApp: { _ in throw CaptureEngineError.persistenceUnavailable },
+        timelineForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
+        timelineForWindow: { _, _ in throw CaptureEngineError.persistenceUnavailable },
+        timelineForApp: { _ in throw CaptureEngineError.persistenceUnavailable }
     )
 }

@@ -32,9 +32,9 @@ final class ViewerFeatureTests: XCTestCase {
             ViewerFeature()
         } withDependencies: {
             $0.persistenceClient.windows = { _ in [window] }
-            $0.persistenceClient.screenshotsForSession = { _ in
+            $0.persistenceClient.timelineForSession = { _ in
                 try await Task.sleep(nanoseconds: 1_000_000)
-                return [screenshot]
+                return [.screenshot(screenshot)]
             }
         }
 
@@ -42,7 +42,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.selectedSessionID = sessionID
             $0.selectedWindowID = nil
             $0.windows = []
-            $0.windowScreenshots = []
+            $0.windowTimelineEntries = []
             $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
             $0.isLoading = true
@@ -51,8 +51,8 @@ final class ViewerFeatureTests: XCTestCase {
             $0.windows = [window]
             $0.isLoading = false
         }
-        await store.receive(.windowScreenshotsLoaded([screenshot])) {
-            $0.windowScreenshots = [screenshot]
+        await store.receive(.timelineEntriesLoaded([.screenshot(screenshot)])) {
+            $0.windowTimelineEntries = [.screenshot(screenshot)]
             $0.isLoading = false
         }
         XCTAssertEqual(store.state.windowPickerSelection, .all)
@@ -80,24 +80,24 @@ final class ViewerFeatureTests: XCTestCase {
         )
         var state = ViewerFeature.State()
         state.selectedSessionID = sessionID
-        state.windowScreenshots = [allScreenshot]
+        state.windowTimelineEntries = [.screenshot(allScreenshot)]
 
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
-            $0.persistenceClient.screenshotsForWindow = { _ in [windowScreenshot] }
-            $0.persistenceClient.screenshotsForSession = { _ in [allScreenshot] }
+            $0.persistenceClient.timelineForWindow = { _, _ in [.screenshot(windowScreenshot)] }
+            $0.persistenceClient.timelineForSession = { _ in [.screenshot(allScreenshot)] }
         }
 
         await store.send(.windowPickerSelectionChanged(.window(id: windowID))) {
             $0.selectedWindowID = windowID
-            $0.windowScreenshots = []
+            $0.windowTimelineEntries = []
             $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
             $0.isLoading = true
         }
-        await store.receive(.windowScreenshotsLoaded([windowScreenshot])) {
-            $0.windowScreenshots = [windowScreenshot]
+        await store.receive(.timelineEntriesLoaded([.screenshot(windowScreenshot)])) {
+            $0.windowTimelineEntries = [.screenshot(windowScreenshot)]
             $0.isLoading = false
         }
 
@@ -105,11 +105,11 @@ final class ViewerFeatureTests: XCTestCase {
             $0.selectedWindowID = nil
             $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
-            $0.windowScreenshots = []
+            $0.windowTimelineEntries = []
             $0.isLoading = true
         }
-        await store.receive(.windowScreenshotsLoaded([allScreenshot])) {
-            $0.windowScreenshots = [allScreenshot]
+        await store.receive(.timelineEntriesLoaded([.screenshot(allScreenshot)])) {
+            $0.windowTimelineEntries = [.screenshot(allScreenshot)]
             $0.isLoading = false
         }
     }
@@ -122,41 +122,41 @@ final class ViewerFeatureTests: XCTestCase {
         state.selectedSessionID = sessionID
         state.selectedWindowID = windowID
 
-        let sessionScreenshotLoadCount = LockIsolated(0)
-        let windowScreenshotLoadCount = LockIsolated(0)
+        let sessionTimelineLoadCount = LockIsolated(0)
+        let windowTimelineLoadCount = LockIsolated(0)
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
-            $0.persistenceClient.screenshotsForSession = { _ in
-                sessionScreenshotLoadCount.withValue { $0 += 1 }
+            $0.persistenceClient.timelineForSession = { _ in
+                sessionTimelineLoadCount.withValue { $0 += 1 }
                 return []
             }
-            $0.persistenceClient.screenshotsForWindow = { _ in
-                windowScreenshotLoadCount.withValue { $0 += 1 }
+            $0.persistenceClient.timelineForWindow = { _, _ in
+                windowTimelineLoadCount.withValue { $0 += 1 }
                 return []
             }
         }
 
         await store.send(.windowPickerSelectionChanged(.window(id: windowID)))
-        XCTAssertEqual(sessionScreenshotLoadCount.value, 0)
-        XCTAssertEqual(windowScreenshotLoadCount.value, 0)
+        XCTAssertEqual(sessionTimelineLoadCount.value, 0)
+        XCTAssertEqual(windowTimelineLoadCount.value, 0)
 
         await store.send(.windowPickerSelectionChanged(.all)) {
             $0.selectedWindowID = nil
             $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
-            $0.windowScreenshots = []
+            $0.windowTimelineEntries = []
             $0.isLoading = true
         }
-        await store.receive(.windowScreenshotsLoaded([])) {
+        await store.receive(.timelineEntriesLoaded([])) {
             $0.isLoading = false
         }
-        XCTAssertEqual(sessionScreenshotLoadCount.value, 1)
-        XCTAssertEqual(windowScreenshotLoadCount.value, 0)
+        XCTAssertEqual(sessionTimelineLoadCount.value, 1)
+        XCTAssertEqual(windowTimelineLoadCount.value, 0)
 
         await store.send(.windowPickerSelectionChanged(.all))
-        XCTAssertEqual(sessionScreenshotLoadCount.value, 1)
-        XCTAssertEqual(windowScreenshotLoadCount.value, 0)
+        XCTAssertEqual(sessionTimelineLoadCount.value, 1)
+        XCTAssertEqual(windowTimelineLoadCount.value, 0)
     }
 
     @MainActor
@@ -200,9 +200,9 @@ final class ViewerFeatureTests: XCTestCase {
             $0.persistenceClient.apps = { [] }
             $0.persistenceClient.sessions = { _ in [] }
             $0.persistenceClient.windows = { _ in [] }
-            $0.persistenceClient.screenshotsForApp = { _ in [] }
-            $0.persistenceClient.screenshotsForSession = { _ in [] }
-            $0.persistenceClient.screenshotsForWindow = { _ in [] }
+            $0.persistenceClient.timelineForApp = { _ in [] }
+            $0.persistenceClient.timelineForSession = { _ in [] }
+            $0.persistenceClient.timelineForWindow = { _, _ in [] }
         }
         store.exhaustivity = .off
 
@@ -212,7 +212,7 @@ final class ViewerFeatureTests: XCTestCase {
         await store.receive(.sessionDeleted(session.id)) {
             $0.selectedSessionID = nil
             $0.windows = []
-            $0.windowScreenshots = []
+            $0.windowTimelineEntries = []
             $0.isLoading = false
         }
 
@@ -263,9 +263,9 @@ final class ViewerFeatureTests: XCTestCase {
             $0.persistenceClient.apps = { [] }
             $0.persistenceClient.sessions = { _ in [] }
             $0.persistenceClient.windows = { _ in [] }
-            $0.persistenceClient.screenshotsForApp = { _ in [] }
-            $0.persistenceClient.screenshotsForSession = { _ in [] }
-            $0.persistenceClient.screenshotsForWindow = { _ in [] }
+            $0.persistenceClient.timelineForApp = { _ in [] }
+            $0.persistenceClient.timelineForSession = { _ in [] }
+            $0.persistenceClient.timelineForWindow = { _, _ in [] }
         }
         store.exhaustivity = .off
 

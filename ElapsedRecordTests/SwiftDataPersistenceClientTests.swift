@@ -93,6 +93,14 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         try await client.recordScreenshot(newerScreenshot)
         try await client.recordScreenshot(oldScreenshot)
         try await client.recordScreenshot(laterScreenshot)
+        let unavailableRecord = try CaptureUnavailableRecord(
+            id: uuid("00000000-0000-0000-0000-000000000304"),
+            sessionID: appSession.id,
+            startedAt: Date(timeIntervalSince1970: 130),
+            endedAt: Date(timeIntervalSince1970: 130),
+            reason: .windowMinimized
+        )
+        try await client.recordCaptureUnavailable(unavailableRecord)
         try await client.closeSession(appSession.id, Date(timeIntervalSince1970: 240))
 
         let apps = try await client.apps()
@@ -121,6 +129,37 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
         let appScreenshots = try await client.screenshotsForApp("com.example.ArtApp")
         XCTAssertEqual(appScreenshots.map(\.id), [oldScreenshot.id, newerScreenshot.id, laterScreenshot.id])
+
+        let sessionTimeline = try await client.timelineForSession(appSession.id)
+        XCTAssertEqual(
+            sessionTimeline,
+            [
+                .screenshot(oldScreenshot),
+                .unavailable(unavailableRecord),
+                .screenshot(newerScreenshot),
+            ]
+        )
+
+        let windowTimeline = try await client.timelineForWindow(appSession.id, secondWindow.id)
+        XCTAssertEqual(
+            windowTimeline,
+            [
+                .screenshot(oldScreenshot),
+                .unavailable(unavailableRecord),
+                .screenshot(newerScreenshot),
+            ]
+        )
+
+        let appTimeline = try await client.timelineForApp("com.example.ArtApp")
+        XCTAssertEqual(
+            appTimeline,
+            [
+                .screenshot(oldScreenshot),
+                .unavailable(unavailableRecord),
+                .screenshot(newerScreenshot),
+                .screenshot(laterScreenshot),
+            ]
+        )
     }
 
     @MainActor

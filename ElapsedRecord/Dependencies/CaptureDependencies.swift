@@ -192,7 +192,7 @@ extension CapturePermissionClient: DependencyKey {
 extension ScreenCaptureClient: DependencyKey {
     static let liveValue = Self(
         windows: { application in
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
             return content.windows
                 .filter { window in
                     window.owningApplication?.bundleIdentifier == application.bundleIdentifier

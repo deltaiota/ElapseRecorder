@@ -5,6 +5,46 @@ import XCTest
 
 final class AppFeatureTests: XCTestCase {
     @MainActor
+    func testTaskRunsStartupEffectsOnlyOnce() async {
+        let closeOpenSessionCount = LockIsolated(0)
+        let loadWhitelistCount = LockIsolated(0)
+
+        let store = TestStore(initialState: AppFeature.State()) {
+            AppFeature()
+        } withDependencies: {
+            $0.capturePermissionClient.status = { .authorized }
+            $0.dateClient.now = { Date(timeIntervalSince1970: 1000) }
+            $0.persistenceClient.apps = { [] }
+            $0.persistenceClient.closeOpenSessions = { _ in
+                closeOpenSessionCount.withValue { $0 += 1 }
+                return 0
+            }
+            $0.whitelistConfigurationClient.load = {
+                loadWhitelistCount.withValue { $0 += 1 }
+                return []
+            }
+            $0.workspaceClient.events = {
+                AsyncStream { continuation in
+                    continuation.finish()
+                }
+            }
+            $0.workspaceClient.runningApplications = { [] }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.task) {
+            $0.hasStarted = true
+        }
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        await store.send(.task)
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(closeOpenSessionCount.value, 1)
+        XCTAssertEqual(loadWhitelistCount.value, 1)
+    }
+
+    @MainActor
     func testLoadedWhitelistUpdatesWhitelistStateAndCaptureEngine() async {
         let config = WhitelistedAppConfig(
             bundleIdentifier: "com.example.PersistentApp",

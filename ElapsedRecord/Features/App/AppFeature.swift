@@ -6,6 +6,7 @@ struct AppFeature: Reducer {
     struct State: Equatable {
         var captureEngine = CaptureEngineFeature.State()
         var viewer = ViewerFeature.State()
+        var hasStarted = false
         var whitelistConfigs: [WhitelistedAppConfig] = []
         var draftBundleIdentifier = "com.apple.TextEdit"
         var draftDisplayName = "TextEdit"
@@ -58,6 +59,9 @@ struct AppFeature: Reducer {
         Reduce { state, action in
             switch action {
             case .task:
+                guard !state.hasStarted else { return .none }
+                state.hasStarted = true
+
                 let whitelistConfiguration = whitelistConfiguration
                 return .merge(
                     .send(.captureEngine(.task)),

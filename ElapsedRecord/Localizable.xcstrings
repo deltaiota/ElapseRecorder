@@ -1,39 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ (%@)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ (%2$@)"
-          }
-        }
-      }
-    },
-    "%@ every %llds" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ every %2$llds"
-          }
-        }
-      }
-    },
     "%lld bytes" : {
 
     },
-    "%lld running apps seen" : {
+    "%lld Screenshots" : {
 
     },
-    "Add" : {
+    "1h" : {
 
     },
-    "Add running app" : {
+    "1s" : {
 
     },
-    "All screenshots" : {
+    "Add %@ to Whitelist" : {
+
+    },
+    "Added" : {
 
     },
     "All Screenshots" : {
@@ -41,6 +24,28 @@
     },
     "All Windows" : {
 
+    },
+    "ApplicationSelectionSheet.chooseApplicationFilesManuallyIfTheApplicationYouWantIs…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Choose application files manually if the application you want is not listed."
+          }
+        }
+      }
+    },
+    "ApplicationSelectionSheet.ImportApplications.noUsableAppBundlesWereFound" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "No usable app bundles were found."
+          }
+        }
+      }
     },
     "ApplicationSelectionSheet.noApplicationsAvailable" : {
       "extractionState" : "extracted_with_value",
@@ -65,7 +70,6 @@
       }
     },
     "ApplicationSelectionSheet.selectableSelectedBundleIdentifiersCountApplicationsSelected" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -87,17 +91,6 @@
         }
       }
     },
-    "ApplicationSelectionSheet.ImportApplications.noUsableAppBundlesWereFound" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "No usable app bundles were found."
-          }
-        }
-      }
-    },
     "ApplicationSelectionSheet.tryADifferentApplicationNameOrBundleIdentifier" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -109,19 +102,7 @@
         }
       }
     },
-    "ApplicationSelectionSheet.unavailableDescription.chooseApplicationFilesManually" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Choose application files manually if the application you want is not listed."
-          }
-        }
-      }
-    },
     "ApplicationSelectionSheet.whitelistSelectableSelectedBundleIdentifiersCountApps" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -209,6 +190,105 @@
         }
       }
     },
+    "AppView.ActiveSessionSummary.capturing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "capturing"
+          }
+        }
+      }
+    },
+    "AppView.ActiveSessionSummary.pidActiveApplicationProcessIdentifierSessionSessionIDEveryInt…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "PID %1$d, session %2$@, every %3$llds, %4$@"
+          }
+        }
+      }
+    },
+    "AppView.ActiveSessionSummary.waiting" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "waiting"
+          }
+        }
+      }
+    },
+    "AppView.authorized" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Authorized"
+          }
+        }
+      }
+    },
+    "AppView.capturingActiveCaptureSessionsCountApps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capturing %lld Apps"
+          }
+        }
+      }
+    },
+    "AppView.denied" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Denied"
+          }
+        }
+      }
+    },
+    "AppView.diagnostics" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Diagnostics"
+          }
+        }
+      }
+    },
+    "AppView.diagnosticsStoreCaptureEngineRecentDiagnosticsCount" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Diagnostics %lld"
+          }
+        }
+      }
+    },
+    "AppView.notDetermined" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not determined"
+          }
+        }
+      }
+    },
     "AppView.WorkspaceEventSummary.lastEventActivatedApplicationDisplayName" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -242,7 +322,16 @@
         }
       }
     },
-    "Bundle ID" : {
+    "Auto" : {
+
+    },
+    "Auto Capture" : {
+
+    },
+    "Capture Interval" : {
+
+    },
+    "Capture Mode" : {
 
     },
     "Captured frames will appear here." : {
@@ -251,10 +340,8 @@
     "Captured sessions will appear here." : {
 
     },
-    "Capturing" : {
-
-    },
     "Capturing %lld Apps" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -276,10 +363,10 @@
         }
       }
     },
-    "Choose a session" : {
+    "Choose a Session" : {
 
     },
-    "Choose an app" : {
+    "Choose an App" : {
 
     },
     "Choose App Files…" : {
@@ -297,87 +384,166 @@
     "Diagnostics" : {
 
     },
-    "Disabled" : {
-
-    },
-    "Display name" : {
-
-    },
     "Elapsed Record" : {
 
     },
-    "Every %llds" : {
+    "Every" : {
 
     },
-    "Idle" : {
+    "Export…" : {
+
+    },
+    "Grant Permission" : {
+
+    },
+    "If granting permission failed, open System Settings > Privacy & Security > Screen & System Audio Recording (click to open), remove Elapsed Record and add it back, then reopen the app." : {
 
     },
     "Last Capture" : {
 
     },
-    "Matched running app - PID %d" : {
+    "Manual" : {
 
+    },
+    "Manual Capture" : {
+
+    },
+    "MenuBarView.capturingStoreCaptureEngineActiveSessionsCountApps" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capturing %lld Apps"
+          }
+        }
+      }
+    },
+    "MenuBarView.FrontmostCaptureStatusTitle.autoCapturePaused" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Auto Capture Paused"
+          }
+        }
+      }
+    },
+    "MenuBarView.FrontmostCaptureStatusTitle.autoCaptureReady" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Auto Capture Ready"
+          }
+        }
+      }
+    },
+    "MenuBarView.FrontmostCaptureStatusTitle.capturing" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Capturing"
+          }
+        }
+      }
+    },
+    "MenuBarView.FrontmostCaptureStatusTitle.manualCaptureStopped" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Manual Capture Stopped"
+          }
+        }
+      }
+    },
+    "MenuBarView.FrontmostCaptureStatusTitle.notWhitelisted" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Not Whitelisted"
+          }
+        }
+      }
+    },
+    "MenuBarView.totalStoreViewerAppsReduce001ScreenshotCountScreenshots" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Total %lld Screenshots"
+          }
+        }
+      }
     },
     "More Apps…" : {
 
     },
-    "No running apps to add" : {
-
-    },
-    "No running process matched" : {
+    "No recent diagnostics" : {
 
     },
     "No screenshots" : {
 
     },
-    "No workspace event yet" : {
+    "Pause" : {
 
     },
-    "Ready" : {
+    "Quit" : {
 
     },
     "Recorded Name" : {
 
     },
-    "Refresh apps" : {
+    "Refresh" : {
 
     },
-    "Refresh viewer" : {
+    "Remove %@ from Whitelist" : {
 
     },
-    "Remove from Whitelist" : {
+    "Request Screen Recording Permission" : {
 
     },
-    "Request Screen Recording" : {
+    "Resume" : {
 
     },
-    "Retry" : {
-
-    },
-    "Reveal captures" : {
+    "Reveal Captures" : {
 
     },
     "Reveal in Finder" : {
 
     },
-    "Running, waiting to start" : {
+    "s" : {
 
     },
-    "Screen Recording denied" : {
+    "Screen Recording permission needs to be granted before capturing app windows." : {
+
+    },
+    "Screen Recording Permission Required" : {
+
+    },
+    "Screen Recording Ready" : {
+
+    },
+    "Screenshot Quality" : {
 
     },
     "Screenshots" : {
 
     },
-    "Session %@ - PID %d" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Session %1$@ - PID %2$d"
-          }
-        }
-      }
+    "Search Applications" : {
+
+    },
+    "Seconds" : {
+
     },
     "Sessions" : {
 
@@ -385,8 +551,67 @@
     "Show app information" : {
 
     },
-    "Starts on launch" : {
+    "Show Library" : {
 
+    },
+    "Stale" : {
+
+    },
+    "Start" : {
+
+    },
+    "Start Capture" : {
+
+    },
+    "Stop" : {
+
+    },
+    "Stop Capture" : {
+
+    },
+    "ViewerView.AppRowCaptureAction.pauseCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pause Capture"
+          }
+        }
+      }
+    },
+    "ViewerView.AppRowCaptureAction.resumeCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Resume Capture"
+          }
+        }
+      }
+    },
+    "ViewerView.AppRowCaptureAction.startCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Start Capture"
+          }
+        }
+      }
+    },
+    "ViewerView.AppRowCaptureAction.stopCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Stop Capture"
+          }
+        }
+      }
     },
     "ViewerView.WindowTitle.windowWindowDisplayNumber" : {
       "extractionState" : "extracted_with_value",
@@ -413,7 +638,10 @@
     "Whitelist" : {
 
     },
-    "Whitelisted" : {
+    "Whitelist Applications" : {
+
+    },
+    "Whitelist this app to configure capture." : {
 
     },
     "Window" : {

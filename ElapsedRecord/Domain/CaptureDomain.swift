@@ -105,7 +105,7 @@ nonisolated enum CaptureUnavailableReason: String, Codable, Equatable {
     var title: String {
         switch self {
         case .windowMinimized:
-            "Window minimized or hidden by Stage Manager"
+            "Window hidden or unavailable for capture"
         }
     }
 }

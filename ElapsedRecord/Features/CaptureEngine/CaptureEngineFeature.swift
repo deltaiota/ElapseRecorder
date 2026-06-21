@@ -241,6 +241,9 @@ struct CaptureEngineFeature: Reducer {
 
             case let .sessionOpened(session, application):
                 state.pendingSessionBundleIdentifiers.remove(application.bundleIdentifier)
+                guard state.activeSessions[application.bundleIdentifier] == nil else {
+                    return closeAbandonedSession(session)
+                }
                 guard let config = state.whitelist[application.bundleIdentifier],
                       config.allowsSessionStart,
                       state.runningApplications[application.bundleIdentifier] == application
@@ -291,9 +294,19 @@ struct CaptureEngineFeature: Reducer {
                 var monitoredWindows: [MonitoredWindow] = []
                 let capturableWindows = CapturableWindow.capturableWindows(from: windows)
 
-                let windowsUnavailable = !windows.isEmpty && capturableWindows.isEmpty
-                let previouslySeenWindowsUnavailable = windows.isEmpty && !active.windowsBySystemID.isEmpty
-                if windowsUnavailable || previouslySeenWindowsUnavailable {
+                let knownSystemWindowIDs = Set(active.windowsBySystemID.keys)
+                let enumeratedWindowsBySystemID = Dictionary(
+                    windows.map { ($0.systemWindowID, $0) },
+                    uniquingKeysWith: { _, latest in latest }
+                )
+                let knownWindowsUnavailable = knownSystemWindowIDs.contains { systemWindowID in
+                    guard let window = enumeratedWindowsBySystemID[systemWindowID] else {
+                        return capturableWindows.isEmpty
+                    }
+                    return !window.shouldCapture
+                }
+
+                if !knownSystemWindowIDs.isEmpty && knownWindowsUnavailable {
                     state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
                     state.activeSessions[bundleIdentifier]?.captureUnavailableReason = .windowMinimized
                     return recordCaptureUnavailable(

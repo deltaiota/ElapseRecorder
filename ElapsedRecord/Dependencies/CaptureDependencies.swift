@@ -503,19 +503,8 @@ nonisolated extension CapturableWindow {
             title: window.title,
             frame: window.frame,
             layer: window.windowLayer,
-            isOnScreen: window.isOnScreen,
-            isCaptureUnavailable: window.isStageManagerOrMinimizedProxy
+            isOnScreen: window.isOnScreen
         )
-    }
-}
-
-private nonisolated extension SCWindow {
-    var isStageManagerOrMinimizedProxy: Bool {
-        isOnScreen
-            && windowLayer == 0
-            && frame.width >= 512
-            && frame.height >= 512
-            && (title?.isEmpty ?? true)
     }
 }
 

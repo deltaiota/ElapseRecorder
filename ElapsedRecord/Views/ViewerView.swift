@@ -6,19 +6,8 @@ import TranslateKit
 struct ViewerView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
-    var whitelistConfigs: [WhitelistedAppConfig] = []
-    var defaultCaptureInterval: TimeInterval = 5
-    var whitelistApps: ([WhitelistedAppConfig]) -> Void = { _ in }
-    var setCaptureState: (AppCaptureSummary, Bool) -> Void = { _, _ in }
-    var setCaptureInterval: (AppCaptureSummary, TimeInterval) -> Void = { _, _ in }
-    var setCaptureMode: (AppCaptureSummary, CaptureMode) -> Void = { _, _ in }
-    var startManualCapture: (AppCaptureSummary) -> Void = { _ in }
-    var stopManualCapture: (AppCaptureSummary) -> Void = { _ in }
-    var activeCaptureBundleIdentifiers: Set<String> = []
-    var runningApplicationBundleIdentifiers: Set<String> = []
-    var removeFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
-    var addToWhitelist: (AppCaptureSummary) -> Void = { _ in }
-    var deleteAllCaptures: (AppCaptureSummary) -> Void = { _ in }
+    var captureConfiguration = CaptureConfiguration()
+    var actions = Actions()
 
     @State private var isShowingApplicationSelection = false
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
@@ -495,6 +484,58 @@ struct ViewerView: View {
         }
     }
 
+    private var whitelistConfigs: [WhitelistedAppConfig] {
+        captureConfiguration.whitelistConfigs
+    }
+
+    private var defaultCaptureInterval: TimeInterval {
+        captureConfiguration.defaultCaptureInterval
+    }
+
+    private var activeCaptureBundleIdentifiers: Set<String> {
+        captureConfiguration.activeCaptureBundleIdentifiers
+    }
+
+    private var runningApplicationBundleIdentifiers: Set<String> {
+        captureConfiguration.runningApplicationBundleIdentifiers
+    }
+
+    private func whitelistApps(_ configs: [WhitelistedAppConfig]) {
+        actions.whitelistApps(configs)
+    }
+
+    private func setCaptureState(_ app: AppCaptureSummary, _ isEnabled: Bool) {
+        actions.setCaptureState(app, isEnabled)
+    }
+
+    private func setCaptureInterval(_ app: AppCaptureSummary, _ interval: TimeInterval) {
+        actions.setCaptureInterval(app, interval)
+    }
+
+    private func setCaptureMode(_ app: AppCaptureSummary, _ captureMode: CaptureMode) {
+        actions.setCaptureMode(app, captureMode)
+    }
+
+    private func startManualCapture(_ app: AppCaptureSummary) {
+        actions.startManualCapture(app)
+    }
+
+    private func stopManualCapture(_ app: AppCaptureSummary) {
+        actions.stopManualCapture(app)
+    }
+
+    private func removeFromWhitelist(_ app: AppCaptureSummary) {
+        actions.removeFromWhitelist(app)
+    }
+
+    private func addToWhitelist(_ app: AppCaptureSummary) {
+        actions.addToWhitelist(app)
+    }
+
+    private func deleteAllCaptures(_ app: AppCaptureSummary) {
+        actions.deleteAllCaptures(app)
+    }
+
     private var sessionDaySections: [SessionDaySection] {
         let calendar = Calendar.current
         let groupedSessions = Dictionary(grouping: store.sessions) { session in
@@ -636,6 +677,25 @@ struct ViewerView: View {
             return #tk("Window \(window.displayNumber): \(label)")
         }
         return #tk("Window \(window.displayNumber)")
+    }
+
+    struct CaptureConfiguration {
+        var whitelistConfigs: [WhitelistedAppConfig] = []
+        var defaultCaptureInterval: TimeInterval = 5
+        var activeCaptureBundleIdentifiers: Set<String> = []
+        var runningApplicationBundleIdentifiers: Set<String> = []
+    }
+
+    struct Actions {
+        var whitelistApps: ([WhitelistedAppConfig]) -> Void = { _ in }
+        var setCaptureState: (AppCaptureSummary, Bool) -> Void = { _, _ in }
+        var setCaptureInterval: (AppCaptureSummary, TimeInterval) -> Void = { _, _ in }
+        var setCaptureMode: (AppCaptureSummary, CaptureMode) -> Void = { _, _ in }
+        var startManualCapture: (AppCaptureSummary) -> Void = { _ in }
+        var stopManualCapture: (AppCaptureSummary) -> Void = { _ in }
+        var removeFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
+        var addToWhitelist: (AppCaptureSummary) -> Void = { _ in }
+        var deleteAllCaptures: (AppCaptureSummary) -> Void = { _ in }
     }
 
     private struct AppRowContext {

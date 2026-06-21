@@ -17,37 +17,8 @@ struct AppView: View {
                 state: \.viewer,
                 action: \.viewer
             ),
-            whitelistConfigs: store.whitelistConfigs,
-            defaultCaptureInterval: store.draftIntervalSeconds,
-            whitelistApps: { configs in
-                store.send(.addWhitelistConfigsButtonTapped(configs))
-            },
-            setCaptureState: { app, isEnabled in
-                store.send(.whitelistEnabledChanged(app.bundleIdentifier, isEnabled))
-            },
-            setCaptureInterval: { app, interval in
-                store.send(.whitelistIntervalChanged(app.bundleIdentifier, interval))
-            },
-            setCaptureMode: { app, captureMode in
-                store.send(.whitelistCaptureModeChanged(app.bundleIdentifier, captureMode))
-            },
-            startManualCapture: { app in
-                store.send(.captureEngine(.manualCaptureStart(app.bundleIdentifier)))
-            },
-            stopManualCapture: { app in
-                store.send(.captureEngine(.manualCaptureStop(app.bundleIdentifier)))
-            },
-            activeCaptureBundleIdentifiers: Set(store.captureEngine.activeSessions.keys),
-            runningApplicationBundleIdentifiers: Set(store.captureEngine.runningApplications.keys),
-            removeFromWhitelist: { app in
-                store.send(.removeViewerAppFromWhitelistButtonTapped(app))
-            },
-            addToWhitelist: { app in
-                store.send(.addViewerAppToWhitelistButtonTapped(app))
-            },
-            deleteAllCaptures: { app in
-                store.send(.deleteViewerAppButtonTapped(app))
-            }
+            captureConfiguration: viewerCaptureConfiguration,
+            actions: viewerActions
         )
         .navigationSubtitle(captureCountSubtitle)
         .toolbar {
@@ -300,6 +271,47 @@ struct AppView: View {
         store.captureEngine.activeSessions.values.sorted {
             $0.config.displayName < $1.config.displayName
         }
+    }
+
+    private var viewerCaptureConfiguration: ViewerView.CaptureConfiguration {
+        ViewerView.CaptureConfiguration(
+            whitelistConfigs: store.whitelistConfigs,
+            defaultCaptureInterval: store.draftIntervalSeconds,
+            activeCaptureBundleIdentifiers: Set(store.captureEngine.activeSessions.keys),
+            runningApplicationBundleIdentifiers: Set(store.captureEngine.runningApplications.keys)
+        )
+    }
+
+    private var viewerActions: ViewerView.Actions {
+        ViewerView.Actions(
+            whitelistApps: { configs in
+                store.send(.addWhitelistConfigsButtonTapped(configs))
+            },
+            setCaptureState: { app, isEnabled in
+                store.send(.whitelistEnabledChanged(app.bundleIdentifier, isEnabled))
+            },
+            setCaptureInterval: { app, interval in
+                store.send(.whitelistIntervalChanged(app.bundleIdentifier, interval))
+            },
+            setCaptureMode: { app, captureMode in
+                store.send(.whitelistCaptureModeChanged(app.bundleIdentifier, captureMode))
+            },
+            startManualCapture: { app in
+                store.send(.captureEngine(.manualCaptureStart(app.bundleIdentifier)))
+            },
+            stopManualCapture: { app in
+                store.send(.captureEngine(.manualCaptureStop(app.bundleIdentifier)))
+            },
+            removeFromWhitelist: { app in
+                store.send(.removeViewerAppFromWhitelistButtonTapped(app))
+            },
+            addToWhitelist: { app in
+                store.send(.addViewerAppToWhitelistButtonTapped(app))
+            },
+            deleteAllCaptures: { app in
+                store.send(.deleteViewerAppButtonTapped(app))
+            }
+        )
     }
 
     private var diagnosticsButtonTitle: String {

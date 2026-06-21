@@ -143,11 +143,9 @@ nonisolated struct CapturableWindow: Equatable, Identifiable {
     var frame: CGRect
     var layer: Int
     var isOnScreen: Bool
-    var isCaptureUnavailable: Bool = false
 
     var shouldCapture: Bool {
         isOnScreen
-            && !isCaptureUnavailable
             && layer == 0
             && frame.width >= 80
             && frame.height >= 80

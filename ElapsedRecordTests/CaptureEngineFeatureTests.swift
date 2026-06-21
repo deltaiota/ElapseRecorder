@@ -48,10 +48,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
         await store.send(.whitelistUpdated([config])) {
             $0.whitelist = [config.bundleIdentifier: config]
         }
-        await store.send(.runningApplicationsLoaded([app])) {
-            $0.runningApplications = [app.bundleIdentifier: app]
-            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
-        }
 
         let expectedSession = CaptureSession(
             id: sessionID,
@@ -61,14 +57,16 @@ final class CaptureEngineFeatureTests: XCTestCase {
             startedAt: startedAt
         )
 
-        await store.receive(.sessionOpened(expectedSession, app)) {
-            $0.pendingSessionBundleIdentifiers = []
+        await store.send(.runningApplicationsLoaded([app])) {
+            $0.runningApplications = [app.bundleIdentifier: app]
             $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
                 application: app,
                 config: config,
                 session: expectedSession
             )
         }
+
+        await store.receive(.sessionOpened(expectedSession, app))
         await store.receive(.captureTick(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
         }
@@ -122,15 +120,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.screenCaptureClient.windows = { _ in [] }
         }
 
-        await store.send(.runningApplicationsLoaded([app])) {
-            $0.runningApplications = [app.bundleIdentifier: app]
-            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
-        }
-        await Task.yield()
-        await store.send(.whitelistUpdated([config]))
-        XCTAssertEqual(openedSessions.value.map(\.id), [])
-        await clock.advance(by: .seconds(1))
-
         let expectedSession = CaptureSession(
             id: sessionID,
             bundleIdentifier: app.bundleIdentifier,
@@ -138,14 +127,21 @@ final class CaptureEngineFeatureTests: XCTestCase {
             processIdentifier: app.processIdentifier,
             startedAt: startedAt
         )
-        await store.receive(.sessionOpened(expectedSession, app)) {
-            $0.pendingSessionBundleIdentifiers = []
+
+        await store.send(.runningApplicationsLoaded([app])) {
+            $0.runningApplications = [app.bundleIdentifier: app]
             $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
                 application: app,
                 config: config,
                 session: expectedSession
             )
         }
+        await Task.yield()
+        await store.send(.whitelistUpdated([config]))
+        XCTAssertEqual(openedSessions.value.map(\.id), [])
+        await clock.advance(by: .seconds(1))
+
+        await store.receive(.sessionOpened(expectedSession, app))
         await store.receive(.captureTick(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
         }
@@ -160,6 +156,61 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.activeSessions[app.bundleIdentifier] = nil
         }
         await store.receive(.sessionClosed(app.bundleIdentifier))
+    }
+
+    @MainActor
+    func testLaunchStormOpensExactlyOneSession() async throws {
+        // Reproduces the real launch sequence the user hit: running-app load, launch and
+        // activate workspace events, and both forms of permission resolution all arrive in
+        // a burst. The synchronous start chokepoint must collapse them into one session.
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.LaunchStormApp",
+            displayName: "Launch Storm App",
+            processIdentifier: 200
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000200"))
+        let clock = TestClock()
+        let openedSessions = LockIsolated([CaptureSession]())
+
+        var initialState = CaptureEngineFeature.State()
+        initialState.whitelist = [config.bundleIdentifier: config]
+        initialState.permissionStatus = .authorized
+
+        let store = TestStore(initialState: initialState) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.capturePermissionClient.status = { .authorized }
+            $0.capturePermissionClient.request = { .authorized }
+            $0.dateClient.now = { Date(timeIntervalSince1970: 1000) }
+            $0.idGeneratorClient.uuid = { sessionID }
+            $0.persistenceClient.openSession = { session in
+                openedSessions.withValue { $0.append(session) }
+            }
+            $0.persistenceClient.closeSession = { _, _ in }
+            $0.screenCaptureClient.windows = { _ in [] }
+            $0.loggingClient.log = { _, _, _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.runningApplicationsLoaded([app]))
+        await store.send(.workspaceEvent(.launched(app)))
+        await store.send(.workspaceEvent(.activated(app)))
+        await store.send(.permissionResolved(.authorized, nil))
+        await store.send(.permissionResolved(.authorized, app))
+
+        XCTAssertEqual(store.state.activeSessions[app.bundleIdentifier]?.session.id, sessionID)
+
+        await store.send(.workspaceEvent(.terminated(app)))
+
+        XCTAssertNil(store.state.activeSessions[app.bundleIdentifier])
+        XCTAssertEqual(openedSessions.value.map(\.id), [sessionID])
     }
 
     @MainActor
@@ -288,10 +339,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.screenCaptureClient.windows = { _ in [] }
         }
 
-        await store.send(.captureStart(app.bundleIdentifier)) {
-            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
-        }
-
         let expectedSession = CaptureSession(
             id: sessionID,
             bundleIdentifier: app.bundleIdentifier,
@@ -300,14 +347,15 @@ final class CaptureEngineFeatureTests: XCTestCase {
             startedAt: startedAt
         )
 
-        await store.receive(.sessionOpened(expectedSession, app)) {
-            $0.pendingSessionBundleIdentifiers = []
+        await store.send(.captureStart(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
                 application: app,
                 config: config,
                 session: expectedSession
             )
         }
+
+        await store.receive(.sessionOpened(expectedSession, app))
         await store.receive(.captureTick(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
         }
@@ -491,13 +539,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.screenCaptureClient.windows = { _ in [] }
         }
 
-        await store.send(.requestPermissionButtonTapped)
-        await store.receive(.permissionResolved(.authorized, nil)) {
-            $0.permissionStatus = .authorized
-            $0.lastError = nil
-            $0.pendingSessionBundleIdentifiers = [app.bundleIdentifier]
-        }
-
         let expectedSession = CaptureSession(
             id: sessionID,
             bundleIdentifier: app.bundleIdentifier,
@@ -505,14 +546,19 @@ final class CaptureEngineFeatureTests: XCTestCase {
             processIdentifier: app.processIdentifier,
             startedAt: startedAt
         )
-        await store.receive(.sessionOpened(expectedSession, app)) {
-            $0.pendingSessionBundleIdentifiers = []
+
+        await store.send(.requestPermissionButtonTapped)
+        await store.receive(.permissionResolved(.authorized, nil)) {
+            $0.permissionStatus = .authorized
+            $0.lastError = nil
             $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
                 application: app,
                 config: config,
                 session: expectedSession
             )
         }
+
+        await store.receive(.sessionOpened(expectedSession, app))
         await store.receive(.captureTick(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
         }
@@ -787,21 +833,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
             }
         }
 
-        await store.send(
-            .windowsLoaded(
-                app.bundleIdentifier,
-                [
-                    CapturableWindow(
-                        systemWindowID: 901,
-                        title: nil,
-                        frame: CGRect(x: 0, y: 0, width: 1200, height: 900),
-                        layer: 0,
-                        isOnScreen: true,
-                        isCaptureUnavailable: true
-                    ),
-                ]
-            )
-        ) {
+        await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
         }
 
@@ -879,7 +911,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testKnownOffscreenWindowRecordsPlaceholderAndSkipsStageManagerProxy() async throws {
+    func testUnavailablePlaceholderIsRecordedOncePerUnavailableSpan() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.StageManagedApp",
             displayName: "Stage Managed App",
@@ -910,7 +942,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
         let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000092"))
         let seenAt = Date(timeIntervalSince1970: 90)
         let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
-        let capturedWindowIDs = LockIsolated([Int]())
 
         var state = CaptureEngineFeature.State()
         state.whitelist = [config.bundleIdentifier: config]
@@ -930,10 +961,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.persistenceClient.recordCaptureUnavailable = { record in
                 recordedPlaceholders.withValue { $0.append(record) }
             }
-            $0.screenCaptureClient.capture = { windowID in
-                capturedWindowIDs.withValue { $0.append(windowID) }
-                throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
-            }
         }
 
         let expectedRecord = CaptureUnavailableRecord(
@@ -944,34 +971,18 @@ final class CaptureEngineFeatureTests: XCTestCase {
             reason: .windowMinimized
         )
 
-        await store.send(
-            .windowsLoaded(
-                app.bundleIdentifier,
-                [
-                    CapturableWindow(
-                        systemWindowID: window.systemWindowID,
-                        title: window.label,
-                        frame: CGRect(x: 0, y: 0, width: 1200, height: 800),
-                        layer: 0,
-                        isOnScreen: false
-                    ),
-                    CapturableWindow(
-                        systemWindowID: 932,
-                        title: nil,
-                        frame: CGRect(x: 40, y: 40, width: 1200, height: 800),
-                        layer: 0,
-                        isOnScreen: true
-                    ),
-                ]
-            )
-        ) {
+        // First tick with no capturable windows records the placeholder that marks the
+        // start of the unavailable span and flips the session into the unavailable state.
+        await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
             $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
         }
         await store.receive(.captureUnavailableRecorded(expectedRecord))
 
+        // Subsequent ticks while still unavailable must not append more placeholders.
+        await store.send(.windowsLoaded(app.bundleIdentifier, []))
+
         XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
-        XCTAssertEqual(capturedWindowIDs.value, [])
     }
 
     @MainActor

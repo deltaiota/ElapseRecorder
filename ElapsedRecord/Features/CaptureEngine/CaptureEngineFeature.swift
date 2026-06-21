@@ -8,7 +8,6 @@ struct CaptureEngineFeature: Reducer {
         var whitelist: [String: WhitelistedAppConfig] = [:]
         var runningApplications: [String: RunningApplication] = [:]
         var activeSessions: [String: ActiveSession] = [:]
-        var pendingSessionBundleIdentifiers: Set<String> = []
         var permissionStatus: CapturePermissionStatus = .notDetermined
         var lastError: String?
         var lastWorkspaceEvent: WorkspaceEvent?
@@ -38,7 +37,7 @@ struct CaptureEngineFeature: Reducer {
         case workspaceEvent(WorkspaceEvent)
         case permissionResolved(CapturePermissionStatus, RunningApplication?)
         case sessionOpened(CaptureSession, RunningApplication)
-        case sessionOpenFailed(String?, String)
+        case sessionOpenFailed(String?, UUID?, String)
         case captureTick(String)
         case windowsFailed(String, String)
         case windowsLoaded(String, [CapturableWindow])
@@ -110,27 +109,7 @@ struct CaptureEngineFeature: Reducer {
                     state.recordDiagnostic("Cannot start capture because \(config.displayName) is not running.")
                     return .none
                 }
-                guard state.activeSessions[bundleIdentifier] == nil else {
-                    return .none
-                }
-                guard !state.pendingSessionBundleIdentifiers.contains(bundleIdentifier) else {
-                    return .none
-                }
-                guard config.allowsSessionStart else {
-                    return .none
-                }
-                guard state.permissionStatus == .authorized else {
-                    let permission = permission
-                    return .run { send in
-                        let status = await permission.request()
-                        await send(.permissionResolved(status, nil))
-                        if status == .authorized {
-                            await send(.captureStart(bundleIdentifier))
-                        }
-                    }
-                }
-                state.pendingSessionBundleIdentifiers.insert(bundleIdentifier)
-                return openSession(application, config: config)
+                return startSession(application, config: config, state: &state)
 
             case let .captureStop(bundleIdentifier):
                 guard let active = state.activeSessions.removeValue(forKey: bundleIdentifier) else {
@@ -154,9 +133,6 @@ struct CaptureEngineFeature: Reducer {
                     configs.map { ($0.bundleIdentifier, $0) },
                     uniquingKeysWith: { _, latest in latest }
                 )
-                state.pendingSessionBundleIdentifiers = state.pendingSessionBundleIdentifiers.filter { bundleIdentifier in
-                    state.whitelist[bundleIdentifier]?.allowsSessionStart == true
-                }
 
                 var effects: [Effect<Action>] = []
                 for (bundleIdentifier, active) in state.activeSessions {
@@ -209,7 +185,6 @@ struct CaptureEngineFeature: Reducer {
             case let .workspaceEvent(.terminated(application)):
                 state.lastWorkspaceEvent = .terminated(application)
                 state.runningApplications[application.bundleIdentifier] = nil
-                state.pendingSessionBundleIdentifiers.remove(application.bundleIdentifier)
                 guard let active = state.activeSessions.removeValue(forKey: application.bundleIdentifier) else {
                     return .none
                 }
@@ -237,31 +212,33 @@ struct CaptureEngineFeature: Reducer {
                     return .merge(state.runningApplications.values.map { attemptAutoStart($0, state: &state) })
                 }
 
-                return attemptAutoStart(application, state: &state)
+                guard let config = state.whitelist[application.bundleIdentifier] else {
+                    return .none
+                }
+                return startSession(application, config: config, state: &state)
 
             case let .sessionOpened(session, application):
-                state.pendingSessionBundleIdentifiers.remove(application.bundleIdentifier)
-                guard state.activeSessions[application.bundleIdentifier] == nil else {
-                    return closeAbandonedSession(session)
-                }
-                guard let config = state.whitelist[application.bundleIdentifier],
-                      config.allowsSessionStart,
-                      state.runningApplications[application.bundleIdentifier] == application
+                // The active session was already inserted synchronously when the start
+                // was requested; persistence has now confirmed it, so the capture loop
+                // can safely begin. If the slot is gone or holds a different session the
+                // run was superseded (terminated/replaced) and this row is orphaned.
+                guard let active = state.activeSessions[application.bundleIdentifier],
+                      active.session.id == session.id
                 else {
                     return closeAbandonedSession(session)
                 }
 
-                state.activeSessions[application.bundleIdentifier] = State.ActiveSession(
-                    application: application,
-                    config: config,
-                    session: session
+                return captureLoop(
+                    bundleIdentifier: application.bundleIdentifier,
+                    interval: active.config.sanitizedInterval
                 )
 
-                return captureLoop(bundleIdentifier: application.bundleIdentifier, interval: config.sanitizedInterval)
-
-            case let .sessionOpenFailed(bundleIdentifier, message):
-                if let bundleIdentifier {
-                    state.pendingSessionBundleIdentifiers.remove(bundleIdentifier)
+            case let .sessionOpenFailed(bundleIdentifier, sessionID, message):
+                if let bundleIdentifier,
+                   let sessionID,
+                   state.activeSessions[bundleIdentifier]?.session.id == sessionID
+                {
+                    state.activeSessions[bundleIdentifier] = nil
                 }
                 state.recordDiagnostic(message)
                 return .none
@@ -294,21 +271,22 @@ struct CaptureEngineFeature: Reducer {
                 var monitoredWindows: [MonitoredWindow] = []
                 let capturableWindows = CapturableWindow.capturableWindows(from: windows)
 
-                let knownSystemWindowIDs = Set(active.windowsBySystemID.keys)
-                let enumeratedWindowsBySystemID = Dictionary(
-                    windows.map { ($0.systemWindowID, $0) },
-                    uniquingKeysWith: { _, latest in latest }
-                )
-                let knownWindowsUnavailable = knownSystemWindowIDs.contains { systemWindowID in
-                    guard let window = enumeratedWindowsBySystemID[systemWindowID] else {
-                        return capturableWindows.isEmpty
-                    }
-                    return !window.shouldCapture
-                }
+                // The live layer only returns currently visible, capturable windows, so an
+                // empty result means every window of this app is minimized, hidden, or
+                // stowed by Stage Manager. Mark a placeholder once on the transition into
+                // that state (only after the session has actually seen real windows, to
+                // avoid a spurious placeholder before the app has shown anything).
+                guard !capturableWindows.isEmpty else {
+                    active.isCaptureInFlight = false
 
-                if !knownSystemWindowIDs.isEmpty && knownWindowsUnavailable {
-                    state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
-                    state.activeSessions[bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+                    let hasSeenWindows = !active.windowsBySystemID.isEmpty
+                    let wasAlreadyUnavailable = active.captureUnavailableReason != nil
+                    if hasSeenWindows {
+                        active.captureUnavailableReason = .windowMinimized
+                    }
+                    state.activeSessions[bundleIdentifier] = active
+
+                    guard hasSeenWindows, !wasAlreadyUnavailable else { return .none }
                     return recordCaptureUnavailable(
                         in: active.session,
                         reason: .windowMinimized,
@@ -340,11 +318,6 @@ struct CaptureEngineFeature: Reducer {
                 }
 
                 state.activeSessions[bundleIdentifier] = active
-                guard !monitoredWindows.isEmpty else {
-                    state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
-                    return .none
-                }
-
                 return capture(monitoredWindows, in: active.session, bundleIdentifier: bundleIdentifier)
 
             case let .windowsFailed(bundleIdentifier, message):
@@ -401,34 +374,44 @@ struct CaptureEngineFeature: Reducer {
         else {
             return .none
         }
-        guard state.activeSessions[application.bundleIdentifier] == nil else {
-            return .none
-        }
-        guard !state.pendingSessionBundleIdentifiers.contains(application.bundleIdentifier) else {
-            return .none
-        }
+        return startSession(application, config: config, state: &state)
+    }
 
-        let permission = permission
+    /// The single, synchronous chokepoint for opening a capture session.
+    ///
+    /// Auto-launch detection, the user's manual capture button, and the post-permission
+    /// retry all funnel through here. The `ActiveSession` is inserted into `state`
+    /// synchronously, so the `activeSessions[bundleIdentifier] == nil` guard atomically
+    /// claims the slot. Because the reducer processes actions serially, every other
+    /// near-simultaneous trigger (running-app load, launch event, whitelist sweep,
+    /// duplicate permission resolution) sees the claim and is ignored — there is no async
+    /// gap in which two sessions can be opened for the same app.
+    private func startSession(
+        _ application: RunningApplication,
+        config: WhitelistedAppConfig,
+        state: inout State
+    ) -> Effect<Action> {
+        guard config.allowsSessionStart else { return .none }
+        guard state.activeSessions[application.bundleIdentifier] == nil else { return .none }
+
         guard state.permissionStatus == .authorized else {
+            let permission = permission
             return .run { send in
                 await send(.permissionResolved(await permission.request(), application))
             }
         }
 
-        state.pendingSessionBundleIdentifiers.insert(application.bundleIdentifier)
-        return openSession(application, config: config)
-    }
-
-    private func openSession(
-        _ application: RunningApplication,
-        config: WhitelistedAppConfig
-    ) -> Effect<Action> {
         let session = CaptureSession(
             id: ids.uuid(),
             bundleIdentifier: config.bundleIdentifier,
             displayName: config.displayName,
             processIdentifier: application.processIdentifier,
             startedAt: date.now()
+        )
+        state.activeSessions[application.bundleIdentifier] = State.ActiveSession(
+            application: application,
+            config: config,
+            session: session
         )
 
         let persistence = persistence
@@ -437,7 +420,7 @@ struct CaptureEngineFeature: Reducer {
                 try await persistence.openSession(session)
                 await send(.sessionOpened(session, application))
             } catch {
-                await send(.sessionOpenFailed(application.bundleIdentifier, error.localizedDescription))
+                await send(.sessionOpenFailed(application.bundleIdentifier, session.id, error.localizedDescription))
             }
         }
     }
@@ -456,7 +439,7 @@ struct CaptureEngineFeature: Reducer {
                     try await persistence.closeSession(active.session.id, endedAt)
                     await send(.sessionClosed(active.config.bundleIdentifier))
                 } catch {
-                    await send(.sessionOpenFailed(nil, error.localizedDescription))
+                    await send(.sessionOpenFailed(nil, nil, error.localizedDescription))
                 }
             }
         )
@@ -471,7 +454,7 @@ struct CaptureEngineFeature: Reducer {
                 try await persistence.closeSession(session.id, date.now())
                 await send(.sessionClosed(session.bundleIdentifier))
             } catch {
-                await send(.sessionOpenFailed(nil, error.localizedDescription))
+                await send(.sessionOpenFailed(nil, nil, error.localizedDescription))
             }
         }
     }

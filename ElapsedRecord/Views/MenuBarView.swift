@@ -101,7 +101,7 @@ struct MenuBarView: View {
                 context.isCapturing ? "Stop Capture" : "Start Capture",
                 systemSymbol: context.isCapturing ? .stopFill : .recordCircle
             ) {
-                toggleManualCapture(for: context)
+                toggleCapture(for: context)
             }
         }
     }
@@ -233,12 +233,12 @@ struct MenuBarView: View {
         )
     }
 
-    private func toggleManualCapture(for context: FrontmostAppContext) {
+    private func toggleCapture(for context: FrontmostAppContext) {
         if context.isCapturing {
-            store.send(.captureEngine(.manualCaptureStop(context.application.bundleIdentifier)))
+            store.send(.captureEngine(.captureStop(context.application.bundleIdentifier)))
         } else {
             store.send(.captureEngine(.runningApplicationsLoaded([context.application])))
-            store.send(.captureEngine(.manualCaptureStart(context.application.bundleIdentifier)))
+            store.send(.captureEngine(.captureStart(context.application.bundleIdentifier)))
         }
     }
 

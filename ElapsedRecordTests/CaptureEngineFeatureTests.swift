@@ -117,7 +117,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testManualCaptureStartsAndStopsOnlyFromExplicitActions() async throws {
+    func testUserCaptureStartsAndStopsOnlyFromExplicitActions() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.ManualStartApp",
             displayName: "Manual Start App",
@@ -152,7 +152,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.screenCaptureClient.windows = { _ in [] }
         }
 
-        await store.send(.manualCaptureStart(app.bundleIdentifier))
+        await store.send(.captureStart(app.bundleIdentifier))
 
         let expectedSession = CaptureSession(
             id: sessionID,
@@ -177,10 +177,144 @@ final class CaptureEngineFeatureTests: XCTestCase {
         }
 
         now.setValue(endedAt)
-        await store.send(.manualCaptureStop(app.bundleIdentifier)) {
+        await store.send(.captureStop(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier] = nil
         }
         await store.receive(.sessionClosed(app.bundleIdentifier))
+    }
+
+    @MainActor
+    func testSwitchingAutoSessionToManualKeepsSessionUntilUserStops() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.ModeSwitchApp",
+            displayName: "Mode Switch App",
+            processIdentifier: 46
+        )
+        let autoConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            captureMode: .auto,
+            isEnabled: true
+        )
+        let manualConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            captureMode: .manual,
+            isEnabled: false
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000052")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 520)
+        )
+        let endedAt = Date(timeIntervalSince1970: 620)
+        let closedSessions = LockIsolated([(UUID, Date)]())
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [app.bundleIdentifier: autoConfig]
+        state.runningApplications = [app.bundleIdentifier: app]
+        state.permissionStatus = .authorized
+        state.activeSessions = [
+            app.bundleIdentifier: CaptureEngineFeature.State.ActiveSession(
+                application: app,
+                config: autoConfig,
+                session: session
+            ),
+        ]
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { endedAt }
+            $0.persistenceClient.closeSession = { sessionID, endedAt in
+                closedSessions.withValue { $0.append((sessionID, endedAt)) }
+            }
+        }
+
+        await store.send(.whitelistUpdated([manualConfig])) {
+            $0.whitelist = [app.bundleIdentifier: manualConfig]
+            $0.activeSessions[app.bundleIdentifier]?.config = manualConfig
+        }
+
+        await store.send(.captureStop(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(app.bundleIdentifier))
+
+        XCTAssertEqual(closedSessions.value.map(\.0), [session.id])
+        XCTAssertEqual(closedSessions.value.map(\.1), [endedAt])
+    }
+
+    @MainActor
+    func testSwitchingManualSessionToAutoKeepsSessionUntilAppTerminates() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.ManualToAutoApp",
+            displayName: "Manual To Auto App",
+            processIdentifier: 47
+        )
+        let manualConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            captureMode: .manual,
+            isEnabled: false
+        )
+        let autoConfig = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            captureMode: .auto,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000053")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 530)
+        )
+        let endedAt = Date(timeIntervalSince1970: 630)
+        let closedSessions = LockIsolated([(UUID, Date)]())
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [app.bundleIdentifier: manualConfig]
+        state.runningApplications = [app.bundleIdentifier: app]
+        state.permissionStatus = .authorized
+        state.activeSessions = [
+            app.bundleIdentifier: CaptureEngineFeature.State.ActiveSession(
+                application: app,
+                config: manualConfig,
+                session: session
+            ),
+        ]
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { endedAt }
+            $0.persistenceClient.closeSession = { sessionID, endedAt in
+                closedSessions.withValue { $0.append((sessionID, endedAt)) }
+            }
+        }
+
+        await store.send(.whitelistUpdated([autoConfig])) {
+            $0.whitelist = [app.bundleIdentifier: autoConfig]
+            $0.activeSessions[app.bundleIdentifier]?.config = autoConfig
+        }
+
+        await store.send(.workspaceEvent(.terminated(app))) {
+            $0.lastWorkspaceEvent = .terminated(app)
+            $0.runningApplications[app.bundleIdentifier] = nil
+            $0.activeSessions[app.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(app.bundleIdentifier))
+
+        XCTAssertEqual(closedSessions.value.map(\.0), [session.id])
+        XCTAssertEqual(closedSessions.value.map(\.1), [endedAt])
     }
 
     @MainActor

@@ -296,11 +296,11 @@ struct AppView: View {
             setCaptureMode: { app, captureMode in
                 store.send(.whitelistCaptureModeChanged(app.bundleIdentifier, captureMode))
             },
-            startManualCapture: { app in
-                store.send(.captureEngine(.manualCaptureStart(app.bundleIdentifier)))
+            startCapture: { app in
+                store.send(.captureEngine(.captureStart(app.bundleIdentifier)))
             },
-            stopManualCapture: { app in
-                store.send(.captureEngine(.manualCaptureStop(app.bundleIdentifier)))
+            stopCapture: { app in
+                store.send(.captureEngine(.captureStop(app.bundleIdentifier)))
             },
             removeFromWhitelist: { app in
                 store.send(.removeViewerAppFromWhitelistButtonTapped(app))

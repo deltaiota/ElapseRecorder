@@ -90,17 +90,17 @@ struct ViewerView: View {
                 app: context.app,
                 whitelistConfig: context.whitelistConfig,
                 isRunning: context.isRunning,
-                isManualCapturing: context.isManualCapturing
+                isCapturing: context.isCapturing
             ),
             actions: .init(
                 setAutoCaptureEnabled: { isEnabled in
                     setCaptureState(context.app, isEnabled)
                 },
-                startManualCapture: {
-                    startManualCapture(context.app)
+                startCapture: {
+                    startCapture(context.app)
                 },
-                stopManualCapture: {
-                    stopManualCapture(context.app)
+                stopCapture: {
+                    stopCapture(context.app)
                 }
             )
         )
@@ -162,7 +162,7 @@ struct ViewerView: View {
             app: app,
             whitelistConfig: whitelistConfig,
             isRunning: runningApplicationBundleIdentifiers.contains(app.bundleIdentifier),
-            isManualCapturing: activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
+            isCapturing: activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
         )
     }
 
@@ -175,7 +175,7 @@ struct ViewerView: View {
         case .auto:
             return whitelistConfig.isEnabled ? .pauseAuto : .resumeAuto
         case .manual:
-            return context.isManualCapturing ? .stopManual : .startManual
+            return context.isCapturing ? .stopCapture : .startCapture
         }
     }
 
@@ -185,10 +185,10 @@ struct ViewerView: View {
             setCaptureState(app, false)
         case .resumeAuto:
             setCaptureState(app, true)
-        case .startManual:
-            startManualCapture(app)
-        case .stopManual:
-            stopManualCapture(app)
+        case .startCapture:
+            startCapture(app)
+        case .stopCapture:
+            stopCapture(app)
         }
     }
 
@@ -459,7 +459,7 @@ struct ViewerView: View {
             Group {
                 if context.isCapturing {
                     Button {
-                        stopManualCapture(context.app)
+                        stopCapture(context.app)
                     } label: {
                         Text("Stop")
 
@@ -469,7 +469,7 @@ struct ViewerView: View {
                     .tint(.red)
                 } else {
                     Button {
-                        startManualCapture(context.app)
+                        startCapture(context.app)
                     } label: {
                         Text("Start")
 
@@ -516,12 +516,12 @@ struct ViewerView: View {
         actions.setCaptureMode(app, captureMode)
     }
 
-    private func startManualCapture(_ app: AppCaptureSummary) {
-        actions.startManualCapture(app)
+    private func startCapture(_ app: AppCaptureSummary) {
+        actions.startCapture(app)
     }
 
-    private func stopManualCapture(_ app: AppCaptureSummary) {
-        actions.stopManualCapture(app)
+    private func stopCapture(_ app: AppCaptureSummary) {
+        actions.stopCapture(app)
     }
 
     private func removeFromWhitelist(_ app: AppCaptureSummary) {
@@ -691,8 +691,8 @@ struct ViewerView: View {
         var setCaptureState: (AppCaptureSummary, Bool) -> Void = { _, _ in }
         var setCaptureInterval: (AppCaptureSummary, TimeInterval) -> Void = { _, _ in }
         var setCaptureMode: (AppCaptureSummary, CaptureMode) -> Void = { _, _ in }
-        var startManualCapture: (AppCaptureSummary) -> Void = { _ in }
-        var stopManualCapture: (AppCaptureSummary) -> Void = { _ in }
+        var startCapture: (AppCaptureSummary) -> Void = { _ in }
+        var stopCapture: (AppCaptureSummary) -> Void = { _ in }
         var removeFromWhitelist: (AppCaptureSummary) -> Void = { _ in }
         var addToWhitelist: (AppCaptureSummary) -> Void = { _ in }
         var deleteAllCaptures: (AppCaptureSummary) -> Void = { _ in }
@@ -702,14 +702,14 @@ struct ViewerView: View {
         var app: AppCaptureSummary
         var whitelistConfig: WhitelistedAppConfig?
         var isRunning: Bool
-        var isManualCapturing: Bool
+        var isCapturing: Bool
     }
 
     private enum AppRowCaptureAction {
         case pauseAuto
         case resumeAuto
-        case startManual
-        case stopManual
+        case startCapture
+        case stopCapture
 
         var title: String {
             switch self {
@@ -717,9 +717,9 @@ struct ViewerView: View {
                 #tk("Pause Capture")
             case .resumeAuto:
                 #tk("Resume Capture")
-            case .startManual:
+            case .startCapture:
                 #tk("Start Capture")
-            case .stopManual:
+            case .stopCapture:
                 #tk("Stop Capture")
             }
         }
@@ -730,9 +730,9 @@ struct ViewerView: View {
                 .pauseFill
             case .resumeAuto:
                 .playFill
-            case .startManual:
+            case .startCapture:
                 .recordCircle
-            case .stopManual:
+            case .stopCapture:
                 .stopCircle
             }
         }
@@ -741,7 +741,7 @@ struct ViewerView: View {
             switch self {
             case .pauseAuto, .resumeAuto:
                 .orange
-            case .startManual, .stopManual:
+            case .startCapture, .stopCapture:
                 .red
             }
         }

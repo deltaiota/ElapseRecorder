@@ -27,8 +27,8 @@ struct CaptureEngineFeature: Reducer {
         case task
         case requestPermissionButtonTapped
         case refreshRunningApplications
-        case manualCaptureStart(String)
-        case manualCaptureStop(String)
+        case captureStart(String)
+        case captureStop(String)
         case staleOpenSessionsClosed(Int)
         case staleOpenSessionCloseFailed(String)
         case whitelistUpdated([WhitelistedAppConfig])
@@ -99,17 +99,18 @@ struct CaptureEngineFeature: Reducer {
                     await send(.runningApplicationsLoaded(await workspace.runningApplications()))
                 }
 
-            case let .manualCaptureStart(bundleIdentifier):
-                guard let config = state.whitelist[bundleIdentifier],
-                      config.captureMode == .manual
-                else {
+            case let .captureStart(bundleIdentifier):
+                guard let config = state.whitelist[bundleIdentifier] else {
                     return .none
                 }
                 guard let application = state.runningApplications[bundleIdentifier] else {
-                    state.recordDiagnostic("Cannot start manual capture because \(config.displayName) is not running.")
+                    state.recordDiagnostic("Cannot start capture because \(config.displayName) is not running.")
                     return .none
                 }
                 guard state.activeSessions[bundleIdentifier] == nil else {
+                    return .none
+                }
+                guard config.allowsSessionStart else {
                     return .none
                 }
                 guard state.permissionStatus == .authorized else {
@@ -118,16 +119,14 @@ struct CaptureEngineFeature: Reducer {
                         let status = await permission.request()
                         await send(.permissionResolved(status, nil))
                         if status == .authorized {
-                            await send(.manualCaptureStart(bundleIdentifier))
+                            await send(.captureStart(bundleIdentifier))
                         }
                     }
                 }
                 return openSession(application, config: config)
 
-            case let .manualCaptureStop(bundleIdentifier):
-                guard let active = state.activeSessions.removeValue(forKey: bundleIdentifier),
-                      active.config.captureMode == .manual
-                else {
+            case let .captureStop(bundleIdentifier):
+                guard let active = state.activeSessions.removeValue(forKey: bundleIdentifier) else {
                     return .none
                 }
                 return closeSession(active, endedAt: date.now())
@@ -157,9 +156,7 @@ struct CaptureEngineFeature: Reducer {
                         continue
                     }
 
-                    guard updatedConfig.captureMode == active.config.captureMode,
-                          updatedConfig.captureMode == .manual || updatedConfig.isEnabled
-                    else {
+                    guard updatedConfig.allowsActiveSession else {
                         state.activeSessions[bundleIdentifier] = nil
                         effects.append(closeSession(active, endedAt: date.now()))
                         continue
@@ -182,7 +179,7 @@ struct CaptureEngineFeature: Reducer {
                 }
 
                 let startEffects = state.runningApplications.values.map { application in
-                    attemptStart(application, state: &state)
+                    attemptAutoStart(application, state: &state)
                 }
 
                 return .merge(effects + startEffects)
@@ -192,12 +189,12 @@ struct CaptureEngineFeature: Reducer {
                     applications.map { ($0.bundleIdentifier, $0) },
                     uniquingKeysWith: { _, latest in latest }
                 )
-                return .merge(applications.map { attemptStart($0, state: &state) })
+                return .merge(applications.map { attemptAutoStart($0, state: &state) })
 
             case let .workspaceEvent(.launched(application)):
                 state.lastWorkspaceEvent = .launched(application)
                 state.runningApplications[application.bundleIdentifier] = application
-                return attemptStart(application, state: &state)
+                return attemptAutoStart(application, state: &state)
 
             case let .workspaceEvent(.terminated(application)):
                 state.lastWorkspaceEvent = .terminated(application)
@@ -226,16 +223,16 @@ struct CaptureEngineFeature: Reducer {
                 }
 
                 guard let application else {
-                    return .merge(state.runningApplications.values.map { attemptStart($0, state: &state) })
+                    return .merge(state.runningApplications.values.map { attemptAutoStart($0, state: &state) })
                 }
 
-                return attemptStart(application, state: &state)
+                return attemptAutoStart(application, state: &state)
 
             case let .sessionOpened(session, application):
                 guard let config = state.whitelist[application.bundleIdentifier],
-                      config.captureMode == .manual || config.isEnabled
+                      config.allowsSessionStart
                 else {
-                    return .none
+                    return closeAbandonedSession(session)
                 }
 
                 state.activeSessions[application.bundleIdentifier] = State.ActiveSession(
@@ -341,7 +338,7 @@ struct CaptureEngineFeature: Reducer {
         }
     }
 
-    private func attemptStart(
+    private func attemptAutoStart(
         _ application: RunningApplication,
         state: inout State
     ) -> Effect<Action> {
@@ -406,6 +403,20 @@ struct CaptureEngineFeature: Reducer {
                 }
             }
         )
+    }
+
+    private func closeAbandonedSession(_ session: CaptureSession) -> Effect<Action> {
+        let date = date
+        let persistence = persistence
+
+        return .run { send in
+            do {
+                try await persistence.closeSession(session.id, date.now())
+                await send(.sessionClosed(session.bundleIdentifier))
+            } catch {
+                await send(.sessionOpenFailed(error.localizedDescription))
+            }
+        }
     }
 
     private func captureLoop(
@@ -499,5 +510,15 @@ extension CaptureEngineFeature.State {
         if lastError == CaptureEngineError.screenRecordingPermissionDenied.localizedDescription {
             lastError = nil
         }
+    }
+}
+
+private extension WhitelistedAppConfig {
+    var allowsSessionStart: Bool {
+        captureMode == .manual || isEnabled
+    }
+
+    var allowsActiveSession: Bool {
+        allowsSessionStart
     }
 }

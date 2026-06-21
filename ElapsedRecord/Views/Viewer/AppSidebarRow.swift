@@ -109,7 +109,7 @@ struct AppSidebarRow: View {
         case .auto(isRunning: _, isEnabled: false):
             .resumeAuto
         case .manual(isRunning: _, isCapturing: true):
-            .stopManual
+            .stopCapture
         default:
             nil
         }
@@ -124,7 +124,7 @@ struct AppSidebarRow: View {
         case .auto(isRunning: _, isEnabled: true):
             .pauseAuto
         case .manual(isRunning: _, isCapturing: false):
-            .startManual
+            .startCapture
         default:
             nil
         }
@@ -136,10 +136,10 @@ struct AppSidebarRow: View {
             actions.setAutoCaptureEnabled(false)
         case .resumeAuto:
             actions.setAutoCaptureEnabled(true)
-        case .startManual:
-            actions.startManualCapture()
-        case .stopManual:
-            actions.stopManualCapture()
+        case .startCapture:
+            actions.startCapture()
+        case .stopCapture:
+            actions.stopCapture()
         }
     }
 
@@ -152,7 +152,7 @@ struct AppSidebarRow: View {
             app: AppCaptureSummary,
             whitelistConfig: WhitelistedAppConfig?,
             isRunning: Bool,
-            isManualCapturing: Bool
+            isCapturing: Bool
         ) {
             self.app = app
             captureInterval = whitelistConfig?.captureInterval
@@ -166,7 +166,7 @@ struct AppSidebarRow: View {
             case .auto:
                 .auto(isRunning: isRunning, isEnabled: whitelistConfig.isEnabled)
             case .manual:
-                .manual(isRunning: isRunning, isCapturing: isManualCapturing)
+                .manual(isRunning: isRunning, isCapturing: isCapturing)
             }
         }
 
@@ -209,15 +209,15 @@ struct AppSidebarRow: View {
 
     struct Actions {
         var setAutoCaptureEnabled: (Bool) -> Void = { _ in }
-        var startManualCapture: () -> Void = {}
-        var stopManualCapture: () -> Void = {}
+        var startCapture: () -> Void = {}
+        var stopCapture: () -> Void = {}
     }
 
     private enum CaptureAction {
         case pauseAuto
         case resumeAuto
-        case startManual
-        case stopManual
+        case startCapture
+        case stopCapture
 
         var systemSymbol: SFSymbol {
             switch self {
@@ -225,18 +225,18 @@ struct AppSidebarRow: View {
                 .pauseCircle
             case .resumeAuto:
                 .playCircle
-            case .startManual:
+            case .startCapture:
                 .recordCircle
-            case .stopManual:
+            case .stopCapture:
                 .stopCircle
             }
         }
 
         var tint: Color {
             switch self {
-            case .stopManual:
+            case .stopCapture:
                 .red
-            case .pauseAuto, .resumeAuto, .startManual:
+            case .pauseAuto, .resumeAuto, .startCapture:
                 .primary
             }
         }
@@ -260,7 +260,7 @@ struct AppSidebarRow: View {
                 isEnabled: true
             ),
             isRunning: true,
-            isManualCapturing: false
+            isCapturing: false
         )
     )
     .padding()

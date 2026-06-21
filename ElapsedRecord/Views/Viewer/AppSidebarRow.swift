@@ -3,55 +3,27 @@ import SwiftUI
 import TranslateKit
 
 struct AppSidebarRow: View {
-    let app: AppCaptureSummary
-    let captureMode: CaptureMode
-    var isRunning = true
-    var isWhitelisted = true
-    var isPaused = true
-    var isManualCapturing = false
-    var captureInterval: TimeInterval?
-    var setCaptureState: (Bool) -> Void = { _ in }
-    var startManualCapture: () -> Void = {}
-    var stopManualCapture: () -> Void = {}
+    let model: Model
+    var actions = Actions()
 
     @State private var isShowingInfo = false
 
     private var identity: InstalledAppIdentity {
-        InstalledAppIdentity(app: app)
-    }
-    
-    private var opacity: CGFloat {
-        guard isRunning else { return 0.45 }
-        return switch captureMode {
-        case .auto: isPaused ? 0.45 : 1
-        case .manual: isManualCapturing ? 0.45 : 1
-        }
+        InstalledAppIdentity(app: model.app)
     }
 
     var body: some View {
         HStack {
             AppIconView(icon: identity.icon)
                 .frame(height: 32)
-                .opacity(opacity)
+                .opacity(model.iconOpacity)
                 .overlay(alignment: .center) {
-                    if isRunning {
-                        Group {
-                            switch captureMode {
-                            case .auto where isPaused:
-                                Button {
-                                    setCaptureState(true)
-                                } label: {
-                                    Image(systemSymbol: .playCircle)
-                                }
-                            case .manual where isManualCapturing:
-                                Button {
-                                    stopManualCapture()
-                                } label: {
-                                    Image(systemSymbol: .stopCircle)
-                                        .foregroundStyle(.red)
-                                }
-                            default: EmptyView()
-                            }
+                    if let overlayAction {
+                        Button {
+                            perform(overlayAction)
+                        } label: {
+                            Image(systemSymbol: overlayAction.systemSymbol)
+                                .foregroundStyle(overlayAction.tint)
                         }
                         .buttonBorderShape(.circle)
                         .buttonStyle(.plain)
@@ -60,24 +32,20 @@ struct AppSidebarRow: View {
                 }
                 .fixedSize()
                 .onTapGesture {
-                    if isRunning {
-                        switch captureMode {
-                        case .auto where !isPaused: setCaptureState(false)
-                        case .manual where !isManualCapturing: startManualCapture()
-                        default: break
-                        }
+                    if let tapAction {
+                        perform(tapAction)
                     }
                 }
 
             VStack(alignment: .leading) {
                 Text(identity.localizedName)
                     .lineLimit(1)
-                    .foregroundStyle(isWhitelisted ? AnyShapeStyle(.primary) : AnyShapeStyle(.placeholder))
+                    .foregroundStyle(model.isWhitelisted ? AnyShapeStyle(.primary) : AnyShapeStyle(.placeholder))
 
                 CountSummary(
                     items: countSummaryItems
                 )
-                .foregroundStyle(isWhitelisted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.placeholder))
+                .foregroundStyle(model.isWhitelisted ? AnyShapeStyle(.secondary) : AnyShapeStyle(.placeholder))
                 .font(.caption)
                 .lineLimit(1)
             }
@@ -93,18 +61,18 @@ struct AppSidebarRow: View {
             .foregroundStyle(.secondary)
             .help("Show app information")
             .popover(isPresented: $isShowingInfo, arrowEdge: .trailing) {
-                AppInfoView(app: app, identity: identity)
+                AppInfoView(app: model.app, identity: identity)
             }
         }
     }
 
     private var countSummaryItems: [CountSummary.Item] {
         var items: [CountSummary.Item] = [
-            .init(value: app.sessionCount, systemSymbol: .film),
-            .init(value: app.screenshotCount, systemSymbol: .photo),
+            .init(value: model.app.sessionCount, systemSymbol: .film),
+            .init(value: model.app.screenshotCount, systemSymbol: .photo),
         ]
 
-        if let captureInterval {
+        if let captureInterval = model.captureInterval {
             items.append(
                 .init(
                     text: captureIntervalLabel(captureInterval),
@@ -131,18 +99,169 @@ struct AppSidebarRow: View {
         }
         return "\(seconds)s"
     }
+
+    private var overlayAction: CaptureAction? {
+        guard model.isRunning else {
+            return nil
+        }
+
+        return switch model.captureState {
+        case .auto(isRunning: _, isEnabled: false):
+            .resumeAuto
+        case .manual(isRunning: _, isCapturing: true):
+            .stopManual
+        default:
+            nil
+        }
+    }
+
+    private var tapAction: CaptureAction? {
+        guard model.isRunning else {
+            return nil
+        }
+
+        return switch model.captureState {
+        case .auto(isRunning: _, isEnabled: true):
+            .pauseAuto
+        case .manual(isRunning: _, isCapturing: false):
+            .startManual
+        default:
+            nil
+        }
+    }
+
+    private func perform(_ action: CaptureAction) {
+        switch action {
+        case .pauseAuto:
+            actions.setAutoCaptureEnabled(false)
+        case .resumeAuto:
+            actions.setAutoCaptureEnabled(true)
+        case .startManual:
+            actions.startManualCapture()
+        case .stopManual:
+            actions.stopManualCapture()
+        }
+    }
+
+    struct Model {
+        let app: AppCaptureSummary
+        let captureState: CaptureState
+        let captureInterval: TimeInterval?
+
+        init(
+            app: AppCaptureSummary,
+            whitelistConfig: WhitelistedAppConfig?,
+            isRunning: Bool,
+            isManualCapturing: Bool
+        ) {
+            self.app = app
+            captureInterval = whitelistConfig?.captureInterval
+
+            guard let whitelistConfig else {
+                captureState = .stale(isRunning: isRunning)
+                return
+            }
+
+            captureState = switch whitelistConfig.captureMode {
+            case .auto:
+                .auto(isRunning: isRunning, isEnabled: whitelistConfig.isEnabled)
+            case .manual:
+                .manual(isRunning: isRunning, isCapturing: isManualCapturing)
+            }
+        }
+
+        var isWhitelisted: Bool {
+            if case .stale = captureState {
+                return false
+            }
+            return true
+        }
+
+        var isRunning: Bool {
+            switch captureState {
+            case let .stale(isRunning),
+                 let .auto(isRunning, _),
+                 let .manual(isRunning, _):
+                isRunning
+            }
+        }
+
+        var iconOpacity: CGFloat {
+            guard isRunning else {
+                return 0.45
+            }
+
+            return switch captureState {
+            case .auto(isRunning: _, isEnabled: false),
+                 .manual(isRunning: _, isCapturing: true):
+                0.45
+            default:
+                1
+            }
+        }
+    }
+
+    enum CaptureState {
+        case stale(isRunning: Bool)
+        case auto(isRunning: Bool, isEnabled: Bool)
+        case manual(isRunning: Bool, isCapturing: Bool)
+    }
+
+    struct Actions {
+        var setAutoCaptureEnabled: (Bool) -> Void = { _ in }
+        var startManualCapture: () -> Void = {}
+        var stopManualCapture: () -> Void = {}
+    }
+
+    private enum CaptureAction {
+        case pauseAuto
+        case resumeAuto
+        case startManual
+        case stopManual
+
+        var systemSymbol: SFSymbol {
+            switch self {
+            case .pauseAuto:
+                .pauseCircle
+            case .resumeAuto:
+                .playCircle
+            case .startManual:
+                .recordCircle
+            case .stopManual:
+                .stopCircle
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .stopManual:
+                .red
+            case .pauseAuto, .resumeAuto, .startManual:
+                .primary
+            }
+        }
+    }
 }
 
 #Preview {
     AppSidebarRow(
-        app: AppCaptureSummary(
-            bundleIdentifier: "com.apple.TextEdit",
-            displayName: "TextEdit",
-            sessionCount: 3,
-            screenshotCount: 128,
-            lastCapturedAt: .now
-        ),
-        captureMode: .auto
+        model: .init(
+            app: AppCaptureSummary(
+                bundleIdentifier: "com.apple.TextEdit",
+                displayName: "TextEdit",
+                sessionCount: 3,
+                screenshotCount: 128,
+                lastCapturedAt: .now
+            ),
+            whitelistConfig: .init(
+                bundleIdentifier: "com.apple.TextEdit",
+                displayName: "TextEdit",
+                captureInterval: 5,
+                isEnabled: true
+            ),
+            isRunning: true,
+            isManualCapturing: false
+        )
     )
     .padding()
     .frame(width: 260)

@@ -94,25 +94,27 @@ struct ViewerView: View {
         _ app: AppCaptureSummary,
         whitelistConfig: WhitelistedAppConfig?
     ) -> some View {
-        let isWhitelisted = whitelistConfig != nil
-        let isPaused = whitelistConfig?.isEnabled == false
         let isManualCapturing = activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
- 
+
         AppSidebarRow(
-            app: app,
-            captureMode: whitelistConfig?.captureMode ?? .auto,
-            isRunning: runningApplicationBundleIdentifiers.contains(app.bundleIdentifier),
-            isWhitelisted: isWhitelisted,
-            isPaused: isPaused,
-            isManualCapturing: isManualCapturing,
-            captureInterval: whitelistConfig?.captureInterval
-        ) { isEnabled in
-            setCaptureState(app, isEnabled)
-        } startManualCapture: {
-            startManualCapture(app)
-        } stopManualCapture: {
-            stopManualCapture(app)
-        }
+            model: .init(
+                app: app,
+                whitelistConfig: whitelistConfig,
+                isRunning: runningApplicationBundleIdentifiers.contains(app.bundleIdentifier),
+                isManualCapturing: isManualCapturing
+            ),
+            actions: .init(
+                setAutoCaptureEnabled: { isEnabled in
+                    setCaptureState(app, isEnabled)
+                },
+                startManualCapture: {
+                    startManualCapture(app)
+                },
+                stopManualCapture: {
+                    stopManualCapture(app)
+                }
+            )
+        )
         .tag(app.bundleIdentifier)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
@@ -124,7 +126,7 @@ struct ViewerView: View {
             if let whitelistConfig {
                 switch whitelistConfig.captureMode {
                 case .auto:
-                    if isPaused {
+                    if whitelistConfig.isEnabled {
                         Button("Pause Capture", systemSymbol: .pauseFill) {
                             setCaptureState(app, false)
                         }
@@ -164,7 +166,7 @@ struct ViewerView: View {
             if let whitelistConfig {
                 switch whitelistConfig.captureMode {
                 case .auto:
-                    if isPaused {
+                    if whitelistConfig.isEnabled {
                         Button("Pause Capture", systemSymbol: .pauseFill) {
                             setCaptureState(app, false)
                         }
@@ -384,7 +386,7 @@ struct ViewerView: View {
                                 }
                                 .controlSize(.small)
                                 .fixedSize()
-                                
+
                                 Spacer(minLength: 12)
 
                                 Slider(
@@ -418,9 +420,9 @@ struct ViewerView: View {
                                 .pickerStyle(.segmented)
                                 .labelsHidden()
                                 .fixedSize()
-                                
+
                                 Spacer(minLength: 12)
-                                
+
                                 captureModeControl(for: selectedApp, whitelistConfig: whitelistConfig)
                             }
                         }
@@ -448,7 +450,7 @@ struct ViewerView: View {
                     setCaptureState(app, false)
                 } label: {
                     Text("Pause")
-                    
+
                     Image(systemSymbol: .pauseFill)
                 }
             } else {
@@ -456,21 +458,21 @@ struct ViewerView: View {
                     setCaptureState(app, true)
                 } label: {
                     Text("Resume")
-                    
+
                     Image(systemSymbol: .playFill)
                 }
             }
 
         case .manual:
             let isCapturing = activeCaptureBundleIdentifiers.contains(app.bundleIdentifier)
-            
+
             Group {
                 if isCapturing {
                     Button {
                         stopManualCapture(app)
                     } label: {
                         Text("Stop")
-                        
+
                         Image(systemSymbol: .stopCircle)
                     }
                     .buttonStyle(.borderedProminent)
@@ -480,7 +482,7 @@ struct ViewerView: View {
                         startManualCapture(app)
                     } label: {
                         Text("Start")
-                        
+
                         Image(systemSymbol: .recordCircle)
                     }
                 }
@@ -488,7 +490,7 @@ struct ViewerView: View {
             .disabled(!runningApplicationBundleIdentifiers.contains(app.bundleIdentifier))
         }
     }
-    
+
     private var sessionDaySections: [SessionDaySection] {
         let calendar = Calendar.current
         let groupedSessions = Dictionary(grouping: store.sessions) { session in

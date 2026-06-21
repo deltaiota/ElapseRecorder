@@ -143,9 +143,17 @@ nonisolated struct CapturableWindow: Equatable, Identifiable {
     var frame: CGRect
     var layer: Int
     var isOnScreen: Bool
+    /// ScreenCaptureKit's own Stage Manager signal. Apple documents that "with Stage
+    /// Manager, SCWindow can be offScreen and active": a window stowed onto the Stage
+    /// Manager strip stays on-screen (a live thumbnail) but reports isActive == false,
+    /// while the foreground working set reports isActive == true. Requiring both
+    /// isOnScreen and isActive skips stowed thumbnails (and minimized/hidden windows)
+    /// without capturing the blurry, oversized proxies the OS renders for them.
+    var isActive: Bool = true
 
     var shouldCapture: Bool {
         isOnScreen
+            && isActive
             && layer == 0
             && frame.width >= 80
             && frame.height >= 80

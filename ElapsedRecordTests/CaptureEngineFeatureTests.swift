@@ -911,6 +911,99 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testStageManagerStowedWindowIsTreatedAsUnavailable() async throws {
+        // A window stowed by Stage Manager stays on-screen (isOnScreen == true) but
+        // reports isActive == false. It must be skipped, not captured as a blurry proxy,
+        // and recorded as a placeholder because the session has already seen real windows.
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.StowedApp",
+            displayName: "Stowed App",
+            processIdentifier: 105
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A0")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let window = try MonitoredWindow(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")),
+            sessionID: session.id,
+            systemWindowID: 941,
+            displayNumber: 1,
+            label: "Main",
+            firstSeenAt: Date(timeIntervalSince1970: 10),
+            lastSeenAt: Date(timeIntervalSince1970: 10)
+        )
+        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A2"))
+        let seenAt = Date(timeIntervalSince1970: 95)
+        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
+        let capturedWindowIDs = LockIsolated([Int]())
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session,
+            windowsBySystemID: [window.systemWindowID: window],
+            isCaptureInFlight: true
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { seenAt }
+            $0.idGeneratorClient.uuid = { unavailableID }
+            $0.persistenceClient.recordCaptureUnavailable = { record in
+                recordedPlaceholders.withValue { $0.append(record) }
+            }
+            $0.screenCaptureClient.capture = { windowID in
+                capturedWindowIDs.withValue { $0.append(windowID) }
+                throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
+            }
+        }
+
+        let expectedRecord = CaptureUnavailableRecord(
+            id: unavailableID,
+            sessionID: session.id,
+            startedAt: seenAt,
+            endedAt: seenAt,
+            reason: .windowMinimized
+        )
+
+        await store.send(
+            .windowsLoaded(
+                app.bundleIdentifier,
+                [
+                    CapturableWindow(
+                        systemWindowID: window.systemWindowID,
+                        title: window.label,
+                        frame: CGRect(x: 0, y: 0, width: 1200, height: 800),
+                        layer: 0,
+                        isOnScreen: true,
+                        isActive: false
+                    ),
+                ]
+            )
+        ) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+        }
+        await store.receive(.captureUnavailableRecorded(expectedRecord))
+
+        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
+        XCTAssertEqual(capturedWindowIDs.value, [])
+    }
+
+    @MainActor
     func testUnavailablePlaceholderIsRecordedOncePerUnavailableSpan() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.StageManagedApp",

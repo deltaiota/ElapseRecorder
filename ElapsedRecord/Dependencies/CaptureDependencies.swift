@@ -192,34 +192,26 @@ extension CapturePermissionClient: DependencyKey {
 extension ScreenCaptureClient: DependencyKey {
     static let liveValue = Self(
         windows: { application in
-            // Enumerate only the windows ScreenCaptureKit itself considers on-screen.
-            // This is Apple's own capturability gate and, in practice, already excludes
-            // minimized, hidden, off-Space, and most Stage Manager-stowed windows.
+            // Enumerate the windows ScreenCaptureKit considers on-screen, then let the
+            // domain `shouldCapture` filter apply the isOnScreen + isActive gate. A window
+            // stowed by Stage Manager stays on-screen as a live thumbnail but reports
+            // isActive == false, so it is dropped instead of captured as a blurry proxy.
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-
-            // Independent second visibility source. ScreenCaptureKit occasionally still
-            // reports a Stage Manager-stowed window as on-screen; CoreGraphics' on-screen
-            // window list is computed differently, so requiring agreement between the two
-            // catches windows that SCK alone would let through as blurry thumbnails.
-            let coreGraphicsOnScreenIDs = CaptureWindowVisibility.onScreenWindowIDs()
-
             return content.windows
                 .filter { window in
                     window.owningApplication?.bundleIdentifier == application.bundleIdentifier
                         && window.owningApplication?.processID == application.processIdentifier
-                        && CaptureWindowVisibility.isVisible(window, onScreenIDs: coreGraphicsOnScreenIDs)
                 }
                 .map(CapturableWindow.init(window:))
         },
         capture: { windowID in
-            // Re-enumerate through the same on-screen gate used for detection so a window
-            // that became unavailable between ticks is refused here (the caller turns the
-            // thrown error into a timeline placeholder) instead of producing a stowed,
-            // upscaled thumbnail.
+            // Re-enumerate through the same gate used for detection so a window that became
+            // minimized or stowed between ticks is refused here (the caller turns the thrown
+            // error into a timeline placeholder) instead of producing an upscaled thumbnail.
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            let coreGraphicsOnScreenIDs = CaptureWindowVisibility.onScreenWindowIDs()
             guard let window = content.windows.first(where: { Int($0.windowID) == windowID }),
-                  CaptureWindowVisibility.isVisible(window, onScreenIDs: coreGraphicsOnScreenIDs)
+                  window.isOnScreen,
+                  window.isActive
             else {
                 throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
             }
@@ -236,28 +228,6 @@ extension ScreenCaptureClient: DependencyKey {
             return CapturedImage(cgImage: image)
         }
     )
-}
-
-/// Window visibility helpers built only on public, sandbox-safe APIs.
-///
-/// No public API reports "hidden by Stage Manager" directly, so capturability is
-/// decided by requiring agreement between ScreenCaptureKit's `isOnScreen` flag and
-/// CoreGraphics' on-screen window list. When CoreGraphics is unavailable the check
-/// degrades gracefully to the ScreenCaptureKit signal alone.
-nonisolated enum CaptureWindowVisibility {
-    static func isVisible(_ window: SCWindow, onScreenIDs: Set<Int>?) -> Bool {
-        guard window.isOnScreen else { return false }
-        guard let onScreenIDs else { return true }
-        return onScreenIDs.contains(Int(window.windowID))
-    }
-
-    static func onScreenWindowIDs() -> Set<Int>? {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-        guard let info = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return nil
-        }
-        return Set(info.compactMap { $0[kCGWindowNumber as String] as? Int })
-    }
 }
 
 extension ImageEncodingClient: DependencyKey {
@@ -543,7 +513,8 @@ nonisolated extension CapturableWindow {
             title: window.title,
             frame: window.frame,
             layer: window.windowLayer,
-            isOnScreen: window.isOnScreen
+            isOnScreen: window.isOnScreen,
+            isActive: window.isActive
         )
     }
 }

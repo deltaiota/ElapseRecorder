@@ -11,27 +11,40 @@ import SwiftUI
 
 @main
 struct ElapsedRecordApp: App {
-    var sharedModelContainer: ModelContainer = {
+    private let sharedModelContainer: ModelContainer
+    private let store: StoreOf<AppFeature>
+
+    init() {
         let schema = Schema.elapsedRecord
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            sharedModelContainer = modelContainer
+            store = Store(initialState: AppFeature.State()) {
+                AppFeature()
+            } withDependencies: {
+                $0.persistenceClient = .live(modelContainer: modelContainer)
+            }
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
-    }()
+    }
 
     var body: some Scene {
-        WindowGroup {
-            ContentView(
-                store: Store(initialState: AppFeature.State()) {
-                    AppFeature()
-                } withDependencies: {
-                    $0.persistenceClient = .live(modelContainer: sharedModelContainer)
-                }
-            )
+        WindowGroup("Elapsed Record", id: Self.libraryWindowID) {
+            ContentView(store: store)
         }
         .modelContainer(sharedModelContainer)
+
+        MenuBarExtra("Elapsed Record", systemImage: "record.circle") {
+            MenuBarView(
+                store: store,
+                libraryWindowID: Self.libraryWindowID
+            )
+        }
+        .menuBarExtraStyle(.menu)
     }
+
+    private static let libraryWindowID = "library"
 }

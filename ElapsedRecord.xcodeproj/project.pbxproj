@@ -12,6 +12,7 @@
 		28C18B6C2FE415A900A31D68 /* SFSafeSymbols in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B6B2FE415A900A31D68 /* SFSafeSymbols */; };
 		28C18B6F2FE4162E00A31D68 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B6E2FE4162E00A31D68 /* ComposableArchitecture */; };
 		28C18B722FE4166300A31D68 /* Chronicle in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B712FE4166300A31D68 /* Chronicle */; };
+		5B67E6DD465045499F5A8A6D /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = B8AC3149851946BF8D6006B2 /* LaunchAtLogin */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,6 +66,7 @@
 				28C18B6F2FE4162E00A31D68 /* ComposableArchitecture in Frameworks */,
 				28C18B662FE4155200A31D68 /* Defaults in Frameworks */,
 				28C18B722FE4166300A31D68 /* Chronicle in Frameworks */,
+				5B67E6DD465045499F5A8A6D /* LaunchAtLogin in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -130,6 +132,7 @@
 				28C18B6B2FE415A900A31D68 /* SFSafeSymbols */,
 				28C18B6E2FE4162E00A31D68 /* ComposableArchitecture */,
 				28C18B712FE4166300A31D68 /* Chronicle */,
+				B8AC3149851946BF8D6006B2 /* LaunchAtLogin */,
 			);
 			productName = ElapsedRecord;
 			productReference = 28C18B342FE4149900A31D68 /* ElapsedRecord.app */;
@@ -220,6 +223,7 @@
 				28C18B6A2FE415A900A31D68 /* XCRemoteSwiftPackageReference "SFSafeSymbols" */,
 				28C18B6D2FE4162E00A31D68 /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
 				28C18B702FE4166300A31D68 /* XCRemoteSwiftPackageReference "LogOutLoud" */,
+				16F52C3FBCD44D4A81C4382C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 28C18B352FE4149900A31D68 /* Products */;
@@ -667,6 +671,14 @@
 				minimumVersion = 3.0.2;
 			};
 		};
+		16F52C3FBCD44D4A81C4382C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/LaunchAtLogin-Modern";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -694,6 +706,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 28C18B702FE4166300A31D68 /* XCRemoteSwiftPackageReference "LogOutLoud" */;
 			productName = Chronicle;
+		};
+		B8AC3149851946BF8D6006B2 /* LaunchAtLogin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 16F52C3FBCD44D4A81C4382C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */;
+			productName = LaunchAtLogin;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

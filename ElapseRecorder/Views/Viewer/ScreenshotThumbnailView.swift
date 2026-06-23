@@ -27,11 +27,27 @@ struct ScreenshotThumbnailView: View {
             }
         }
         .task(id: record.id) {
-            image = nil
-            image = try? await thumbnails.thumbnail(
-                record.fileURL,
-                preferences.thumbnailMaximumPixelSize()
-            )
+            await loadThumbnail()
         }
+    }
+
+    private func loadThumbnail() async {
+        // A cache hit shows the thumbnail immediately, so scrolling back to already-seen
+        // cells doesn't reload from disk or flash the placeholder.
+        if let cached = ThumbnailCache.shared.image(forID: record.id) {
+            image = cached
+            return
+        }
+
+        image = nil
+        guard let loaded = try? await thumbnails.thumbnail(
+            record.fileURL,
+            preferences.thumbnailMaximumPixelSize()
+        ) else {
+            return
+        }
+
+        ThumbnailCache.shared.insert(loaded, forID: record.id)
+        image = loaded
     }
 }

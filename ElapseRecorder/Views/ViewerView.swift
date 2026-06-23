@@ -209,41 +209,14 @@ struct ViewerView: View {
                     .tag(ViewerFeature.State.SessionListSelection.flat)
                     .listRowSeparator(.hidden)
 
+                ForEach(activeSessions) { session in
+                    sessionRow(session, isRecording: true)
+                }
+
                 ForEach(sessionDaySections) { section in
                     Section(isExpanded: $collapsedSessionDaySections[contains: section.id].negate()) {
                         ForEach(section.sessions) { session in
-                            Label {
-                                VStack(alignment: .leading) {
-                                    Text(session.startedAt, format: .dateTime.hour().minute())
-                                    CountSummary(
-                                        items: [
-                                            .init(label: sessionDurationText(session), systemSymbol: .clock, isMonospaced: true),
-                                            .init(value: session.windowCount, systemSymbol: .macwindow),
-                                            .init(value: session.screenshotCount, systemSymbol: .photo),
-                                        ]
-                                    )
-                                    .foregroundStyle(.secondary)
-                                    .font(.caption)
-                                }
-                            } icon: {
-                                Image(systemSymbol: .clock)
-                            }
-                            .tag(ViewerFeature.State.SessionListSelection.session(id: session.id))
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    store.send(.deleteSessionButtonTapped(session))
-                                } label: {
-                                    Label(TK.Action.delete, systemSymbol: .trash)
-                                }
-                                .tint(.red)
-                            }
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    store.send(.deleteSessionButtonTapped(session))
-                                } label: {
-                                    Label("Delete Session", systemSymbol: .trash)
-                                }
-                            }
+                            sessionRow(session, isRecording: false)
                         }
                     } header: {
                         Text(section.day, format: .dateTime.year().month().day())
@@ -282,13 +255,17 @@ struct ViewerView: View {
             if store.isShowingFlatGallery {
                 ScreenshotGrid(
                     entries: store.flatTimelineEntries,
-                    selectScreenshot: { store.send(.screenshotSelected($0)) }
+                    selectedScreenshotID: store.selectedScreenshot?.id,
+                    selectScreenshot: { store.send(.screenshotSelected($0)) },
+                    revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
                 )
                 .navigationTitle("All Screenshots")
             } else if store.selectedSessionID != nil {
                 ScreenshotGrid(
                     entries: store.windowTimelineEntries,
-                    selectScreenshot: { store.send(.screenshotSelected($0)) }
+                    selectedScreenshotID: store.selectedScreenshot?.id,
+                    selectScreenshot: { store.send(.screenshotSelected($0)) },
+                    revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
                 )
                 .safeAreaInset(edge: .bottom) {
                     VStack(spacing: 0) {
@@ -542,9 +519,72 @@ struct ViewerView: View {
         actions.deleteAllCaptures(app)
     }
 
+    @ViewBuilder
+    private func sessionRow(_ session: CaptureSessionSummary, isRecording: Bool) -> some View {
+        let label = Label {
+            VStack(alignment: .leading) {
+                HStack(spacing: 5) {
+                    if isRecording {
+                        Image(systemSymbol: .recordCircleFill)
+                            .foregroundStyle(.red)
+                            .font(.caption2)
+                            .symbolEffect(.pulse, options: .repeating)
+                    }
+                    Text(session.startedAt, format: .dateTime.hour().minute())
+                }
+
+                CountSummary(
+                    items: [
+                        .init(label: sessionDurationText(session), systemSymbol: .clock, isMonospaced: true),
+                        .init(value: session.windowCount, systemSymbol: .macwindow),
+                        .init(value: session.screenshotCount, systemSymbol: .photo),
+                    ]
+                )
+                .foregroundStyle(.secondary)
+                .font(.caption)
+            }
+        } icon: {
+            Image(systemSymbol: isRecording ? .recordCircle : .clock)
+                .foregroundStyle(isRecording ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+        }
+        .tag(ViewerFeature.State.SessionListSelection.session(id: session.id))
+
+        // A recording session can't be deleted while it's open, so only ended sessions
+        // expose delete actions.
+        if isRecording {
+            label
+        } else {
+            label
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        store.send(.deleteSessionButtonTapped(session))
+                    } label: {
+                        Label(TK.Action.delete, systemSymbol: .trash)
+                    }
+                    .tint(.red)
+                }
+                .contextMenu {
+                    Button(role: .destructive) {
+                        store.send(.deleteSessionButtonTapped(session))
+                    } label: {
+                        Label("Delete Session", systemSymbol: .trash)
+                    }
+                }
+        }
+    }
+
+    /// Sessions still being captured (no end time). The app keeps at most one open
+    /// session per app, so this is normally a single pinned row below "All Screenshots".
+    private var activeSessions: [CaptureSessionSummary] {
+        store.sessions
+            .filter { $0.endedAt == nil }
+            .sorted { $0.startedAt > $1.startedAt }
+    }
+
     private var sessionDaySections: [SessionDaySection] {
         let calendar = Calendar.current
-        let groupedSessions = Dictionary(grouping: store.sessions) { session in
+        let endedSessions = store.sessions.filter { $0.endedAt != nil }
+        let groupedSessions = Dictionary(grouping: endedSessions) { session in
             calendar.startOfDay(for: session.startedAt)
         }
 

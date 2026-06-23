@@ -84,6 +84,7 @@ struct ViewerFeature: Reducer {
         case screenshotSelected(ScreenshotRecord?)
         case refresh
         case revealSelectedScreenshotInFinderButtonTapped
+        case revealScreenshotInFinder(ScreenshotRecord)
         case deleteSessionButtonTapped(CaptureSessionSummary)
         case deleteSelectedSessionButtonTapped
         case sessionDeleted(UUID)
@@ -215,6 +216,12 @@ struct ViewerFeature: Reducer {
                 let fileReveal = fileReveal
                 return .run { _ in
                     await fileReveal.reveal(url)
+                }
+
+            case let .revealScreenshotInFinder(record):
+                let fileReveal = fileReveal
+                return .run { _ in
+                    await fileReveal.reveal(record.fileURL)
                 }
 
             case let .deleteSessionButtonTapped(session):

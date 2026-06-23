@@ -356,7 +356,12 @@ struct AppView: View {
     }
 
     private func updateRecordingPermissionHint(for permissionStatus: CapturePermissionStatus) {
-        isShowingRecordingPermissionHint = permissionStatus != .authorized
+        // Only auto-present the hint when permission is explicitly denied (the case that
+        // needs a trip to System Settings). The initial startup status is `.notDetermined`
+        // and resolves asynchronously to `.authorized`; treating that transient state as
+        // "show the hint" made the popover flash for a tick on every launch. `.notDetermined`
+        // is still surfaced by the always-visible toolbar button.
+        isShowingRecordingPermissionHint = permissionStatus == .denied
     }
 
     private static let diagnosticsPopoverWidth: CGFloat = 340

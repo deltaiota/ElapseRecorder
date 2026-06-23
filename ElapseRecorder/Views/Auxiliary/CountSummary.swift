@@ -3,18 +3,26 @@ import SwiftUI
 
 struct CountSummary: View {
     struct Item {
-        var text: String
+        var label: Text
         var systemSymbol: SFSymbol
         var isMonospaced: Bool
 
         init(value: Int, systemSymbol: SFSymbol, isMonospaced: Bool = true) {
-            text = value.formatted()
+            label = Text(value.formatted())
             self.systemSymbol = systemSymbol
             self.isMonospaced = isMonospaced
         }
 
         init(text: String, systemSymbol: SFSymbol, isMonospaced: Bool = false) {
-            self.text = text
+            label = Text(text)
+            self.systemSymbol = systemSymbol
+            self.isMonospaced = isMonospaced
+        }
+
+        // Accepts a SwiftUI Text directly so callers can pass a self-updating timer
+        // (e.g. Text(date, style: .timer)) that SwiftUI refreshes on its own.
+        init(label: Text, systemSymbol: SFSymbol, isMonospaced: Bool = false) {
+            self.label = label
             self.systemSymbol = systemSymbol
             self.isMonospaced = isMonospaced
         }
@@ -42,10 +50,9 @@ struct CountSummary: View {
     @ViewBuilder
     private func itemText(_ item: Item) -> some View {
         if item.isMonospaced {
-            Text(item.text)
-                .monospaced()
+            item.label.monospaced()
         } else {
-            Text(item.text)
+            item.label
         }
     }
 }

@@ -217,7 +217,7 @@ struct ViewerView: View {
                                     Text(session.startedAt, format: .dateTime.hour().minute())
                                     CountSummary(
                                         items: [
-                                            .init(text: sessionDuration(session), systemSymbol: .clock, isMonospaced: true),
+                                            .init(label: sessionDurationText(session), systemSymbol: .clock, isMonospaced: true),
                                             .init(value: session.windowCount, systemSymbol: .macwindow),
                                             .init(value: session.screenshotCount, systemSymbol: .photo),
                                         ]
@@ -673,9 +673,14 @@ struct ViewerView: View {
         }
     }
 
-    private func sessionDuration(_ session: CaptureSessionSummary) -> String {
-        Duration.seconds(session.duration)
-            .formatted(.time(pattern: .hourMinuteSecond))
+    private func sessionDurationText(_ session: CaptureSessionSummary) -> Text {
+        // Record only the start and end; let SwiftUI render and update the timer.
+        // An open (in-capture) session counts up live from its start; a finished
+        // session shows the frozen total across its start...end interval.
+        if let endedAt = session.endedAt {
+            return Text(timerInterval: session.startedAt ... max(session.startedAt, endedAt), countsDown: false)
+        }
+        return Text(session.startedAt, style: .timer)
     }
 
     private func windowTitle(_ window: WindowCaptureSummary) -> String {

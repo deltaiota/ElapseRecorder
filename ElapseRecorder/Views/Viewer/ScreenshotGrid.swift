@@ -20,7 +20,7 @@ struct ScreenshotGrid: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: itemSize), spacing: 14)], spacing: 14) {
-                    ForEach(entries) { entry in
+                    ForEach(displayedEntries) { entry in
                         cell(for: entry)
                             .id(entry.id)
                     }
@@ -35,13 +35,13 @@ struct ScreenshotGrid: View {
                 return .handled
             }
             .onChange(of: jumpToLatestTrigger) {
-                guard let lastID = entries.last?.id else { return }
+                guard let lastID = displayedEntries.last?.id else { return }
                 withAnimation {
                     proxy.scrollTo(lastID, anchor: .bottom)
                 }
             }
             .overlay {
-                if entries.isEmpty {
+                if displayedEntries.isEmpty {
                     ContentUnavailableView(
                         "No screenshots",
                         systemSymbol: .photo,
@@ -50,6 +50,19 @@ struct ScreenshotGrid: View {
                 }
             }
         }
+    }
+
+    // A placeholder only conveys a *gap between* captures, so drop any unavailable
+    // entries at the very start or end of the timeline where there's nothing to gap.
+    private var displayedEntries: [CaptureTimelineEntry] {
+        var result = entries[...]
+        while let first = result.first, case .unavailable = first {
+            result = result.dropFirst()
+        }
+        while let last = result.last, case .unavailable = last {
+            result = result.dropLast()
+        }
+        return Array(result)
     }
 
     @ViewBuilder

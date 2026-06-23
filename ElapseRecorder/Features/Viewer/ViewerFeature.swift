@@ -214,6 +214,12 @@ struct ViewerFeature: Reducer {
 
             case let .quickLookURLChanged(url):
                 state.quickLookURL = url
+                // Selection is the source of truth: when Quick Look navigates with the
+                // arrow keys it reports the new item here, so move the grid selection to
+                // match it.
+                if let url, let id = state.screenshotID(forFileURL: url) {
+                    state.selectedScreenshotIDs = [id]
+                }
                 return .none
 
             case let .revealScreenshotInFinder(record):
@@ -441,5 +447,15 @@ extension ViewerFeature.State {
     mutating func clearScreenshotSelection() {
         selectedScreenshotIDs = []
         quickLookURL = nil
+    }
+
+    func screenshotID(forFileURL url: URL) -> UUID? {
+        let entries = isShowingFlatGallery ? flatTimelineEntries : windowTimelineEntries
+        for entry in entries {
+            if case let .screenshot(record) = entry, record.fileURL == url {
+                return record.id
+            }
+        }
+        return nil
     }
 }

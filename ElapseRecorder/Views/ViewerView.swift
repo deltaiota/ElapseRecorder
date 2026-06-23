@@ -1,5 +1,4 @@
 import ComposableArchitecture
-import QuickLook
 import SFSafeSymbols
 import SwiftUI
 import TranslateKit
@@ -12,6 +11,8 @@ struct ViewerView: View {
 
     @State private var isShowingApplicationSelection = false
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
+    @State private var jumpToLatestTrigger = 0
+    @AppStorage("screenshotGridItemSize") private var gridItemSize: Double = 180
 
     var body: some View {
         NavigationSplitView {
@@ -32,10 +33,6 @@ struct ViewerView: View {
                 .navigationSplitViewColumnWidth(min: 300, ideal: 500)
         }
         .navigationTitle("Elapse Recorder")
-        .quickLookPreview(
-            $store.quickLookURL.sending(\.quickLookURLChanged),
-            in: currentScreenshotURLs
-        )
     }
 
     @ViewBuilder
@@ -250,53 +247,16 @@ struct ViewerView: View {
     private func detailPane() -> some View {
         Group {
             if store.isShowingFlatGallery {
-                ScreenshotGrid(
-                    entries: store.flatTimelineEntries,
-                    selectedIDs: $store.selectedScreenshotIDs.sending(\.screenshotSelectionChanged),
-                    openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
-                    revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
-                )
-                .navigationTitle("All Screenshots")
-            } else if store.selectedSessionID != nil {
-                ScreenshotGrid(
-                    entries: store.windowTimelineEntries,
-                    selectedIDs: $store.selectedScreenshotIDs.sending(\.screenshotSelectionChanged),
-                    openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
-                    revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
-                )
-                .safeAreaInset(edge: .bottom) {
-                    VStack(spacing: 0) {
-                        Divider()
-
-                        HStack {
-                            Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
-                                Text("All Windows")
-                                    .tag(ViewerFeature.State.WindowPickerSelection.all)
-
-                                if !store.windows.isEmpty {
-                                    Divider()
-
-                                    ForEach(store.windows) { window in
-                                        Button {} label: {
-                                            Text(windowTitle(window))
-
-                                            Text("\(window.screenshotCount) Screenshots")
-                                        }
-                                        .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
-                                    }
-                                }
-                            }
-                            .labelsHidden()
-                            .buttonStyle(.borderless)
-
-                            Spacer()
-
-                            Button("Export…") {}
-                        }
-                        .padding()
+                screenshotGrid(entries: store.flatTimelineEntries)
+                    .navigationTitle("All Screenshots")
+                    .safeAreaInset(edge: .bottom) {
+                        detailBottomBar(showsWindowPicker: false)
                     }
-                    .background(.bar)
-                }
+            } else if store.selectedSessionID != nil {
+                screenshotGrid(entries: store.windowTimelineEntries)
+                    .safeAreaInset(edge: .bottom) {
+                        detailBottomBar(showsWindowPicker: true)
+                    }
             } else {
                 Color.clear
             }
@@ -311,6 +271,82 @@ struct ViewerView: View {
             }
         }
         .background(.background)
+        .background(
+            QuickLookPresenter(
+                urls: currentScreenshotURLs,
+                currentURL: $store.quickLookURL.sending(\.quickLookURLChanged)
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func screenshotGrid(entries: [CaptureTimelineEntry]) -> some View {
+        ScreenshotGrid(
+            entries: entries,
+            selectedIDs: $store.selectedScreenshotIDs.sending(\.screenshotSelectionChanged),
+            itemSize: gridItemSize,
+            jumpToLatestTrigger: jumpToLatestTrigger,
+            openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
+            revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
+        )
+    }
+
+    @ViewBuilder
+    private func detailBottomBar(showsWindowPicker: Bool) -> some View {
+        VStack(spacing: 0) {
+            Divider()
+
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemSymbol: .photo)
+                        .imageScale(.small)
+                        .foregroundStyle(.secondary)
+                    Slider(value: $gridItemSize, in: 120 ... 360)
+                        .frame(width: 110)
+                    Image(systemSymbol: .photoOnRectangle)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    jumpToLatestTrigger += 1
+                } label: {
+                    Label("Jump to Latest", systemSymbol: .arrowDownToLine)
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .help("Jump to latest")
+
+                if showsWindowPicker {
+                    Divider().frame(height: 16)
+
+                    Picker("Window", selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)) {
+                        Text("All Windows")
+                            .tag(ViewerFeature.State.WindowPickerSelection.all)
+
+                        if !store.windows.isEmpty {
+                            Divider()
+
+                            ForEach(store.windows) { window in
+                                Button {} label: {
+                                    Text(windowTitle(window))
+
+                                    Text("\(window.screenshotCount) Screenshots")
+                                }
+                                .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
+                            }
+                        }
+                    }
+                    .labelsHidden()
+                    .buttonStyle(.borderless)
+                }
+
+                Spacer()
+
+                Button("Export…") {}
+            }
+            .padding()
+        }
+        .background(.bar)
     }
 
     @ViewBuilder

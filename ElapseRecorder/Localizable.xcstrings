@@ -1,9 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%lld bytes" : {
-
-    },
     "%lld Screenshots" : {
 
     },
@@ -372,9 +369,6 @@
     "Choose App Files…" : {
 
     },
-    "Could not load image" : {
-
-    },
     "Delete All Captures" : {
 
     },
@@ -397,6 +391,12 @@
 
     },
     "If granting permission failed, open System Settings > Privacy & Security > Screen & System Audio Recording (click to open), remove Elapse Recorder and add it back, then reopen the app." : {
+
+    },
+    "Jump to latest" : {
+
+    },
+    "Jump to Latest" : {
 
     },
     "Last Capture" : {
@@ -497,6 +497,9 @@
     "Pause" : {
 
     },
+    "Quick Look" : {
+
+    },
     "Quit" : {
 
     },
@@ -568,6 +571,17 @@
     },
     "Stop Capture" : {
 
+    },
+    "UnavailableCell.unavailableForFormatted" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Unavailable for %@"
+          }
+        }
+      }
     },
     "ViewerView.AppRowCaptureAction.pauseCapture" : {
       "extractionState" : "extracted_with_value",

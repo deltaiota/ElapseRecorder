@@ -6,15 +6,15 @@ import TranslateKit
 struct ScreenshotGrid: View {
     let entries: [CaptureTimelineEntry]
     @Binding var selectedIDs: Set<UUID>
+    var itemSize: Double = 180
+    var jumpToLatestTrigger: Int = 0
     var openQuickLook: (ScreenshotRecord) -> Void = { _ in }
     var revealScreenshot: (ScreenshotRecord) -> Void = { _ in }
 
-    @AppStorage("screenshotGridItemSize") private var itemSize: Double = 180
     @State private var anchorID: UUID?
     @FocusState private var isFocused: Bool
 
     private let prefetchCount = 6
-    private static let sizeRange: ClosedRange<Double> = 120 ... 360
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -26,16 +26,19 @@ struct ScreenshotGrid: View {
                     }
                 }
                 .padding()
-                .padding(.bottom, 44)
             }
             .focusable()
+            .focusEffectDisabled()
             .focused($isFocused)
             .onKeyPress(.space) {
                 openQuickLookForSelection()
                 return .handled
             }
-            .overlay(alignment: .bottom) {
-                controlBar(proxy: proxy)
+            .onChange(of: jumpToLatestTrigger) {
+                guard let lastID = entries.last?.id else { return }
+                withAnimation {
+                    proxy.scrollTo(lastID, anchor: .bottom)
+                }
             }
             .overlay {
                 if entries.isEmpty {
@@ -58,45 +61,11 @@ struct ScreenshotGrid: View {
                 prefetch: prefetchByID[record.id] ?? [],
                 isSelected: selectedIDs.contains(record.id),
                 onClick: { handleClick(record) },
-                onDoubleClick: { openQuickLook(record) },
+                onQuickLook: { openQuickLook(record) },
                 onReveal: { revealScreenshot(record) }
             )
         case let .unavailable(record):
             UnavailableCell(record: record)
-        }
-    }
-
-    @ViewBuilder
-    private func controlBar(proxy: ScrollViewProxy) -> some View {
-        if !entries.isEmpty {
-            HStack(spacing: 12) {
-                Image(systemSymbol: .photo)
-                    .foregroundStyle(.secondary)
-                Slider(value: $itemSize, in: Self.sizeRange)
-                    .frame(width: 120)
-                Image(systemSymbol: .photoOnRectangle)
-                    .foregroundStyle(.secondary)
-
-                Divider().frame(height: 16)
-
-                Button {
-                    if let lastID = entries.last?.id {
-                        withAnimation {
-                            proxy.scrollTo(lastID, anchor: .bottom)
-                        }
-                    }
-                } label: {
-                    Label("Jump to Latest", systemSymbol: .arrowDownToLine)
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.borderless)
-                .help("Jump to latest")
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.regularMaterial, in: Capsule())
-            .overlay(Capsule().strokeBorder(.separator))
-            .padding(.bottom, 12)
         }
     }
 
@@ -156,7 +125,7 @@ private struct ScreenshotCell: View {
     var prefetch: [ScreenshotRecord]
     let isSelected: Bool
     let onClick: () -> Void
-    let onDoubleClick: () -> Void
+    let onQuickLook: () -> Void
     let onReveal: () -> Void
 
     var body: some View {
@@ -172,11 +141,10 @@ private struct ScreenshotCell: View {
                                   lineWidth: isSelected ? 3 : 1)
             }
             .contentShape(RoundedRectangle(cornerRadius: 10))
-            .onTapGesture(count: 2, perform: onDoubleClick)
-            .onTapGesture(count: 1, perform: onClick)
+            .onTapGesture(perform: onClick)
             .contextMenu {
                 Button {
-                    onDoubleClick()
+                    onQuickLook()
                 } label: {
                     Label("Quick Look", systemSymbol: .eye)
                 }
@@ -205,14 +173,15 @@ private struct UnavailableCell: View {
     let record: CaptureUnavailableRecord
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             Image(systemSymbol: .rectangleDashed)
-                .font(.largeTitle)
+                .font(.title)
                 .foregroundStyle(.secondary)
 
             Text(record.reason.title)
                 .font(.caption)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
 
             Text(durationText)

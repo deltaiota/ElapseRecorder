@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Defaults
 import QuickLook
 import SFSafeSymbols
 import SwiftUI
@@ -13,7 +14,7 @@ struct ViewerView: View {
     @State private var isShowingApplicationSelection = false
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
     @State private var jumpToLatestTrigger = 0
-    @AppStorage("screenshotGridItemSize") private var gridItemSize = GridItemSize.default
+    @Default(.screenshotGridItemSize) private var gridItemSize
 
     var body: some View {
         NavigationSplitView {

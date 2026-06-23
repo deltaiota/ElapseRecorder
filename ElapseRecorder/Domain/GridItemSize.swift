@@ -19,8 +19,9 @@ nonisolated struct GridItemSize: RawRepresentable, Equatable, Comparable {
         self.value = Swift.min(Self.maximum, Swift.max(Self.minimum, value))
     }
 
-    /// `@AppStorage` persists `RawRepresentable` values whose `RawValue` is `Int`; points are
-    /// whole numbers, so an `Int` raw value round-trips losslessly and stays clamped on load.
+    /// Defaults persists `RawRepresentable` values via its raw-representable bridge, and
+    /// points are whole numbers, so an `Int` raw value round-trips losslessly and stays
+    /// clamped on load.
     init?(rawValue: Int) {
         self.init(Double(rawValue))
     }

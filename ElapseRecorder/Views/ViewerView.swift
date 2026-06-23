@@ -272,10 +272,26 @@ struct ViewerView: View {
             }
         }
         .background(.background)
+        .background {
+            // The visible bottom-bar buttons carry Cmd+= (larger) and Cmd+- (smaller).
+            // This hidden alias adds Cmd+Shift+= / numpad "+" as a second zoom-in binding.
+            Button("Zoom In") { adjustGridItemSize(by: gridSizeStep) }
+                .keyboardShortcut("+", modifiers: .command)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
         .quickLookPreview(
             $store.quickLookURL.sending(\.quickLookURLChanged),
             in: currentScreenshotURLs
         )
+    }
+
+    private var gridSizeStep: Double {
+        40
+    }
+
+    private func adjustGridItemSize(by delta: Double) {
+        gridItemSize = min(360, max(120, gridItemSize + delta))
     }
 
     @ViewBuilder
@@ -298,13 +314,31 @@ struct ViewerView: View {
 
             HStack(spacing: 12) {
                 HStack(spacing: 6) {
-                    Image(systemSymbol: .photo)
-                        .imageScale(.small)
-                        .foregroundStyle(.secondary)
+                    Button {
+                        adjustGridItemSize(by: -gridSizeStep)
+                    } label: {
+                        Image(systemSymbol: .photo)
+                            .imageScale(.small)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .keyboardShortcut("-", modifiers: .command)
+                    .disabled(gridItemSize <= 120)
+                    .help("Smaller thumbnails")
+
                     Slider(value: $gridItemSize, in: 120 ... 360)
                         .frame(width: 110)
-                    Image(systemSymbol: .photoOnRectangle)
-                        .foregroundStyle(.secondary)
+
+                    Button {
+                        adjustGridItemSize(by: gridSizeStep)
+                    } label: {
+                        Image(systemSymbol: .photoOnRectangle)
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .keyboardShortcut("=", modifiers: .command)
+                    .disabled(gridItemSize >= 360)
+                    .help("Larger thumbnails")
                 }
 
                 Button {

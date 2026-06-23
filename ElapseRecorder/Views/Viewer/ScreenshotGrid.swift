@@ -223,7 +223,7 @@ private struct ScreenshotCell: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(.black.opacity(0.45), in: Capsule())
+            .background(.black.opacity(0.45), in: .rect(cornerRadius: 4))
             .padding(6)
     }
 }

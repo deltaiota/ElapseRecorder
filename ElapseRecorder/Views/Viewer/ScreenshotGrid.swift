@@ -157,7 +157,6 @@ private struct ScreenshotCell: View {
                 timestamp
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
-            .background(ThumbnailFrameReporter(url: record.fileURL))
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.separator),

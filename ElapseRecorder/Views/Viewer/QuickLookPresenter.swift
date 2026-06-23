@@ -4,12 +4,15 @@ import SwiftUI
 
 /// Drives the native Quick Look panel (`QLPreviewPanel`) for the screenshot grid.
 ///
-/// All panel mutations are deferred off the SwiftUI layout pass and are idempotent, so
-/// re-renders never re-enter the panel (which previously produced reentrant-layout
-/// warnings and an AttributeGraph cycle). `openURL` only changes on open/close; arrow-key
-/// navigation reports the new item through `onNavigate` and never changes `openURL`, so it
-/// can't feed back into another present. Source frames come from the thumbnail registry,
-/// giving the Finder-style zoom.
+/// Usage is kept as close to Finder's as possible: the panel is handed the file URLs and
+/// left to render and size itself. We deliberately do **not** call `reloadData()` on open
+/// (which forces Quick Look to regenerate the preview instead of reusing its cached render,
+/// causing slow loads) and do **not** provide a zoom source frame (which made Quick Look
+/// stall on the full render and size to the small thumbnail). Panel mutations are deferred
+/// off the SwiftUI layout pass and are idempotent, so re-renders never re-enter the panel
+/// (which previously produced reentrant-layout warnings and an AttributeGraph cycle).
+/// `openURL` only changes on open/close; arrow-key navigation reports the new item through
+/// `onNavigate` and never changes `openURL`, so it can't feed back into another present.
 struct QuickLookPresenter: NSViewRepresentable {
     var urls: [URL]
     var openURL: URL?
@@ -32,14 +35,14 @@ struct QuickLookPresenter: NSViewRepresentable {
     }
 
     private func configure(_ view: QuickLookHostView) {
-        view.items = urls
         view.onNavigate = onNavigate
         view.onClose = onClose
+        view.setItems(urls)
     }
 }
 
 final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
-    var items: [URL] = []
+    private(set) var items: [URL] = []
     var onNavigate: (Int) -> Void = { _ in }
     var onClose: () -> Void = {}
 
@@ -48,6 +51,20 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
 
     override var acceptsFirstResponder: Bool {
         true
+    }
+
+    /// Update the item list, reloading the open panel only when the visible set actually
+    /// changed (e.g. new captures arrived). Reloading on every open would force Quick Look
+    /// to regenerate the current preview, which is the slow path we want to avoid.
+    func setItems(_ newItems: [URL]) {
+        guard newItems != items else { return }
+        items = newItems
+        guard presentedURL != nil,
+              QLPreviewPanel.sharedPreviewPanelExists(),
+              let panel = QLPreviewPanel.shared(),
+              panel.dataSource === self
+        else { return }
+        panel.reloadData()
     }
 
     /// Reconcile the panel with the requested `openURL`. Deferred to the next runloop turn
@@ -64,7 +81,7 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
                 let wasOpen = presentedURL != nil
                 presentedURL = openURL
                 if wasOpen {
-                    moveToItem(openURL)
+                    setCurrentItem(openURL)
                 } else {
                     openPanel(at: openURL)
                 }
@@ -79,15 +96,15 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
         guard let panel = QLPreviewPanel.shared() else { return }
         window?.makeFirstResponder(self)
         panel.makeKeyAndOrderFront(nil)
-        moveToItem(url)
+        setCurrentItem(url)
     }
 
-    private func moveToItem(_ url: URL) {
+    private func setCurrentItem(_ url: URL) {
         guard let index = items.firstIndex(of: url),
+              QLPreviewPanel.sharedPreviewPanelExists(),
               let panel = QLPreviewPanel.shared(),
               panel.dataSource === self
         else { return }
-        panel.reloadData()
         if panel.currentPreviewItemIndex != index {
             panel.currentPreviewItemIndex = index
         }
@@ -137,15 +154,6 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
 
     func previewPanel(_: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
         items.indices.contains(index) ? items[index] as NSURL : nil
-    }
-
-    // MARK: Delegate (zoom source frame)
-
-    func previewPanel(_: QLPreviewPanel!, sourceFrameOnScreenFor item: (any QLPreviewItem)!) -> NSRect {
-        guard let url = (item as? NSURL) as URL?,
-              let frame = ThumbnailFrameRegistry.shared.frame(for: url)
-        else { return .zero }
-        return frame
     }
 
     // MARK: Navigation feedback

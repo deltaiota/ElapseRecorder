@@ -12,6 +12,10 @@ struct ScreenshotGridBottomBar: View {
     @Binding var windowSelection: ViewerFeature.State.WindowPickerSelection
     var onJumpToLatest: () -> Void
     var onExport: () -> Void
+    
+    @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
+    @State private var gridItemSizeLargerButtonAnimationTrigger: Int = 0
+    @State private var jumpToLatestButtonAnimationTrigger: Int = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,9 +25,11 @@ struct ScreenshotGridBottomBar: View {
                 HStack(spacing: 6) {
                     Button {
                         gridItemSize = gridItemSize.steppedDown()
+                        gridItemSizeSmallerButtonAnimationTrigger += 1
                     } label: {
                         Image(systemSymbol: .photo)
                             .imageScale(.small)
+                            .symbolEffect(.bounce, value: gridItemSizeSmallerButtonAnimationTrigger)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -42,9 +48,11 @@ struct ScreenshotGridBottomBar: View {
 
                     Button {
                         gridItemSize = gridItemSize.steppedUp()
+                        gridItemSizeLargerButtonAnimationTrigger += 1
                     } label: {
                         Image(systemSymbol: .photo)
                             .imageScale(.large)
+                            .symbolEffect(.bounce, value: gridItemSizeLargerButtonAnimationTrigger)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -55,9 +63,11 @@ struct ScreenshotGridBottomBar: View {
 
                 Button {
                     onJumpToLatest()
+                    jumpToLatestButtonAnimationTrigger += 1
                 } label: {
                     Label("Jump to Latest", systemSymbol: .arrowDownToLine)
                         .labelStyle(.iconOnly)
+                        .symbolEffect(.wiggle.byLayer, value: jumpToLatestButtonAnimationTrigger)
                 }
                 .buttonStyle(.borderless)
                 .help("Jump to latest")

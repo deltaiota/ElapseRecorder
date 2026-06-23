@@ -187,6 +187,50 @@
         }
       }
     },
+    "AppSidebarColumn.AppRowCaptureAction.pauseCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pause Capture"
+          }
+        }
+      }
+    },
+    "AppSidebarColumn.AppRowCaptureAction.resumeCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Resume Capture"
+          }
+        }
+      }
+    },
+    "AppSidebarColumn.AppRowCaptureAction.startCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Start Capture"
+          }
+        }
+      }
+    },
+    "AppSidebarColumn.AppRowCaptureAction.stopCapture" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Stop Capture"
+          }
+        }
+      }
+    },
     "AppView.ActiveSessionSummary.capturing" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -542,6 +586,28 @@
     "Screenshot Quality" : {
 
     },
+    "ScreenshotGridBottomBar.WindowTitle.windowWindowDisplayNumber" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Window %lld"
+          }
+        }
+      }
+    },
+    "ScreenshotGridBottomBar.WindowTitle.windowWindowDisplayNumberLabel" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Window %1$lld: %2$@"
+          }
+        }
+      }
+    },
     "Screenshots" : {
 
     },
@@ -585,72 +651,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Unavailable for %@"
-          }
-        }
-      }
-    },
-    "ViewerView.AppRowCaptureAction.pauseCapture" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Pause Capture"
-          }
-        }
-      }
-    },
-    "ViewerView.AppRowCaptureAction.resumeCapture" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Resume Capture"
-          }
-        }
-      }
-    },
-    "ViewerView.AppRowCaptureAction.startCapture" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Start Capture"
-          }
-        }
-      }
-    },
-    "ViewerView.AppRowCaptureAction.stopCapture" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Stop Capture"
-          }
-        }
-      }
-    },
-    "ViewerView.WindowTitle.windowWindowDisplayNumber" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Window %lld"
-          }
-        }
-      }
-    },
-    "ViewerView.WindowTitle.windowWindowDisplayNumberLabel" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Window %1$lld: %2$@"
           }
         }
       }

@@ -399,6 +399,9 @@
     "Jump to Latest" : {
 
     },
+    "Larger thumbnails" : {
+
+    },
     "Last Capture" : {
 
     },
@@ -557,6 +560,9 @@
     "Show Library" : {
 
     },
+    "Smaller thumbnails" : {
+
+    },
     "Stale" : {
 
     },
@@ -662,6 +668,9 @@
 
     },
     "Windows and screenshots will appear here." : {
+
+    },
+    "Zoom In" : {
 
     }
   },

@@ -13,7 +13,7 @@ struct ViewerView: View {
     @State private var isShowingApplicationSelection = false
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
     @State private var jumpToLatestTrigger = 0
-    @AppStorage("screenshotGridItemSize") private var gridItemSize: Double = 180
+    @AppStorage("screenshotGridItemSize") private var gridItemSize = GridItemSize.default
 
     var body: some View {
         NavigationSplitView {
@@ -275,7 +275,7 @@ struct ViewerView: View {
         .background {
             // The visible bottom-bar buttons carry Cmd+= (larger) and Cmd+- (smaller).
             // This hidden alias adds Cmd+Shift+= / numpad "+" as a second zoom-in binding.
-            Button("Zoom In") { adjustGridItemSize(by: gridSizeStep) }
+            Button("Zoom In") { gridItemSize = gridItemSize.steppedUp() }
                 .keyboardShortcut("+", modifiers: .command)
                 .opacity(0)
                 .accessibilityHidden(true)
@@ -286,20 +286,12 @@ struct ViewerView: View {
         )
     }
 
-    private var gridSizeStep: Double {
-        40
-    }
-
-    private func adjustGridItemSize(by delta: Double) {
-        gridItemSize = min(360, max(120, gridItemSize + delta))
-    }
-
     @ViewBuilder
     private func screenshotGrid(entries: [CaptureTimelineEntry]) -> some View {
         ScreenshotGrid(
             entries: entries,
             selectedIDs: $store.selectedScreenshotIDs.sending(\.screenshotSelectionChanged),
-            itemSize: gridItemSize,
+            itemSize: gridItemSize.value,
             jumpToLatestTrigger: jumpToLatestTrigger,
             isQuickLookOpen: store.quickLookURL != nil,
             openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
@@ -315,7 +307,7 @@ struct ViewerView: View {
             HStack(spacing: 12) {
                 HStack(spacing: 6) {
                     Button {
-                        adjustGridItemSize(by: -gridSizeStep)
+                        gridItemSize = gridItemSize.steppedDown()
                     } label: {
                         Image(systemSymbol: .photo)
                             .imageScale(.small)
@@ -323,21 +315,28 @@ struct ViewerView: View {
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .keyboardShortcut("-", modifiers: .command)
-                    .disabled(gridItemSize <= 120)
+                    .disabled(gridItemSize.isAtMinimum)
                     .help("Smaller thumbnails")
 
-                    Slider(value: $gridItemSize, in: 120 ... 360)
-                        .frame(width: 110)
+                    Slider(
+                        value: Binding(
+                            get: { gridItemSize.value },
+                            set: { gridItemSize = GridItemSize($0) }
+                        ),
+                        in: GridItemSize.minimum ... GridItemSize.maximum
+                    )
+                    .frame(width: 110)
 
                     Button {
-                        adjustGridItemSize(by: gridSizeStep)
+                        gridItemSize = gridItemSize.steppedUp()
                     } label: {
-                        Image(systemSymbol: .photoOnRectangle)
+                        Image(systemSymbol: .photo)
+                            .imageScale(.large)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .keyboardShortcut("=", modifiers: .command)
-                    .disabled(gridItemSize >= 360)
+                    .disabled(gridItemSize.isAtMaximum)
                     .help("Larger thumbnails")
                 }
 

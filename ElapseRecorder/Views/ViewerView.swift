@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import QuickLook
 import SFSafeSymbols
 import SwiftUI
 import TranslateKit
@@ -271,17 +272,9 @@ struct ViewerView: View {
             }
         }
         .background(.background)
-        .background(
-            QuickLookPresenter(
-                urls: currentScreenshotURLs,
-                openURL: store.quickLookURL,
-                onNavigate: { index in
-                    let urls = currentScreenshotURLs
-                    guard urls.indices.contains(index) else { return }
-                    store.send(.quickLookNavigated(urls[index]))
-                },
-                onClose: { store.send(.quickLookURLChanged(nil)) }
-            )
+        .quickLookPreview(
+            $store.quickLookURL.sending(\.quickLookURLChanged),
+            in: currentScreenshotURLs
         )
     }
 

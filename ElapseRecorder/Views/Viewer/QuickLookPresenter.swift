@@ -1,6 +1,5 @@
 import AppKit
 import Quartz
-import QuickLookThumbnailing
 import SwiftUI
 
 /// Drives the native Quick Look panel (`QLPreviewPanel`) for the screenshot grid.
@@ -92,7 +91,6 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
         if panel.currentPreviewItemIndex != index {
             panel.currentPreviewItemIndex = index
         }
-        QuickLookPrewarmer.shared.prewarm(urls: items, around: index)
     }
 
     private func closePanel() {
@@ -163,61 +161,7 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
             return
         }
         let index = panel.currentPreviewItemIndex
-        QuickLookPrewarmer.shared.prewarm(urls: items, around: index)
         let onNavigate = onNavigate
         DispatchQueue.main.async { onNavigate(index) }
-    }
-}
-
-/// Pre-generates large Quick Look representations so the system preview cache is warm
-/// before the panel opens.
-///
-/// On a cold cache `QLPreviewPanel` displays the small cached *thumbnail* first and
-/// generates the full preview in the background, which reads as a tiny window that later
-/// blooms (or, if you close too soon, never does). By generating a screen-sized
-/// representation ahead of time, the representation Quick Look picks up on open is already
-/// high resolution, so the panel opens at the right size. Neighbours are warmed too, so
-/// arrow-key navigation stays sharp. Requests are de-duplicated for the lifetime of the
-/// process.
-final class QuickLookPrewarmer: @unchecked Sendable {
-    static let shared = QuickLookPrewarmer()
-
-    private let lock = NSLock()
-    private var requested: Set<URL> = []
-
-    /// Warm `url` and `radius` neighbours on each side.
-    func prewarm(urls: [URL], around index: Int, radius: Int = 2) {
-        guard !urls.isEmpty else { return }
-        let lower = max(0, index - radius)
-        let upper = min(urls.count - 1, index + radius)
-        guard lower <= upper else { return }
-        for offset in lower ... upper {
-            prewarm(urls[offset])
-        }
-    }
-
-    func prewarm(_ url: URL) {
-        lock.lock()
-        let isNew = requested.insert(url).inserted
-        lock.unlock()
-        guard isNew else { return }
-
-        let screen = NSScreen.main
-        let size = screen?.frame.size ?? CGSize(width: 1920, height: 1080)
-        let scale = screen?.backingScaleFactor ?? 2
-
-        let request = QLThumbnailGenerator.Request(
-            fileAt: url,
-            size: size,
-            scale: scale,
-            representationTypes: .thumbnail
-        )
-        QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { [weak self] _, error in
-            // Let a failed generation be retried later rather than caching the failure.
-            guard error != nil, let self else { return }
-            lock.lock()
-            requested.remove(url)
-            lock.unlock()
-        }
     }
 }

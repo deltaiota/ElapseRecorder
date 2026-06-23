@@ -121,12 +121,6 @@ struct ScreenshotGrid: View {
             selectedIDs = [record.id]
             anchorID = record.id
         }
-
-        // Warm the system preview cache for the clicked frame (and neighbours) so a
-        // following Space/Quick Look opens at full resolution instead of a small thumbnail.
-        if let index = ordered.firstIndex(of: record.id) {
-            QuickLookPrewarmer.shared.prewarm(urls: orderedScreenshots.map(\.fileURL), around: index)
-        }
     }
 
     private var orderedScreenshots: [ScreenshotRecord] {

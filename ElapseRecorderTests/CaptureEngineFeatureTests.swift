@@ -948,9 +948,10 @@ final class CaptureEngineFeatureTests: XCTestCase {
 
     @MainActor
     func testStageManagerStowedWindowIsTreatedAsUnavailable() async throws {
-        // A window stowed by Stage Manager stays on-screen (isOnScreen == true) but
-        // reports isActive == false. It must be skipped, not captured as a blurry proxy,
-        // and recorded as a placeholder because the session has already seen real windows.
+        // A window stowed by Stage Manager stays on-screen (isOnScreen == true) but the
+        // live layer flags it isStageManagerStowed because its presented size no longer
+        // matches the app's real Accessibility size. It must be skipped, not captured, and
+        // recorded as a placeholder because the session has already seen real windows.
         let app = RunningApplication(
             bundleIdentifier: "com.example.StowedApp",
             displayName: "Stowed App",
@@ -1025,7 +1026,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
                         frame: CGRect(x: 0, y: 0, width: 1200, height: 800),
                         layer: 0,
                         isOnScreen: true,
-                        isActive: false
+                        isStageManagerStowed: true
                     ),
                 ]
             )
@@ -1115,10 +1116,14 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testCaptureFailureRecordsUnavailablePlaceholderWithoutStoppingSession() async throws {
+    func testCaptureFailureIsDiagnosticOnlyAndKeepsSessionRunning() async throws {
+        // With Stage Manager / minimized windows filtered out before capture, a capture
+        // throwing now means a transient error, not unavailability. It is recorded as a
+        // diagnostic and the cycle finishes without a timeline placeholder (the placeholder
+        // path belongs solely to windowsLoaded when no window is capturable).
         let app = RunningApplication(
-            bundleIdentifier: "com.example.MinimizedCaptureApp",
-            displayName: "Minimized Capture App",
+            bundleIdentifier: "com.example.TransientFailureApp",
+            displayName: "Transient Failure App",
             processIdentifier: 102
         )
         let config = WhitelistedAppConfig(
@@ -1143,7 +1148,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
             firstSeenAt: Date(timeIntervalSince1970: 10),
             lastSeenAt: Date(timeIntervalSince1970: 10)
         )
-        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000072"))
         let failedAt = Date(timeIntervalSince1970: 70)
         let error = CaptureEngineError.windowCaptureFailed(systemWindowID: window.systemWindowID)
         let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
@@ -1167,7 +1171,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
             $0.fileStorageClient.write = { data, _ in data.count }
             $0.imageEncodingClient.encode = { _, _ in Data() }
-            $0.idGeneratorClient.uuid = { unavailableID }
+            $0.idGeneratorClient.uuid = { UUID(uuidString: "00000000-0000-0000-0000-000000000072")! }
             $0.persistenceClient.recordCaptureUnavailable = { record in
                 recordedPlaceholders.withValue { $0.append(record) }
             }
@@ -1175,14 +1179,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.screenCaptureClient.capture = { _ in throw error }
             $0.loggingClient.log = { _, _, _ in }
         }
-
-        let expectedRecord = CaptureUnavailableRecord(
-            id: unavailableID,
-            sessionID: session.id,
-            startedAt: failedAt,
-            endedAt: failedAt,
-            reason: .windowMinimized
-        )
 
         await store.send(
             .windowsLoaded(
@@ -1204,14 +1200,12 @@ final class CaptureEngineFeatureTests: XCTestCase {
             $0.lastError = error.localizedDescription
             $0.recentDiagnostics = [error.localizedDescription]
         }
-        await store.receive(.captureUnavailableRecorded(expectedRecord)) {
-            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
-        }
         await store.receive(.captureCycleFinished(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
         }
 
-        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
+        XCTAssertEqual(recordedPlaceholders.value, [])
+        XCTAssertNotNil(store.state.activeSessions[app.bundleIdentifier])
     }
 
     @MainActor

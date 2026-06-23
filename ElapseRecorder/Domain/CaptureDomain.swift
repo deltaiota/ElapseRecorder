@@ -143,17 +143,17 @@ nonisolated struct CapturableWindow: Equatable, Identifiable {
     var frame: CGRect
     var layer: Int
     var isOnScreen: Bool
-    /// ScreenCaptureKit's own Stage Manager signal. Apple documents that "with Stage
-    /// Manager, SCWindow can be offScreen and active": a window stowed onto the Stage
-    /// Manager strip stays on-screen (a live thumbnail) but reports isActive == false,
-    /// while the foreground working set reports isActive == true. Requiring both
-    /// isOnScreen and isActive skips stowed thumbnails (and minimized/hidden windows)
-    /// without capturing the blurry, oversized proxies the OS renders for them.
-    var isActive: Bool = true
+    /// True when the window is stowed on the Stage Manager strip. No public, sandbox-safe
+    /// ScreenCaptureKit/CoreGraphics property distinguishes this — when stowed, the window
+    /// stays on-screen but its reported frame shrinks to a small strip thumbnail while its
+    /// real size (read via Accessibility) is unchanged. The live layer sets this by
+    /// cross-checking the presented frame size against the app's real Accessibility window
+    /// sizes; a mismatch means the window is being presented as a stowed proxy.
+    var isStageManagerStowed: Bool = false
 
     var shouldCapture: Bool {
         isOnScreen
-            && isActive
+            && !isStageManagerStowed
             && layer == 0
             && frame.width >= 80
             && frame.height >= 80
@@ -254,10 +254,6 @@ nonisolated struct CaptureSessionSummary: Equatable, Identifiable {
     var endedAt: Date?
     var windowCount: Int
     var screenshotCount: Int
-
-    var duration: TimeInterval {
-        (endedAt ?? Date()).timeIntervalSince(startedAt)
-    }
 }
 
 nonisolated struct WindowCaptureSummary: Equatable, Identifiable {

@@ -19,8 +19,8 @@ struct CountSummary: View {
             self.isMonospaced = isMonospaced
         }
 
-        // Accepts a SwiftUI Text directly so callers can pass a self-updating timer
-        // (e.g. Text(date, style: .timer)) that SwiftUI refreshes on its own.
+        /// Accepts a SwiftUI Text directly so callers can pass a self-updating timer
+        /// (e.g. Text(date, style: .timer)) that SwiftUI refreshes on its own.
         init(label: Text, systemSymbol: SFSymbol, isMonospaced: Bool = false) {
             self.label = label
             self.systemSymbol = systemSymbol

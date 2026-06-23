@@ -1,4 +1,5 @@
 @preconcurrency import AppKit
+import ApplicationServices
 import Chronicle
 import ComposableArchitecture
 import CoreGraphics
@@ -192,26 +193,41 @@ extension CapturePermissionClient: DependencyKey {
 extension ScreenCaptureClient: DependencyKey {
     static let liveValue = Self(
         windows: { application in
-            // Enumerate the windows ScreenCaptureKit considers on-screen, then let the
-            // domain `shouldCapture` filter apply the isOnScreen + isActive gate. A window
-            // stowed by Stage Manager stays on-screen as a live thumbnail but reports
-            // isActive == false, so it is dropped instead of captured as a blurry proxy.
+            // Enumerate the windows ScreenCaptureKit considers on-screen. The domain
+            // `shouldCapture` filter then drops minimized/hidden/off-Space windows
+            // (isOnScreen == false) and Stage Manager-stowed windows (flagged below).
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+
+            // A stowed window stays on-screen but is presented as a small strip thumbnail,
+            // so no ScreenCaptureKit/CoreGraphics property reveals it. Accessibility still
+            // reports each window's real size, so a presented frame that matches none of the
+            // app's real Accessibility sizes is a stowed proxy. When Accessibility isn't
+            // granted, axSizes is nil and capture proceeds (graceful degradation).
+            let axSizes = AccessibilityWindowInspector.realWindowSizes(pid: application.processIdentifier)
+
             return content.windows
                 .filter { window in
                     window.owningApplication?.bundleIdentifier == application.bundleIdentifier
                         && window.owningApplication?.processID == application.processIdentifier
                 }
-                .map(CapturableWindow.init(window:))
+                .map { window in
+                    var capturable = CapturableWindow(window: window)
+                    if let axSizes {
+                        capturable.isStageManagerStowed = !AccessibilityWindowInspector.size(
+                            window.frame.size,
+                            matchesAnyOf: axSizes
+                        )
+                    }
+                    return capturable
+                }
         },
         capture: { windowID in
-            // Re-enumerate through the same gate used for detection so a window that became
-            // minimized or stowed between ticks is refused here (the caller turns the thrown
-            // error into a timeline placeholder) instead of producing an upscaled thumbnail.
+            // Re-enumerate through the same on-screen gate used for detection so a window
+            // that became minimized between ticks is refused here (the caller turns the
+            // thrown error into a timeline placeholder) instead of producing a stale frame.
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             guard let window = content.windows.first(where: { Int($0.windowID) == windowID }),
-                  window.isOnScreen,
-                  window.isActive
+                  window.isOnScreen
             else {
                 throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
             }
@@ -300,6 +316,75 @@ extension FileStorageClient: DependencyKey {
             try FileManager.default.removeItem(at: directory)
         }
     )
+}
+
+/// Reads each window's real size from Accessibility so the capture engine can tell a
+/// genuinely visible window from a Stage Manager-stowed proxy. Accessibility reports the
+/// window's true geometry regardless of how Stage Manager scales its on-screen
+/// presentation, which is the only public, sandbox-free signal that survives stowing.
+nonisolated enum AccessibilityWindowInspector {
+    /// Real sizes of the app's non-minimized windows, or `nil` when Accessibility hasn't
+    /// been granted (the caller then captures normally instead of treating everything as
+    /// unavailable). Triggers the system permission prompt the first time it's missing.
+    static func realWindowSizes(pid: pid_t) -> [CGSize]? {
+        guard AXIsProcessTrusted() else {
+            requestAccessOnce()
+            return nil
+        }
+
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+              let axWindows = windowsValue as? [AXUIElement]
+        else {
+            return nil
+        }
+
+        return axWindows.compactMap { axWindow in
+            if boolAttribute(axWindow, kAXMinimizedAttribute) == true { return nil }
+            return sizeAttribute(axWindow)
+        }
+    }
+
+    /// Whether a presented frame size matches one of the real Accessibility sizes within a
+    /// small tolerance (rounding between the two coordinate sources).
+    static func size(_ size: CGSize, matchesAnyOf realSizes: [CGSize]) -> Bool {
+        let tolerance: CGFloat = 2
+        return realSizes.contains { real in
+            abs(real.width - size.width) <= tolerance && abs(real.height - size.height) <= tolerance
+        }
+    }
+
+    private static let accessRequested = LockIsolated(false)
+
+    private static func requestAccessOnce() {
+        let shouldPrompt = accessRequested.withValue { requested -> Bool in
+            defer { requested = true }
+            return !requested
+        }
+        guard shouldPrompt else { return }
+
+        DispatchQueue.main.async {
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        }
+    }
+
+    private static func sizeAttribute(_ element: AXUIElement) -> CGSize? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &ref) == .success,
+              let ref, CFGetTypeID(ref) == AXValueGetTypeID()
+        else { return nil }
+
+        var size = CGSize.zero
+        return AXValueGetValue(ref as! AXValue, .cgSize, &size) ? size : nil
+    }
+
+    private static func boolAttribute(_ element: AXUIElement, _ attribute: String) -> Bool? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &ref) == .success else { return nil }
+        return ref as? Bool
+    }
 }
 
 nonisolated enum FileStoragePaths {
@@ -517,8 +602,7 @@ nonisolated extension CapturableWindow {
             title: window.title,
             frame: window.frame,
             layer: window.windowLayer,
-            isOnScreen: window.isOnScreen,
-            isActive: window.isActive
+            isOnScreen: window.isOnScreen
         )
     }
 }

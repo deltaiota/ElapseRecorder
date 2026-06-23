@@ -295,11 +295,12 @@ struct CaptureEngineFeature: Reducer {
                 var monitoredWindows: [MonitoredWindow] = []
                 let capturableWindows = CapturableWindow.capturableWindows(from: windows)
 
-                // The live layer only returns currently visible, capturable windows, so an
-                // empty result means every window of this app is minimized, hidden, or
-                // stowed by Stage Manager. Mark a placeholder once on the transition into
-                // that state (only after the session has actually seen real windows, to
-                // avoid a spurious placeholder before the app has shown anything).
+                // `capturableWindows` applies `shouldCapture`, which drops minimized/hidden
+                // windows (not on-screen) and Stage Manager-stowed windows (flagged by the
+                // live layer). An empty result therefore means every window of this app is
+                // currently unavailable. Mark a placeholder once on the transition into that
+                // state, and only after the session has seen real windows so the timeline
+                // doesn't open with a spurious placeholder.
                 guard !capturableWindows.isEmpty else {
                     active.isCaptureInFlight = false
 
@@ -550,37 +551,13 @@ struct CaptureEngineFeature: Reducer {
         let storage = storage
 
         return .run { send in
-            func recordUnavailablePlaceholder() async {
-                let unavailableAt = date.now()
-                let unavailableRecord = CaptureUnavailableRecord(
-                    id: ids.uuid(),
-                    sessionID: session.id,
-                    startedAt: unavailableAt,
-                    endedAt: unavailableAt,
-                    reason: .windowMinimized
-                )
-                do {
-                    try await persistence.recordCaptureUnavailable(unavailableRecord)
-                    await send(.captureUnavailableRecorded(unavailableRecord))
-                } catch {
-                    await send(.screenshotFailed(bundleIdentifier, error.localizedDescription))
-                }
-            }
-
             for window in windows {
                 do {
                     try await persistence.upsertWindow(window)
 
                     let options = preferences.encodingOptions()
                     let capturedAt = date.now()
-                    let image: CapturedImage
-                    do {
-                        image = try await screenCapture.capture(window.systemWindowID)
-                    } catch {
-                        await send(.screenshotFailed(bundleIdentifier, error.localizedDescription))
-                        await recordUnavailablePlaceholder()
-                        continue
-                    }
+                    let image = try await screenCapture.capture(window.systemWindowID)
                     let data = try await encoder.encode(image, options)
                     let url = try storage.screenshotURL(session, window, capturedAt, options.format)
                     let fileSize = try await storage.write(data, url)
@@ -609,7 +586,13 @@ struct CaptureEngineFeature: Reducer {
         at date: Date
     ) -> Effect<Action> {
         let persistence = persistence
-        let record = unavailableRecord(in: session, reason: reason, at: date)
+        let record = CaptureUnavailableRecord(
+            id: ids.uuid(),
+            sessionID: session.id,
+            startedAt: date,
+            endedAt: date,
+            reason: reason
+        )
 
         return .run { send in
             do {
@@ -619,20 +602,6 @@ struct CaptureEngineFeature: Reducer {
                 await send(.screenshotFailed(session.bundleIdentifier, error.localizedDescription))
             }
         }
-    }
-
-    private func unavailableRecord(
-        in session: CaptureSession,
-        reason: CaptureUnavailableReason,
-        at date: Date
-    ) -> CaptureUnavailableRecord {
-        CaptureUnavailableRecord(
-            id: ids.uuid(),
-            sessionID: session.id,
-            startedAt: date,
-            endedAt: date,
-            reason: reason
-        )
     }
 
     private func captureLoopID(_ bundleIdentifier: String) -> String {

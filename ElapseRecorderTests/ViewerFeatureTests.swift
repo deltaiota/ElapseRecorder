@@ -43,7 +43,6 @@ final class ViewerFeatureTests: XCTestCase {
             $0.selectedWindowID = nil
             $0.windows = []
             $0.windowTimelineEntries = []
-            $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
             $0.isLoading = true
         }
@@ -92,7 +91,6 @@ final class ViewerFeatureTests: XCTestCase {
         await store.send(.windowPickerSelectionChanged(.window(id: windowID))) {
             $0.selectedWindowID = windowID
             $0.windowTimelineEntries = []
-            $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
             $0.isLoading = true
         }
@@ -103,7 +101,6 @@ final class ViewerFeatureTests: XCTestCase {
 
         await store.send(.windowPickerSelectionChanged(.all)) {
             $0.selectedWindowID = nil
-            $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
             $0.windowTimelineEntries = []
             $0.isLoading = true
@@ -143,7 +140,6 @@ final class ViewerFeatureTests: XCTestCase {
 
         await store.send(.windowPickerSelectionChanged(.all)) {
             $0.selectedWindowID = nil
-            $0.selectedScreenshot = nil
             $0.isShowingFlatGallery = false
             $0.windowTimelineEntries = []
             $0.isLoading = true

@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import QuickLook
 import SFSafeSymbols
 import SwiftUI
 import TranslateKit
@@ -31,14 +32,10 @@ struct ViewerView: View {
                 .navigationSplitViewColumnWidth(min: 300, ideal: 500)
         }
         .navigationTitle("Elapse Recorder")
-        .sheet(item: $store.selectedScreenshot.sending(\.screenshotSelected)) { record in
-            ScreenshotDetailView(
-                record: record,
-                revealInFinder: {
-                    store.send(.revealSelectedScreenshotInFinderButtonTapped)
-                }
-            )
-        }
+        .quickLookPreview(
+            $store.quickLookURL.sending(\.quickLookURLChanged),
+            in: currentScreenshotURLs
+        )
     }
 
     @ViewBuilder
@@ -255,16 +252,16 @@ struct ViewerView: View {
             if store.isShowingFlatGallery {
                 ScreenshotGrid(
                     entries: store.flatTimelineEntries,
-                    selectedScreenshotID: store.selectedScreenshot?.id,
-                    selectScreenshot: { store.send(.screenshotSelected($0)) },
+                    selectedIDs: $store.selectedScreenshotIDs.sending(\.screenshotSelectionChanged),
+                    openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
                     revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
                 )
                 .navigationTitle("All Screenshots")
             } else if store.selectedSessionID != nil {
                 ScreenshotGrid(
                     entries: store.windowTimelineEntries,
-                    selectedScreenshotID: store.selectedScreenshot?.id,
-                    selectScreenshot: { store.send(.screenshotSelected($0)) },
+                    selectedIDs: $store.selectedScreenshotIDs.sending(\.screenshotSelectionChanged),
+                    openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
                     revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
                 )
                 .safeAreaInset(edge: .bottom) {
@@ -563,6 +560,16 @@ struct ViewerView: View {
                         Label("Delete Session", systemSymbol: .trash)
                     }
                 }
+        }
+    }
+
+    /// Ordered screenshot file URLs for the grid currently shown in the detail pane.
+    /// Quick Look uses these as its navigable item set so arrow keys move between frames.
+    private var currentScreenshotURLs: [URL] {
+        let entries = store.isShowingFlatGallery ? store.flatTimelineEntries : store.windowTimelineEntries
+        return entries.compactMap { entry in
+            if case let .screenshot(record) = entry { return record.fileURL }
+            return nil
         }
     }
 

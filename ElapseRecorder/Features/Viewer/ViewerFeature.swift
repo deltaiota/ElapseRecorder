@@ -12,7 +12,8 @@ struct ViewerFeature: Reducer {
         var selectedBundleIdentifier: String?
         var selectedSessionID: UUID?
         var selectedWindowID: UUID?
-        var selectedScreenshot: ScreenshotRecord?
+        var selectedScreenshotIDs: Set<UUID> = []
+        var quickLookURL: URL?
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
@@ -81,9 +82,9 @@ struct ViewerFeature: Reducer {
         case sessionListSelectionChanged(State.SessionListSelection?)
         case flatGallerySelected
         case flatTimelineEntriesLoaded([CaptureTimelineEntry])
-        case screenshotSelected(ScreenshotRecord?)
+        case screenshotSelectionChanged(Set<UUID>)
+        case quickLookURLChanged(URL?)
         case refresh
-        case revealSelectedScreenshotInFinderButtonTapped
         case revealScreenshotInFinder(ScreenshotRecord)
         case deleteSessionButtonTapped(CaptureSessionSummary)
         case deleteSelectedSessionButtonTapped
@@ -123,7 +124,7 @@ struct ViewerFeature: Reducer {
                 state.windows = []
                 state.windowTimelineEntries = []
                 state.flatTimelineEntries = []
-                state.selectedScreenshot = nil
+                state.clearScreenshotSelection()
                 state.isShowingFlatGallery = false
 
                 guard let bundleIdentifier else { return .none }
@@ -137,7 +138,7 @@ struct ViewerFeature: Reducer {
                 {
                     state.selectedSessionID = nil
                     state.selectedWindowID = nil
-                    state.selectedScreenshot = nil
+                    state.clearScreenshotSelection()
                     state.windows = []
                     state.windowTimelineEntries = []
                 }
@@ -153,7 +154,7 @@ struct ViewerFeature: Reducer {
                    !windows.contains(where: { $0.id == selectedWindowID })
                 {
                     state.selectedWindowID = nil
-                    state.selectedScreenshot = nil
+                    state.clearScreenshotSelection()
                     state.windowTimelineEntries = []
                 }
                 state.isLoading = false
@@ -191,7 +192,7 @@ struct ViewerFeature: Reducer {
                 case nil:
                     state.selectedSessionID = nil
                     state.selectedWindowID = nil
-                    state.selectedScreenshot = nil
+                    state.clearScreenshotSelection()
                     state.isShowingFlatGallery = false
                     state.windows = []
                     state.windowTimelineEntries = []
@@ -207,16 +208,13 @@ struct ViewerFeature: Reducer {
                 state.isLoading = false
                 return .none
 
-            case let .screenshotSelected(record):
-                state.selectedScreenshot = record
+            case let .screenshotSelectionChanged(ids):
+                state.selectedScreenshotIDs = ids
                 return .none
 
-            case .revealSelectedScreenshotInFinderButtonTapped:
-                guard let url = state.selectedScreenshot?.fileURL else { return .none }
-                let fileReveal = fileReveal
-                return .run { _ in
-                    await fileReveal.reveal(url)
-                }
+            case let .quickLookURLChanged(url):
+                state.quickLookURL = url
+                return .none
 
             case let .revealScreenshotInFinder(record):
                 let fileReveal = fileReveal
@@ -235,7 +233,7 @@ struct ViewerFeature: Reducer {
                 if state.selectedSessionID == sessionID {
                     state.selectedSessionID = nil
                     state.selectedWindowID = nil
-                    state.selectedScreenshot = nil
+                    state.clearScreenshotSelection()
                     state.windows = []
                     state.windowTimelineEntries = []
                 }
@@ -286,7 +284,7 @@ struct ViewerFeature: Reducer {
         state.selectedWindowID = nil
         state.windows = []
         state.windowTimelineEntries = []
-        state.selectedScreenshot = nil
+        state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
 
         guard let sessionID else { return .none }
@@ -301,7 +299,7 @@ struct ViewerFeature: Reducer {
         guard let bundleIdentifier = state.selectedBundleIdentifier else { return .none }
         state.selectedSessionID = nil
         state.selectedWindowID = nil
-        state.selectedScreenshot = nil
+        state.clearScreenshotSelection()
         state.isShowingFlatGallery = true
         state.flatTimelineEntries = []
         state.isLoading = true
@@ -310,7 +308,7 @@ struct ViewerFeature: Reducer {
 
     private func selectAllWindows(state: inout State) -> Effect<Action> {
         state.selectedWindowID = nil
-        state.selectedScreenshot = nil
+        state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
 
         guard let sessionID = state.selectedSessionID else { return .none }
@@ -325,7 +323,7 @@ struct ViewerFeature: Reducer {
     ) -> Effect<Action> {
         state.selectedWindowID = windowID
         state.windowTimelineEntries = []
-        state.selectedScreenshot = nil
+        state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
         state.isLoading = true
         guard let sessionID = state.selectedSessionID else { return .none }
@@ -432,11 +430,16 @@ extension ViewerFeature.State {
         selectedBundleIdentifier = nil
         selectedSessionID = nil
         selectedWindowID = nil
-        selectedScreenshot = nil
+        clearScreenshotSelection()
         isShowingFlatGallery = false
         sessions = []
         windows = []
         windowTimelineEntries = []
         flatTimelineEntries = []
+    }
+
+    mutating func clearScreenshotSelection() {
+        selectedScreenshotIDs = []
+        quickLookURL = nil
     }
 }

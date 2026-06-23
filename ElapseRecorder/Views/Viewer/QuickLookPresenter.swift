@@ -47,6 +47,7 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
     var onClose: () -> Void = {}
 
     private var presentedURL: URL?
+    private var pendingURL: URL?
     private var isObservingIndex = false
 
     override var acceptsFirstResponder: Bool {
@@ -94,9 +95,13 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
 
     private func openPanel(at url: URL) {
         guard let panel = QLPreviewPanel.shared() else { return }
+        // Hand the target item to `beginPreviewPanelControl` so the panel opens *directly*
+        // at it. Quick Look only sizes the panel to the content on its first render, so
+        // opening at item 0 and then jumping leaves every non-first item stuck at the
+        // wrong size.
+        pendingURL = url
         window?.makeFirstResponder(self)
         panel.makeKeyAndOrderFront(nil)
-        setCurrentItem(url)
     }
 
     private func setCurrentItem(_ url: URL) {
@@ -132,6 +137,11 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
             panel.addObserver(self, forKeyPath: "currentPreviewItemIndex", options: [.new], context: nil)
             isObservingIndex = true
         }
+        // Select the requested item before the panel renders so it sizes to that item.
+        if let url = pendingURL, let index = items.firstIndex(of: url) {
+            panel.currentPreviewItemIndex = index
+        }
+        pendingURL = nil
     }
 
     override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {

@@ -13,6 +13,7 @@ struct ScreenshotGrid: View {
     var revealScreenshot: (ScreenshotRecord) -> Void = { _ in }
 
     @State private var anchorID: UUID?
+    @State private var columnCount = 1
     @FocusState private var isFocused: Bool
 
     private let prefetchCount = 6
@@ -27,6 +28,12 @@ struct ScreenshotGrid: View {
                     }
                 }
                 .padding()
+                .onGeometryChange(for: Int.self) { geometry in
+                    // Mirror the adaptive grid's column math so arrow keys can move a full
+                    // row at a time.
+                    let spacing = 14.0
+                    return max(1, Int((geometry.size.width + spacing) / (itemSize + spacing)))
+                } action: { columnCount = $0 }
             }
             .focusable()
             .focusEffectDisabled()
@@ -35,6 +42,10 @@ struct ScreenshotGrid: View {
                 openQuickLookForSelection()
                 return .handled
             }
+            .onKeyPress(.leftArrow) { moveSelection(by: -1, proxy: proxy) }
+            .onKeyPress(.rightArrow) { moveSelection(by: 1, proxy: proxy) }
+            .onKeyPress(.upArrow) { moveSelection(by: -columnCount, proxy: proxy) }
+            .onKeyPress(.downArrow) { moveSelection(by: columnCount, proxy: proxy) }
             .onChange(of: jumpToLatestTrigger) {
                 guard let lastID = displayedEntries.last?.id else { return }
                 withAnimation {
@@ -49,6 +60,7 @@ struct ScreenshotGrid: View {
                     DispatchQueue.main.async { isFocused = true }
                 }
             }
+            .onAppear { isFocused = true }
             .overlay {
                 if displayedEntries.isEmpty {
                     ContentUnavailableView(
@@ -98,6 +110,26 @@ struct ScreenshotGrid: View {
         openQuickLook(record)
     }
 
+    /// Move the single selection by `offset` in the flat screenshot order, keeping the new
+    /// cell visible. Returns `.handled` so the arrow key doesn't also scroll the list.
+    private func moveSelection(by offset: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        let ordered = orderedScreenshots
+        guard !ordered.isEmpty else { return .ignored }
+
+        let target: Int
+        if let current = ordered.firstIndex(where: { selectedIDs.contains($0.id) }) {
+            target = min(max(current + offset, 0), ordered.count - 1)
+        } else {
+            target = 0
+        }
+
+        let record = ordered[target]
+        selectedIDs = [record.id]
+        anchorID = record.id
+        proxy.scrollTo(record.id)
+        return .handled
+    }
+
     private func handleClick(_ record: ScreenshotRecord) {
         isFocused = true
         let flags = NSEvent.modifierFlags
@@ -120,6 +152,11 @@ struct ScreenshotGrid: View {
         } else {
             selectedIDs = [record.id]
             anchorID = record.id
+            // While Quick Look is open, clicking another cell moves the preview to it,
+            // matching Finder.
+            if isQuickLookOpen {
+                openQuickLook(record)
+            }
         }
     }
 

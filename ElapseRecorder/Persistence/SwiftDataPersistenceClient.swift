@@ -133,6 +133,15 @@ final class SwiftDataPersistenceStore {
 
     func recordCaptureUnavailable(_ record: CaptureUnavailableRecord) throws {
         let context = ModelContext(modelContainer)
+
+        // Upsert so an ongoing unavailable span (same id, growing endedAt) extends the
+        // existing record instead of inserting a new placeholder each tick.
+        if let existing = try unavailableRecordModel(id: record.id, context: context) {
+            existing.endedAt = record.endedAt
+            try context.save()
+            return
+        }
+
         guard let session = try sessionModel(id: record.sessionID, context: context) else {
             throw CaptureEngineError.sessionNotFound(record.sessionID)
         }
@@ -277,6 +286,11 @@ final class SwiftDataPersistenceStore {
 
     private func windowModel(id: UUID, context: ModelContext) throws -> MonitoredWindowModel? {
         try context.fetch(FetchDescriptor<MonitoredWindowModel>())
+            .first { $0.id == id }
+    }
+
+    private func unavailableRecordModel(id: UUID, context: ModelContext) throws -> CaptureUnavailableRecordModel? {
+        try context.fetch(FetchDescriptor<CaptureUnavailableRecordModel>())
             .first { $0.id == id }
     }
 

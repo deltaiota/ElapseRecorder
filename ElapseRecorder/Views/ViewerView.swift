@@ -523,15 +523,7 @@ struct ViewerView: View {
     private func sessionRow(_ session: CaptureSessionSummary, isRecording: Bool) -> some View {
         let label = Label {
             VStack(alignment: .leading) {
-                HStack(spacing: 5) {
-                    if isRecording {
-                        Image(systemSymbol: .recordCircleFill)
-                            .foregroundStyle(.red)
-                            .font(.caption2)
-                            .symbolEffect(.pulse, options: .repeating)
-                    }
-                    Text(session.startedAt, format: .dateTime.hour().minute())
-                }
+                Text(session.startedAt, format: .dateTime.hour().minute())
 
                 CountSummary(
                     items: [
@@ -546,6 +538,7 @@ struct ViewerView: View {
         } icon: {
             Image(systemSymbol: isRecording ? .recordCircle : .clock)
                 .foregroundStyle(isRecording ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .symbolEffect(.pulse, options: .repeating, isActive: isRecording)
         }
         .tag(ViewerFeature.State.SessionListSelection.session(id: session.id))
 

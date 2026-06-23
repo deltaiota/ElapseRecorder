@@ -1,5 +1,6 @@
 import SFSafeSymbols
 import SwiftUI
+import TranslateKit
 
 struct ScreenshotGrid: View {
     let entries: [CaptureTimelineEntry]
@@ -48,8 +49,6 @@ private struct ScreenshotCell: View {
     let select: () -> Void
     let reveal: (() -> Void)?
 
-    @State private var isHovering = false
-
     var body: some View {
         Button(action: select) {
             ScreenshotThumbnailView(record: record)
@@ -62,12 +61,8 @@ private struct ScreenshotCell: View {
                     RoundedRectangle(cornerRadius: 10)
                         .strokeBorder(borderStyle, lineWidth: isSelected ? 3 : 1)
                 }
-                .shadow(color: .black.opacity(isHovering ? 0.2 : 0), radius: 6, y: 2)
-                .scaleEffect(isHovering ? 1.02 : 1)
         }
         .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.12), value: isHovering)
-        .onHover { isHovering = $0 }
         .contextMenu {
             if let reveal {
                 Button {
@@ -104,34 +99,31 @@ private struct UnavailableCell: View {
     let record: CaptureUnavailableRecord
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(.yellow.opacity(0.12))
+        VStack(spacing: 8) {
+            Image(systemSymbol: .rectangleDashed)
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
 
-            VStack(spacing: 8) {
-                Image(systemSymbol: .rectangleDashed)
-                    .font(.largeTitle)
-                    .foregroundStyle(.yellow)
+            Text(record.reason.title)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
 
-                Text(record.reason.title)
-                    .font(.caption)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(8)
-        }
-        .aspectRatio(16 / 10, contentMode: .fit)
-        .overlay(alignment: .bottomLeading) {
-            Text(record.startedAt, format: .dateTime.hour().minute().second())
+            Text(durationText)
                 .font(.caption2)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .padding(6)
+                .foregroundStyle(.tertiary)
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(.separator, lineWidth: 1)
-        }
+        .padding(8)
+        .frame(maxWidth: .infinity)
+        .aspectRatio(16 / 10, contentMode: .fit)
+    }
+
+    private var durationText: String {
+        let seconds = max(0, record.endedAt.timeIntervalSince(record.startedAt))
+        let duration = Duration.seconds(seconds)
+        let formatted = duration.formatted(.time(pattern: .minuteSecond))
+        return #tk("Unavailable for \(formatted)")
     }
 }
 

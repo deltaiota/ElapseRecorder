@@ -21,6 +21,8 @@ struct CaptureEngineFeature: Reducer {
             var windowsBySystemID: [Int: MonitoredWindow] = [:]
             var isCaptureInFlight = false
             var captureUnavailableReason: CaptureUnavailableReason?
+            var unavailableRecordID: UUID?
+            var unavailableStartedAt: Date?
         }
     }
 
@@ -298,28 +300,38 @@ struct CaptureEngineFeature: Reducer {
                 // `capturableWindows` applies `shouldCapture`, which drops minimized/hidden
                 // windows (not on-screen) and Stage Manager-stowed windows (flagged by the
                 // live layer). An empty result therefore means every window of this app is
-                // currently unavailable. Mark a placeholder once on the transition into that
-                // state, and only after the session has seen real windows so the timeline
-                // doesn't open with a spurious placeholder.
+                // currently unavailable. A single placeholder spans the whole unavailable
+                // stretch: it's created on the transition (only after the session has seen
+                // real windows) and its end time is extended on each subsequent tick.
                 guard !capturableWindows.isEmpty else {
                     active.isCaptureInFlight = false
 
-                    let hasSeenWindows = !active.windowsBySystemID.isEmpty
-                    let wasAlreadyUnavailable = active.captureUnavailableReason != nil
-                    if hasSeenWindows {
-                        active.captureUnavailableReason = .windowMinimized
+                    guard !active.windowsBySystemID.isEmpty else {
+                        state.activeSessions[bundleIdentifier] = active
+                        return .none
                     }
+
+                    active.captureUnavailableReason = .windowMinimized
+                    let recordID = active.unavailableRecordID ?? ids.uuid()
+                    let startedAt = active.unavailableStartedAt ?? seenAt
+                    active.unavailableRecordID = recordID
+                    active.unavailableStartedAt = startedAt
                     state.activeSessions[bundleIdentifier] = active
 
-                    guard hasSeenWindows, !wasAlreadyUnavailable else { return .none }
                     return recordCaptureUnavailable(
-                        in: active.session,
-                        reason: .windowMinimized,
-                        at: seenAt
+                        CaptureUnavailableRecord(
+                            id: recordID,
+                            sessionID: active.session.id,
+                            startedAt: startedAt,
+                            endedAt: seenAt,
+                            reason: .windowMinimized
+                        )
                     )
                 }
 
                 active.captureUnavailableReason = nil
+                active.unavailableRecordID = nil
+                active.unavailableStartedAt = nil
 
                 for window in capturableWindows {
                     if var monitoredWindow = active.windowsBySystemID[window.systemWindowID] {
@@ -580,26 +592,15 @@ struct CaptureEngineFeature: Reducer {
         .cancellable(id: captureCycleID(session.id), cancelInFlight: true)
     }
 
-    private func recordCaptureUnavailable(
-        in session: CaptureSession,
-        reason: CaptureUnavailableReason,
-        at date: Date
-    ) -> Effect<Action> {
+    private func recordCaptureUnavailable(_ record: CaptureUnavailableRecord) -> Effect<Action> {
         let persistence = persistence
-        let record = CaptureUnavailableRecord(
-            id: ids.uuid(),
-            sessionID: session.id,
-            startedAt: date,
-            endedAt: date,
-            reason: reason
-        )
 
         return .run { send in
             do {
                 try await persistence.recordCaptureUnavailable(record)
                 await send(.captureUnavailableRecorded(record))
             } catch {
-                await send(.screenshotFailed(session.bundleIdentifier, error.localizedDescription))
+                await send(.screenshotFailed(record.sessionID.uuidString, error.localizedDescription))
             }
         }
     }

@@ -19,7 +19,7 @@ struct ScreenshotThumbnailView: View {
             if let image {
                 Image(nsImage: NSImage(cgImage: image, size: image.displaySize))
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
             } else {
                 Image(systemSymbol: .photo)
                     .font(.largeTitle)

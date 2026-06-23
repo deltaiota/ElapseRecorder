@@ -940,6 +940,8 @@ final class CaptureEngineFeatureTests: XCTestCase {
         await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
             $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+            $0.activeSessions[app.bundleIdentifier]?.unavailableRecordID = unavailableID
+            $0.activeSessions[app.bundleIdentifier]?.unavailableStartedAt = seenAt
         }
         await store.receive(.captureUnavailableRecorded(expectedRecord))
 
@@ -1033,6 +1035,8 @@ final class CaptureEngineFeatureTests: XCTestCase {
         ) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
             $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+            $0.activeSessions[app.bundleIdentifier]?.unavailableRecordID = unavailableID
+            $0.activeSessions[app.bundleIdentifier]?.unavailableStartedAt = seenAt
         }
         await store.receive(.captureUnavailableRecorded(expectedRecord))
 
@@ -1041,7 +1045,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testUnavailablePlaceholderIsRecordedOncePerUnavailableSpan() async throws {
+    func testUnavailablePlaceholderExtendsAcrossUnavailableSpan() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.StageManagedApp",
             displayName: "Stage Managed App",
@@ -1070,7 +1074,9 @@ final class CaptureEngineFeatureTests: XCTestCase {
             lastSeenAt: Date(timeIntervalSince1970: 10)
         )
         let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000092"))
-        let seenAt = Date(timeIntervalSince1970: 90)
+        let firstSeenAt = Date(timeIntervalSince1970: 90)
+        let secondSeenAt = Date(timeIntervalSince1970: 150)
+        let now = LockIsolated(firstSeenAt)
         let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
 
         var state = CaptureEngineFeature.State()
@@ -1086,33 +1092,45 @@ final class CaptureEngineFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             CaptureEngineFeature()
         } withDependencies: {
-            $0.dateClient.now = { seenAt }
+            $0.dateClient.now = { now.value }
             $0.idGeneratorClient.uuid = { unavailableID }
             $0.persistenceClient.recordCaptureUnavailable = { record in
                 recordedPlaceholders.withValue { $0.append(record) }
             }
         }
 
-        let expectedRecord = CaptureUnavailableRecord(
+        let openingRecord = CaptureUnavailableRecord(
             id: unavailableID,
             sessionID: session.id,
-            startedAt: seenAt,
-            endedAt: seenAt,
+            startedAt: firstSeenAt,
+            endedAt: firstSeenAt,
             reason: .windowMinimized
         )
 
-        // First tick with no capturable windows records the placeholder that marks the
-        // start of the unavailable span and flips the session into the unavailable state.
+        // First tick opens the span (started == ended == first tick).
         await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
             $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
+            $0.activeSessions[app.bundleIdentifier]?.unavailableRecordID = unavailableID
+            $0.activeSessions[app.bundleIdentifier]?.unavailableStartedAt = firstSeenAt
         }
-        await store.receive(.captureUnavailableRecorded(expectedRecord))
+        await store.receive(.captureUnavailableRecorded(openingRecord))
 
-        // Subsequent ticks while still unavailable must not append more placeholders.
+        // A later tick still unavailable extends the same record's end time (same id,
+        // same start, new end) rather than opening a second placeholder.
+        now.setValue(secondSeenAt)
+        let extendedRecord = CaptureUnavailableRecord(
+            id: unavailableID,
+            sessionID: session.id,
+            startedAt: firstSeenAt,
+            endedAt: secondSeenAt,
+            reason: .windowMinimized
+        )
         await store.send(.windowsLoaded(app.bundleIdentifier, []))
+        await store.receive(.captureUnavailableRecorded(extendedRecord))
 
-        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
+        XCTAssertEqual(recordedPlaceholders.value, [openingRecord, extendedRecord])
+        XCTAssertEqual(Set(recordedPlaceholders.value.map(\.id)), [unavailableID])
     }
 
     @MainActor

@@ -14,14 +14,13 @@ struct ScreenshotThumbnailView: View {
 
     var body: some View {
         ZStack {
-            Rectangle()
-                .fill(.quaternary)
-
             if let image {
                 Image(nsImage: NSImage(cgImage: image, size: image.displaySize))
                     .resizable()
                     .scaledToFit()
             } else {
+                Rectangle()
+                    .fill(.quaternary)
                 Image(systemSymbol: .photo)
                     .font(.largeTitle)
                     .foregroundStyle(.secondary)

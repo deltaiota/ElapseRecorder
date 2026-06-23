@@ -4,13 +4,17 @@ import SwiftUI
 
 /// Drives the native Quick Look panel (`QLPreviewPanel`) for the screenshot grid.
 ///
-/// Using the AppKit panel directly (instead of the SwiftUI `quickLookPreview`
-/// modifier) gives the Finder-style present/dismiss animation and avoids the
-/// modifier's console warnings. Navigating with the arrow keys inside the panel
-/// writes the new item back through `currentURL`, so the grid selection can follow.
+/// All panel mutations are deferred off the SwiftUI layout pass and are idempotent, so
+/// re-renders never re-enter the panel (which previously produced reentrant-layout
+/// warnings and an AttributeGraph cycle). `openURL` only changes on open/close; arrow-key
+/// navigation reports the new item through `onNavigate` and never changes `openURL`, so it
+/// can't feed back into another present. Source frames come from the thumbnail registry,
+/// giving the Finder-style zoom.
 struct QuickLookPresenter: NSViewRepresentable {
     var urls: [URL]
-    @Binding var currentURL: URL?
+    var openURL: URL?
+    var onNavigate: (Int) -> Void
+    var onClose: () -> Void
 
     func makeNSView(context _: Context) -> QuickLookHostView {
         let view = QuickLookHostView()
@@ -20,55 +24,76 @@ struct QuickLookPresenter: NSViewRepresentable {
 
     func updateNSView(_ view: QuickLookHostView, context _: Context) {
         configure(view)
-        view.items = urls
+        view.apply(openURL: openURL)
+    }
 
-        if let currentURL, let index = urls.firstIndex(of: currentURL) {
-            view.present(at: index)
-        } else {
-            view.dismiss()
-        }
+    static func dismantleNSView(_ view: QuickLookHostView, coordinator _: ()) {
+        view.apply(openURL: nil)
     }
 
     private func configure(_ view: QuickLookHostView) {
         view.items = urls
-        view.onIndexChange = { index in
-            guard urls.indices.contains(index) else { return }
-            let url = urls[index]
-            if currentURL != url { currentURL = url }
-        }
-        view.onClose = {
-            if currentURL != nil { currentURL = nil }
-        }
+        view.onNavigate = onNavigate
+        view.onClose = onClose
     }
 }
 
 final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     var items: [URL] = []
-    var onIndexChange: (Int) -> Void = { _ in }
+    var onNavigate: (Int) -> Void = { _ in }
     var onClose: () -> Void = {}
 
+    private var presentedURL: URL?
     private var isObservingIndex = false
 
     override var acceptsFirstResponder: Bool {
         true
     }
 
-    func present(at index: Int) {
+    /// Reconcile the panel with the requested `openURL`. Deferred to the next runloop turn
+    /// so it never runs inside a SwiftUI layout pass, and a no-op when already in the
+    /// requested state.
+    func apply(openURL: URL?) {
+        guard openURL != presentedURL else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            guard openURL != presentedURL else { return }
+
+            if let openURL {
+                let wasOpen = presentedURL != nil
+                presentedURL = openURL
+                if wasOpen {
+                    moveToItem(openURL)
+                } else {
+                    openPanel(at: openURL)
+                }
+            } else {
+                presentedURL = nil
+                closePanel()
+            }
+        }
+    }
+
+    private func openPanel(at url: URL) {
         guard let panel = QLPreviewPanel.shared() else { return }
         window?.makeFirstResponder(self)
+        panel.makeKeyAndOrderFront(nil)
+        moveToItem(url)
+    }
 
-        if panel.isVisible {
-            panel.reloadData()
-        } else {
-            panel.makeKeyAndOrderFront(nil)
-        }
-
-        if panel.currentPreviewItemIndex != index, items.indices.contains(index) {
+    private func moveToItem(_ url: URL) {
+        guard let index = items.firstIndex(of: url),
+              let panel = QLPreviewPanel.shared(),
+              panel.dataSource === self
+        else { return }
+        panel.reloadData()
+        if panel.currentPreviewItemIndex != index {
             panel.currentPreviewItemIndex = index
         }
     }
 
-    func dismiss() {
+    private func closePanel() {
         guard QLPreviewPanel.sharedPreviewPanelExists(),
               let panel = QLPreviewPanel.shared(),
               panel.isVisible,
@@ -97,7 +122,11 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
             panel.removeObserver(self, forKeyPath: "currentPreviewItemIndex")
             isObservingIndex = false
         }
-        onClose()
+        if presentedURL != nil {
+            presentedURL = nil
+            let onClose = onClose
+            DispatchQueue.main.async { onClose() }
+        }
     }
 
     // MARK: Data source
@@ -108,6 +137,15 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
 
     func previewPanel(_: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
         items.indices.contains(index) ? items[index] as NSURL : nil
+    }
+
+    // MARK: Delegate (zoom source frame)
+
+    func previewPanel(_: QLPreviewPanel!, sourceFrameOnScreenFor item: (any QLPreviewItem)!) -> NSRect {
+        guard let url = (item as? NSURL) as URL?,
+              let frame = ThumbnailFrameRegistry.shared.frame(for: url)
+        else { return .zero }
+        return frame
     }
 
     // MARK: Navigation feedback
@@ -122,6 +160,8 @@ final class QuickLookHostView: NSView, QLPreviewPanelDataSource, QLPreviewPanelD
             super.observeValue(forKeyPath: keyPath, of: object, change: change, context: context)
             return
         }
-        onIndexChange(panel.currentPreviewItemIndex)
+        let index = panel.currentPreviewItemIndex
+        let onNavigate = onNavigate
+        DispatchQueue.main.async { onNavigate(index) }
     }
 }

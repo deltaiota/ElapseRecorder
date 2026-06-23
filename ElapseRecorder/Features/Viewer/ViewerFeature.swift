@@ -84,6 +84,7 @@ struct ViewerFeature: Reducer {
         case flatTimelineEntriesLoaded([CaptureTimelineEntry])
         case screenshotSelectionChanged(Set<UUID>)
         case quickLookURLChanged(URL?)
+        case quickLookNavigated(URL)
         case refresh
         case revealScreenshotInFinder(ScreenshotRecord)
         case deleteSessionButtonTapped(CaptureSessionSummary)
@@ -214,10 +215,17 @@ struct ViewerFeature: Reducer {
 
             case let .quickLookURLChanged(url):
                 state.quickLookURL = url
-                // Selection is the source of truth: when Quick Look navigates with the
-                // arrow keys it reports the new item here, so move the grid selection to
-                // match it.
+                // Opening preselects the opened frame. Navigation while open arrives via
+                // `quickLookNavigated` instead, so this never changes during arrow-key use.
                 if let url, let id = state.screenshotID(forFileURL: url) {
+                    state.selectedScreenshotIDs = [id]
+                }
+                return .none
+
+            case let .quickLookNavigated(url):
+                // Quick Look moved to another frame with the arrow keys; mirror it in the
+                // grid selection without touching `quickLookURL` (which would re-present).
+                if let id = state.screenshotID(forFileURL: url) {
                     state.selectedScreenshotIDs = [id]
                 }
                 return .none

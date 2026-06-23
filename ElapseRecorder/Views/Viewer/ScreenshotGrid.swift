@@ -8,6 +8,7 @@ struct ScreenshotGrid: View {
     @Binding var selectedIDs: Set<UUID>
     var itemSize: Double = 180
     var jumpToLatestTrigger: Int = 0
+    var isQuickLookOpen: Bool = false
     var openQuickLook: (ScreenshotRecord) -> Void = { _ in }
     var revealScreenshot: (ScreenshotRecord) -> Void = { _ in }
 
@@ -40,6 +41,14 @@ struct ScreenshotGrid: View {
                     proxy.scrollTo(lastID, anchor: .bottom)
                 }
             }
+            .onChange(of: isQuickLookOpen) { _, isOpen in
+                // When the Quick Look panel closes it takes key focus with it, so the grid
+                // would need a click before Space worked again. Re-grab focus so Space
+                // reopens the preview immediately.
+                if !isOpen {
+                    DispatchQueue.main.async { isFocused = true }
+                }
+            }
             .overlay {
                 if displayedEntries.isEmpty {
                     ContentUnavailableView(
@@ -52,8 +61,8 @@ struct ScreenshotGrid: View {
         }
     }
 
-    // A placeholder only conveys a *gap between* captures, so drop any unavailable
-    // entries at the very start or end of the timeline where there's nothing to gap.
+    /// A placeholder only conveys a *gap between* captures, so drop any unavailable
+    /// entries at the very start or end of the timeline where there's nothing to gap.
     private var displayedEntries: [CaptureTimelineEntry] {
         var result = entries[...]
         while let first = result.first, case .unavailable = first {
@@ -148,6 +157,7 @@ private struct ScreenshotCell: View {
                 timestamp
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
+            .background(ThumbnailFrameReporter(url: record.fileURL))
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(isSelected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.separator),

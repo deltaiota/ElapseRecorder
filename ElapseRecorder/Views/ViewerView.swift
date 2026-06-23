@@ -274,7 +274,13 @@ struct ViewerView: View {
         .background(
             QuickLookPresenter(
                 urls: currentScreenshotURLs,
-                currentURL: $store.quickLookURL.sending(\.quickLookURLChanged)
+                openURL: store.quickLookURL,
+                onNavigate: { index in
+                    let urls = currentScreenshotURLs
+                    guard urls.indices.contains(index) else { return }
+                    store.send(.quickLookNavigated(urls[index]))
+                },
+                onClose: { store.send(.quickLookURLChanged(nil)) }
             )
         )
     }
@@ -286,6 +292,7 @@ struct ViewerView: View {
             selectedIDs: $store.selectedScreenshotIDs.sending(\.screenshotSelectionChanged),
             itemSize: gridItemSize,
             jumpToLatestTrigger: jumpToLatestTrigger,
+            isQuickLookOpen: store.quickLookURL != nil,
             openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
             revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
         )

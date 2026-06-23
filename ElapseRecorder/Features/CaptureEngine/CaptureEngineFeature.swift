@@ -504,10 +504,29 @@ struct CaptureEngineFeature: Reducer {
         let clock = clock
 
         return .run { send in
+            // Drift-free fixed-rate scheduling. Each cycle's real elapsed time (tick
+            // dispatch and the sleep itself) is measured and accumulated, and the next
+            // sleep is sized so the running total tracks the absolute grid n·interval.
+            // Sleeping a flat `interval` after each tick instead lets per-cycle overhead
+            // and any sleep overshoot accumulate, drifting the effective period longer
+            // than requested; feeding the measured elapsed back keeps the long-run
+            // average exactly at `interval`.
             do {
+                var elapsed: Duration = .zero
+                var tickCount = 0
+
                 while !Task.isCancelled {
-                    await send(.captureTick(bundleIdentifier))
-                    try await clock.sleep(for: interval)
+                    elapsed += await clock.measure {
+                        await send(.captureTick(bundleIdentifier))
+                    }
+                    tickCount += 1
+
+                    let remaining = interval * tickCount - elapsed
+                    if remaining > .zero {
+                        elapsed += try await clock.measure {
+                            try await clock.sleep(for: remaining)
+                        }
+                    }
                 }
             } catch {}
         }

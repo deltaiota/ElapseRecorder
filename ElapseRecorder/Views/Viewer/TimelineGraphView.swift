@@ -1,12 +1,19 @@
+import AppKit
 import SFSafeSymbols
 import SwiftUI
 import TranslateKit
 
+private let timelinePalette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
+
+private func laneColor(_ index: Int) -> Color {
+    timelinePalette[index % timelinePalette.count]
+}
+
 /// Vertical, git-style lifecycle timeline for one session. Time runs top to bottom, drawn
-/// to scale: each window is a coloured lane positioned by its real first/last-seen times,
-/// with a filled "born" cap, a hollow "died" cap, and hollow nodes at each rename. Title
-/// segments are tappable (open that title's screenshots); the window header opens the whole
-/// window. Stretches where no window was capturable are drawn as full-width bands.
+/// to scale. Each window is a coloured lane that begins at its window tag (the coloured dot
+/// inside the tag is the lane's start) and ends at a hollow "died" cap, with hollow nodes
+/// at each rename. Stretches where the window wasn't capturable are drawn dotted. Window
+/// tags stick to the top while their lane is in view. Title segments are tappable.
 struct TimelineGraphView: View {
     let timeline: SessionTimeline
     var selectedWindowID: UUID?
@@ -14,16 +21,10 @@ struct TimelineGraphView: View {
     var onSelectWindow: (UUID) -> Void
     var onSelectSegment: (UUID, WindowTitleSegment) -> Void
 
-    private let topPadding: CGFloat = 52
-    private let bottomPadding: CGFloat = 36
-    private let gutterWidth: CGFloat = 76
-    private let laneWidth: CGFloat = 172
-    private let lineInset: CGFloat = 22
-    private let minContentHeight: CGFloat = 480
-    private let maxContentHeight: CGFloat = 5000
-    private let pointsPerSecond: CGFloat = 1
+    @State private var scrollY: CGFloat = 0
 
-    private static let palette: [Color] = [.blue, .green, .orange, .purple, .pink, .teal, .indigo, .red]
+    private let tagHeight: CGFloat = 24
+    private let dotCenterInTag: CGFloat = 13
 
     var body: some View {
         if timeline.lanes.isEmpty {
@@ -33,123 +34,59 @@ struct TimelineGraphView: View {
                 description: Text("This session has no recorded windows yet.")
             )
         } else {
-            content
-        }
-    }
+            let metrics = metrics
+            ScrollView([.vertical, .horizontal]) {
+                ZStack(alignment: .topLeading) {
+                    TimelineCanvas(timeline: timeline, selectedSegmentID: selectedSegmentID, metrics: metrics)
+                        .equatable()
 
-    private var content: some View {
-        let metrics = metrics
-        return ScrollView([.vertical, .horizontal]) {
-            ZStack(alignment: .topLeading) {
-                background(metrics)
-
-                HStack(alignment: .top, spacing: 0) {
-                    timeGutter(metrics)
-
-                    ForEach(Array(timeline.lanes.enumerated()), id: \.element.id) { index, lane in
-                        laneColumn(lane, color: Self.color(index), metrics: metrics)
-                    }
+                    gutterLabels(metrics)
+                    segmentBlocks(metrics)
+                    stickyTags(metrics)
                 }
+                .frame(width: metrics.totalWidth, height: metrics.contentHeight, alignment: .topLeading)
+                .padding(.trailing, 28)
+                .padding(.bottom, 28)
             }
-            .frame(width: metrics.totalWidth, height: metrics.contentHeight, alignment: .topLeading)
-            .padding(.trailing, 28)
-            .padding(.bottom, 28)
-        }
-        .background(.background)
-    }
-
-    // MARK: Background (gridlines + unavailable bands)
-
-    private func background(_ metrics: Metrics) -> some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(tickDates(metrics), id: \.self) { date in
-                Rectangle()
-                    .fill(.quaternary)
-                    .frame(width: metrics.totalWidth - metrics.gutterWidth + 8, height: 1)
-                    .offset(x: metrics.gutterWidth - 8, y: metrics.y(date))
-            }
-
-            ForEach(Array(timeline.unavailableSpans.enumerated()), id: \.offset) { _, span in
-                unavailableBand(span, metrics: metrics)
+            .background(.background)
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, newValue in
+                scrollY = newValue
             }
         }
-        .frame(width: metrics.totalWidth, height: metrics.contentHeight, alignment: .topLeading)
     }
 
-    private func unavailableBand(_ span: TimeSpan, metrics: Metrics) -> some View {
-        let y0 = metrics.y(span.startedAt)
-        let height = max(2, metrics.y(span.endedAt) - y0)
+    // MARK: Gutter (time labels with detailed hover help)
 
-        return Rectangle()
-            .fill(Color.secondary.opacity(0.12))
-            .frame(width: metrics.totalWidth - metrics.gutterWidth, height: height, alignment: .topLeading)
-            .overlay(alignment: .topLeading) {
-                Label("Unavailable", systemSymbol: .eyeSlash)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(4)
-                    .opacity(height > 22 ? 1 : 0)
-            }
-            .clipped()
-            .offset(x: metrics.gutterWidth, y: y0)
-    }
-
-    private func timeGutter(_ metrics: Metrics) -> some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(tickDates(metrics), id: \.self) { date in
-                Text(date, format: .dateTime.hour().minute())
-                    .font(.caption2)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .frame(width: metrics.gutterWidth - 12, alignment: .trailing)
-                    .offset(x: 0, y: metrics.y(date) - 6)
-            }
+    private func gutterLabels(_ metrics: TimelineMetrics) -> some View {
+        ForEach(metrics.tickDates(), id: \.self) { date in
+            Text(date, format: .dateTime.hour().minute())
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: metrics.gutterWidth - 12, alignment: .trailing)
+                .offset(x: 0, y: metrics.y(date) - 6)
+                .help(Text(date, format: .dateTime.year().month().day().hour().minute().second()))
         }
-        .frame(width: metrics.gutterWidth, height: metrics.contentHeight, alignment: .topLeading)
     }
 
-    // MARK: Lane
+    // MARK: Tappable segments + title chips
 
-    private func laneColumn(_ lane: WindowLane, color: Color, metrics: Metrics) -> some View {
-        let yBorn = metrics.y(lane.bornAt)
-        let yDied = metrics.y(lane.diedAt)
-
-        return ZStack(alignment: .topLeading) {
-            Capsule()
-                .fill(color.opacity(0.85))
-                .frame(width: 3, height: max(3, yDied - yBorn))
-                .offset(x: lineInset - 1.5, y: yBorn)
-
+    private func segmentBlocks(_ metrics: TimelineMetrics) -> some View {
+        ForEach(Array(timeline.lanes.enumerated()), id: \.element.id) { index, lane in
             ForEach(lane.segments) { segment in
-                segmentLayer(lane: lane, segment: segment, color: color, metrics: metrics)
+                segmentBlock(lane: lane, segment: segment, color: laneColor(index), metrics: metrics)
             }
-
-            node(color: color, filled: true)
-                .offset(x: lineInset - 6, y: yBorn - 6)
-            node(color: color, filled: false)
-                .offset(x: lineInset - 6, y: yDied - 6)
-
-            ForEach(Array(lane.segments.dropFirst())) { segment in
-                node(color: color, filled: false)
-                    .offset(x: lineInset - 6, y: metrics.y(segment.startedAt) - 6)
-            }
-
-            windowHeader(lane, color: color)
-                .offset(x: lineInset - 6, y: max(2, yBorn - 30))
         }
-        .frame(width: laneWidth, height: metrics.contentHeight, alignment: .topLeading)
     }
 
-    private func segmentLayer(lane: WindowLane, segment: WindowTitleSegment, color: Color, metrics: Metrics) -> some View {
+    private func segmentBlock(lane: WindowLane, segment: WindowTitleSegment, color: Color, metrics: TimelineMetrics) -> some View {
         let y0 = metrics.y(segment.startedAt)
-        let height = max(24, metrics.y(segment.endedAt) - y0)
+        let height = max(20, metrics.y(segment.endedAt) - y0)
         let isSelected = selectedSegmentID == segment.id
 
         return ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(Color.clear)
+            Color.clear
                 .contentShape(Rectangle())
-                .frame(width: laneWidth, height: height)
 
             Text(title(for: segment))
                 .font(.caption)
@@ -161,37 +98,48 @@ struct TimelineGraphView: View {
                     isSelected ? AnyShapeStyle(color.opacity(0.22)) : AnyShapeStyle(.thinMaterial),
                     in: Capsule()
                 )
-                .overlay(Capsule().strokeBorder(isSelected ? color : .clear, lineWidth: 1))
-                .frame(maxWidth: laneWidth - lineInset - 16, alignment: .leading)
-                .offset(x: lineInset + 10, y: 4)
+                .overlay(Capsule().strokeBorder(isSelected ? AnyShapeStyle(color) : AnyShapeStyle(.clear), lineWidth: 1))
+                .frame(maxWidth: metrics.laneWidth - metrics.lineInset - 16, alignment: .leading)
+                .offset(x: metrics.lineInset + 10, y: 4)
+                .allowsHitTesting(false)
         }
-        .frame(width: laneWidth, height: height, alignment: .topLeading)
-        .offset(x: 0, y: y0)
+        .frame(width: metrics.laneWidth, height: height, alignment: .topLeading)
+        .offset(x: metrics.laneOriginX(index(of: lane)), y: y0)
         .onTapGesture { onSelectSegment(lane.windowID, segment) }
         .help(Text(#tk("\(title(for: segment)) · \(segment.screenshotCount) screenshots")))
     }
 
-    private func windowHeader(_ lane: WindowLane, color: Color) -> some View {
+    // MARK: Sticky window tags (the lane's start point)
+
+    private func stickyTags(_ metrics: TimelineMetrics) -> some View {
+        ForEach(Array(timeline.lanes.enumerated()), id: \.element.id) { index, lane in
+            windowTag(lane, color: laneColor(index))
+                .offset(
+                    x: metrics.laneLineX(index) - dotCenterInTag,
+                    y: stickyTop(lane: lane, metrics: metrics)
+                )
+        }
+    }
+
+    private func windowTag(_ lane: WindowLane, color: Color) -> some View {
         let isSelected = selectedWindowID == lane.windowID && selectedSegmentID == nil
 
         return Button {
             onSelectWindow(lane.windowID)
         } label: {
             HStack(spacing: 5) {
-                RoundedRectangle(cornerRadius: 2)
+                Circle()
                     .fill(color)
                     .frame(width: 9, height: 9)
                 Text(#tk("Window \(lane.displayNumber)"))
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                Text("·")
-                    .foregroundStyle(.secondary)
                 Label("\(lane.screenshotCount)", systemSymbol: .photo)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .frame(height: tagHeight)
             .background(
                 isSelected ? AnyShapeStyle(color.opacity(0.2)) : AnyShapeStyle(.regularMaterial),
                 in: Capsule()
@@ -202,47 +150,34 @@ struct TimelineGraphView: View {
         .buttonStyle(.plain)
     }
 
-    private func node(color: Color, filled: Bool) -> some View {
-        Circle()
-            .fill(filled ? AnyShapeStyle(color) : AnyShapeStyle(.background))
-            .frame(width: 12, height: 12)
-            .overlay(Circle().strokeBorder(color, lineWidth: filled ? 0 : 2.5))
+    /// Pin the tag to the top of the viewport, but never above the lane's start nor below
+    /// its end — so it stays visible only while the window's lane is on screen.
+    private func stickyTop(lane: WindowLane, metrics: TimelineMetrics) -> CGFloat {
+        let restTop = metrics.y(lane.bornAt) - tagHeight / 2
+        let endTop = metrics.y(lane.diedAt) - tagHeight / 2
+        return min(max(scrollY + 6, restTop), max(restTop, endTop))
     }
 
-    // MARK: Geometry
+    // MARK: Geometry helpers
 
-    private struct Metrics {
-        var start: Date
-        var duration: TimeInterval
-        var contentHeight: CGFloat
-        var topPadding: CGFloat
-        var drawable: CGFloat
-        var gutterWidth: CGFloat
-        var laneWidth: CGFloat
-        var laneCount: Int
-
-        var totalWidth: CGFloat {
-            gutterWidth + laneWidth * CGFloat(laneCount)
-        }
-
-        func y(_ date: Date) -> CGFloat {
-            topPadding + CGFloat(date.timeIntervalSince(start) / duration) * drawable
-        }
+    private func index(of lane: WindowLane) -> Int {
+        timeline.lanes.firstIndex(where: { $0.id == lane.id }) ?? 0
     }
 
-    private var metrics: Metrics {
+    private var metrics: TimelineMetrics {
         let start = timeline.startedAt
         let duration = max(1, effectiveEnd.timeIntervalSince(start))
-        let raw = CGFloat(duration) * pointsPerSecond + topPadding + bottomPadding
-        let contentHeight = min(max(raw, minContentHeight), maxContentHeight)
-        return Metrics(
+        let raw = CGFloat(duration) + 88
+        let contentHeight = min(max(raw, 480), 5000)
+        return TimelineMetrics(
             start: start,
             duration: duration,
             contentHeight: contentHeight,
-            topPadding: topPadding,
-            drawable: contentHeight - topPadding - bottomPadding,
-            gutterWidth: gutterWidth,
-            laneWidth: laneWidth,
+            topPadding: 52,
+            drawable: contentHeight - 88,
+            gutterWidth: 76,
+            laneWidth: 172,
+            lineInset: 22,
             laneCount: timeline.lanes.count
         )
     }
@@ -257,21 +192,151 @@ struct TimelineGraphView: View {
         return candidates.max() ?? timeline.startedAt
     }
 
-    private func tickDates(_ metrics: Metrics) -> [Date] {
-        let count = max(2, Int(metrics.drawable / 120))
-        return (0 ... count).map { index in
-            metrics.start.addingTimeInterval(metrics.duration * Double(index) / Double(count))
-        }
-    }
-
     private func title(for segment: WindowTitleSegment) -> String {
         if let title = segment.title, !title.isEmpty {
             return title
         }
         return String(localized: "Untitled")
     }
+}
 
-    private static func color(_ index: Int) -> Color {
-        palette[index % palette.count]
+// MARK: - Geometry
+
+struct TimelineMetrics: Equatable {
+    var start: Date
+    var duration: TimeInterval
+    var contentHeight: CGFloat
+    var topPadding: CGFloat
+    var drawable: CGFloat
+    var gutterWidth: CGFloat
+    var laneWidth: CGFloat
+    var lineInset: CGFloat
+    var laneCount: Int
+
+    var totalWidth: CGFloat {
+        gutterWidth + laneWidth * CGFloat(laneCount)
+    }
+
+    func y(_ date: Date) -> CGFloat {
+        topPadding + CGFloat(date.timeIntervalSince(start) / duration) * drawable
+    }
+
+    func laneOriginX(_ index: Int) -> CGFloat {
+        gutterWidth + laneWidth * CGFloat(index)
+    }
+
+    func laneLineX(_ index: Int) -> CGFloat {
+        laneOriginX(index) + lineInset
+    }
+
+    func tickDates() -> [Date] {
+        let count = max(2, Int(drawable / 120))
+        return (0 ... count).map { index in
+            start.addingTimeInterval(duration * Double(index) / Double(count))
+        }
+    }
+}
+
+// MARK: - Static drawing (lines, dotted unavailable spans, nodes, gridlines)
+
+/// The non-interactive layer of the timeline. Isolated and `Equatable` so it is not
+/// re-drawn while the user scrolls (only the sticky tags move on scroll).
+private struct TimelineCanvas: View, Equatable {
+    var timeline: SessionTimeline
+    var selectedSegmentID: UUID?
+    var metrics: TimelineMetrics
+
+    private let nodeFill = Color(nsColor: .windowBackgroundColor)
+
+    var body: some View {
+        Canvas { context, _ in
+            drawGridlines(context)
+
+            for (index, lane) in timeline.lanes.enumerated() {
+                draw(lane: lane, color: laneColor(index), context: context)
+            }
+        }
+        .frame(width: metrics.totalWidth, height: metrics.contentHeight)
+    }
+
+    private func drawGridlines(_ context: GraphicsContext) {
+        for date in metrics.tickDates() {
+            var path = Path()
+            let y = metrics.y(date)
+            path.move(to: CGPoint(x: metrics.gutterWidth - 8, y: y))
+            path.addLine(to: CGPoint(x: metrics.totalWidth, y: y))
+            context.stroke(path, with: .color(.gray.opacity(0.15)), lineWidth: 1)
+        }
+    }
+
+    private func draw(lane: WindowLane, color: Color, context: GraphicsContext) {
+        let x = metrics.laneLineX(laneIndex(lane))
+
+        for interval in lineIntervals(lane) {
+            var path = Path()
+            path.move(to: CGPoint(x: x, y: metrics.y(interval.start)))
+            path.addLine(to: CGPoint(x: x, y: metrics.y(interval.end)))
+            if interval.unavailable {
+                context.stroke(
+                    path,
+                    with: .color(color.opacity(0.55)),
+                    style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: [1, 5])
+                )
+            } else {
+                context.stroke(
+                    path,
+                    with: .color(color.opacity(0.85)),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round)
+                )
+            }
+        }
+
+        if let selectedSegmentID, let segment = lane.segments.first(where: { $0.id == selectedSegmentID }) {
+            var path = Path()
+            path.move(to: CGPoint(x: x, y: metrics.y(segment.startedAt)))
+            path.addLine(to: CGPoint(x: x, y: metrics.y(segment.endedAt)))
+            context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 5, lineCap: .round))
+        }
+
+        node(at: CGPoint(x: x, y: metrics.y(lane.diedAt)), radius: 5.5, color: color, context: context)
+        for segment in lane.segments.dropFirst() {
+            node(at: CGPoint(x: x, y: metrics.y(segment.startedAt)), radius: 4.5, color: color, context: context)
+        }
+    }
+
+    private func node(at center: CGPoint, radius: CGFloat, color: Color, context: GraphicsContext) {
+        let rect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+        context.fill(Path(ellipseIn: rect), with: .color(nodeFill))
+        context.stroke(Path(ellipseIn: rect), with: .color(color), lineWidth: 2.5)
+    }
+
+    private func laneIndex(_ lane: WindowLane) -> Int {
+        timeline.lanes.firstIndex(where: { $0.id == lane.id }) ?? 0
+    }
+
+    /// Break the lane into solid (captured) and dotted (unavailable) intervals.
+    private func lineIntervals(_ lane: WindowLane) -> [(start: Date, end: Date, unavailable: Bool)] {
+        let born = lane.bornAt
+        let died = max(lane.bornAt, lane.diedAt)
+        guard born < died else { return [] }
+
+        var bounds: Set<Date> = [born, died]
+        for span in timeline.unavailableSpans {
+            let clippedStart = max(born, span.startedAt)
+            let clippedEnd = min(died, span.endedAt)
+            if clippedStart < clippedEnd {
+                bounds.insert(clippedStart)
+                bounds.insert(clippedEnd)
+            }
+        }
+
+        let sorted = bounds.sorted()
+        return (0 ..< sorted.count - 1).map { i in
+            let start = sorted[i]
+            let end = sorted[i + 1]
+            let mid = start.addingTimeInterval(end.timeIntervalSince(start) / 2)
+            let unavailable = timeline.unavailableSpans.contains { $0.startedAt <= mid && mid < $0.endedAt }
+            return (start, end, unavailable)
+        }
     }
 }

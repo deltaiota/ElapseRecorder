@@ -1,10 +1,10 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%lld" : {
+    "·" : {
 
     },
-    "%lld Screenshots" : {
+    "%lld" : {
 
     },
     "1h" : {
@@ -20,9 +20,6 @@
 
     },
     "All Screenshots" : {
-
-    },
-    "All Windows" : {
 
     },
     "ApplicationSelectionSheet.chooseApplicationFilesManuallyIfTheApplicationYouWantIs…" : {
@@ -595,28 +592,6 @@
     "Screenshot Quality" : {
 
     },
-    "ScreenshotGridBottomBar.WindowTitle.windowWindowDisplayNumber" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Window %lld"
-          }
-        }
-      }
-    },
-    "ScreenshotGridBottomBar.WindowTitle.windowWindowDisplayNumberLabel" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Window %1$lld: %2$@"
-          }
-        }
-      }
-    },
     "Screenshots" : {
 
     },
@@ -659,18 +634,18 @@
     "Timeline" : {
 
     },
-    "TimelineGraphView.LaneHeader.laneScreenshotCountScreenshots" : {
+    "TimelineGraphView.SegmentLayer.titleForSegmentSegmentScreenshotCountScreenshots" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%lld screenshots"
+            "value" : "%1$@ · %2$lld screenshots"
           }
         }
       }
     },
-    "TimelineGraphView.LaneHeader.windowLaneDisplayNumber" : {
+    "TimelineGraphView.WindowHeader.windowLaneDisplayNumber" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -680,6 +655,9 @@
           }
         }
       }
+    },
+    "Unavailable" : {
+
     },
     "UnavailableCell.unavailableForFormatted" : {
       "extractionState" : "extracted_with_value",
@@ -702,9 +680,6 @@
 
     },
     "Whitelist this app to configure capture." : {
-
-    },
-    "Window" : {
 
     },
     "Windows and screenshots will appear here." : {

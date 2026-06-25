@@ -39,6 +39,7 @@ struct TimelineGraphView: View {
                 ZStack(alignment: .topLeading) {
                     TimelineCanvas(timeline: timeline, selectedSegmentID: selectedSegmentID, metrics: metrics)
                         .equatable()
+                        .allowsHitTesting(false)
 
                     gutterLabels(metrics)
                     segmentBlocks(metrics)
@@ -64,8 +65,9 @@ struct TimelineGraphView: View {
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .frame(width: metrics.gutterWidth - 12, alignment: .trailing)
-                .offset(x: 0, y: metrics.y(date) - 6)
+                .contentShape(.rect)
                 .help(Text(date, format: .dateTime.year().month().day().hour().minute().second()))
+                .offset(x: 0, y: metrics.y(date) - 6)
         }
     }
 
@@ -138,9 +140,12 @@ struct TimelineGraphView: View {
                 Text(#tk("Window \(lane.displayNumber)"))
                     .font(.caption.weight(.semibold))
                     .lineLimit(1)
-                Label("\(lane.screenshotCount)", systemSymbol: .photo)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 3) {
+                    Image(systemSymbol: .photo)
+                    Text("\(lane.screenshotCount)")
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 8)
             .frame(height: tagHeight)

@@ -78,7 +78,7 @@ struct DetailPaneView: View {
                     .foregroundStyle(.tertiary)
 
                 windowPicker()
-                    .menuStyle(.borderlessButton)
+                    .buttonStyle(.borderless)
             }
 
             Spacer()

@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%lld" : {
+
+    },
     "%lld Screenshots" : {
 
     },
@@ -369,6 +372,9 @@
     "Auto Capture" : {
 
     },
+    "Back to timeline" : {
+
+    },
     "Capture Interval" : {
 
     },
@@ -541,6 +547,9 @@
     "No screenshots" : {
 
     },
+    "No Windows Captured" : {
+
+    },
     "Pause" : {
 
     },
@@ -644,6 +653,34 @@
     "Stop Capture" : {
 
     },
+    "This session has no recorded windows yet." : {
+
+    },
+    "Timeline" : {
+
+    },
+    "TimelineGraphView.LaneHeader.laneScreenshotCountScreenshots" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%lld screenshots"
+          }
+        }
+      }
+    },
+    "TimelineGraphView.LaneHeader.windowLaneDisplayNumber" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Window %lld"
+          }
+        }
+      }
+    },
     "UnavailableCell.unavailableForFormatted" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -654,6 +691,9 @@
           }
         }
       }
+    },
+    "Untitled" : {
+
     },
     "Whitelist" : {
 

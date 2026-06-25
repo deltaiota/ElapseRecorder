@@ -1,18 +1,11 @@
-import ComposableArchitecture
 import SFSafeSymbols
 import SwiftUI
-import TranslateKit
 
-/// The detail-pane bottom bar: thumbnail-size controls, jump-to-latest, an optional
-/// window picker, and export.
+/// The detail-pane bottom bar: thumbnail-size controls, jump-to-latest, and export.
 struct ScreenshotGridBottomBar: View {
     @Binding var gridItemSize: GridItemSize
-    var showsWindowPicker: Bool
-    var windows: [WindowCaptureSummary]
-    @Binding var windowSelection: ViewerFeature.State.WindowPickerSelection
     var onJumpToLatest: () -> Void
     var onExport: () -> Void
-    var onBackToTimeline: (() -> Void)? = nil
 
     @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
     @State private var gridItemSizeLargerButtonAnimationTrigger: Int = 0
@@ -23,18 +16,6 @@ struct ScreenshotGridBottomBar: View {
             Divider()
 
             HStack(spacing: 12) {
-                if let onBackToTimeline {
-                    Button {
-                        onBackToTimeline()
-                    } label: {
-                        Label("Timeline", systemSymbol: .chevronBackward)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("Back to timeline")
-
-                    Divider().frame(height: 16)
-                }
-
                 HStack(spacing: 6) {
                     Button {
                         gridItemSize = gridItemSize.steppedDown()
@@ -85,30 +66,6 @@ struct ScreenshotGridBottomBar: View {
                 .buttonStyle(.borderless)
                 .help("Jump to latest")
 
-                if showsWindowPicker {
-                    Divider().frame(height: 16)
-
-                    Picker("Window", selection: $windowSelection) {
-                        Text("All Windows")
-                            .tag(ViewerFeature.State.WindowPickerSelection.all)
-
-                        if !windows.isEmpty {
-                            Divider()
-
-                            ForEach(windows) { window in
-                                Button {} label: {
-                                    Text(windowTitle(window))
-
-                                    Text("\(window.screenshotCount) Screenshots")
-                                }
-                                .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
-                            }
-                        }
-                    }
-                    .labelsHidden()
-                    .buttonStyle(.borderless)
-                }
-
                 Spacer()
 
                 Button("Export…") { onExport() }
@@ -116,12 +73,5 @@ struct ScreenshotGridBottomBar: View {
             .padding()
         }
         .background(.bar)
-    }
-
-    private func windowTitle(_ window: WindowCaptureSummary) -> String {
-        if let label = window.label, !label.isEmpty {
-            return #tk("Window \(window.displayNumber): \(label)")
-        }
-        return #tk("Window \(window.displayNumber)")
     }
 }

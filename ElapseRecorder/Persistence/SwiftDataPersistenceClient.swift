@@ -295,6 +295,97 @@ final class SwiftDataPersistenceStore {
         )
     }
 
+    func sessionTimeline(_ sessionID: UUID) throws -> SessionTimeline {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: sessionID, context: context) else {
+            throw CaptureEngineError.sessionNotFound(sessionID)
+        }
+
+        let lanes = session.windows
+            .sorted { $0.displayNumber < $1.displayNumber }
+            .map(windowLane)
+
+        let unavailableSpans = session.unavailableRecords
+            .sorted { $0.startedAt < $1.startedAt }
+            .map { TimeSpan(startedAt: $0.startedAt, endedAt: $0.endedAt) }
+
+        return SessionTimeline(
+            sessionID: sessionID,
+            startedAt: session.startedAt,
+            endedAt: session.endedAt,
+            lanes: lanes,
+            unavailableSpans: unavailableSpans
+        )
+    }
+
+    private func windowLane(_ window: MonitoredWindowModel) -> WindowLane {
+        let bornAt = window.firstSeenAt
+        let diedAt = max(window.firstSeenAt, window.lastSeenAt)
+        let screenshotTimes = window.screenshots.map(\.capturedAt).sorted()
+        let observations = window.titleObservations.sorted { $0.observedAt < $1.observedAt }
+
+        return WindowLane(
+            windowID: window.id,
+            displayNumber: window.displayNumber,
+            systemWindowID: window.systemWindowID,
+            bornAt: bornAt,
+            diedAt: diedAt,
+            segments: titleSegments(
+                observations: observations,
+                fallbackID: window.id,
+                fallbackTitle: window.label,
+                bornAt: bornAt,
+                diedAt: diedAt,
+                screenshotTimes: screenshotTimes
+            ),
+            screenshotCount: screenshotTimes.count
+        )
+    }
+
+    /// Split a window's life into constant-title segments. Each title observation starts a
+    /// new segment that runs until the next observation (or the window's death). A window
+    /// with no recorded observations still yields one whole-life segment.
+    private func titleSegments(
+        observations: [WindowTitleObservationModel],
+        fallbackID: UUID,
+        fallbackTitle: String?,
+        bornAt: Date,
+        diedAt: Date,
+        screenshotTimes: [Date]
+    ) -> [WindowTitleSegment] {
+        guard !observations.isEmpty else {
+            return [
+                WindowTitleSegment(
+                    id: fallbackID,
+                    title: fallbackTitle,
+                    startedAt: bornAt,
+                    endedAt: diedAt,
+                    screenshotCount: screenshotTimes.count
+                ),
+            ]
+        }
+
+        return observations.enumerated().map { index, observation in
+            let isLast = index + 1 == observations.count
+            let startedAt = index == 0 ? bornAt : observation.observedAt
+            let endedAt = isLast ? diedAt : observations[index + 1].observedAt
+
+            // Count screenshots inside the segment; the final segment includes its end so a
+            // capture taken at the window's last-seen instant isn't dropped.
+            let screenshotCount = screenshotTimes.filter { time in
+                time >= startedAt && (isLast ? time <= endedAt : time < endedAt)
+            }.count
+
+            return WindowTitleSegment(
+                id: observation.id,
+                title: observation.title,
+                startedAt: startedAt,
+                endedAt: max(startedAt, endedAt),
+                screenshotCount: screenshotCount
+            )
+        }
+    }
+
     private func allSessions() throws -> [CaptureSessionModel] {
         let context = ModelContext(modelContainer)
         return try context.fetch(FetchDescriptor<CaptureSessionModel>())
@@ -394,6 +485,9 @@ extension PersistenceClient {
             },
             timelineForApp: { bundleIdentifier in
                 try await store.timelineForApp(bundleIdentifier)
+            },
+            sessionTimeline: { sessionID in
+                try await store.sessionTimeline(sessionID)
             }
         )
     }
@@ -415,6 +509,7 @@ extension PersistenceClient {
         screenshotsForApp: { _ in throw CaptureEngineError.persistenceUnavailable },
         timelineForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         timelineForWindow: { _, _ in throw CaptureEngineError.persistenceUnavailable },
-        timelineForApp: { _ in throw CaptureEngineError.persistenceUnavailable }
+        timelineForApp: { _ in throw CaptureEngineError.persistenceUnavailable },
+        sessionTimeline: { _ in throw CaptureEngineError.persistenceUnavailable }
     )
 }

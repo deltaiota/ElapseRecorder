@@ -341,6 +341,94 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         XCTAssertEqual(domainHistory.map(\.title), ["Untitled", "Notes.txt"])
     }
 
+    @MainActor
+    func testSessionTimelineAssemblesLanesSegmentsAndUnavailableSpans() async throws {
+        let container = try inMemoryContainer()
+        let client = PersistenceClient.live(modelContainer: container)
+
+        let session = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000601"),
+            bundleIdentifier: "com.example.TextApp",
+            displayName: "Text App",
+            processIdentifier: 601,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        try await client.openSession(session)
+
+        let firstObservation = try WindowTitleObservation(
+            id: uuid("00000000-0000-0000-0000-000000000701"),
+            title: "Untitled",
+            observedAt: Date(timeIntervalSince1970: 110)
+        )
+        let secondObservation = try WindowTitleObservation(
+            id: uuid("00000000-0000-0000-0000-000000000702"),
+            title: "Notes.txt",
+            observedAt: Date(timeIntervalSince1970: 150)
+        )
+        let window = try MonitoredWindow(
+            id: uuid("00000000-0000-0000-0000-000000000603"),
+            sessionID: session.id,
+            systemWindowID: 700,
+            displayNumber: 1,
+            label: "Untitled",
+            firstSeenAt: Date(timeIntervalSince1970: 110),
+            lastSeenAt: Date(timeIntervalSince1970: 200),
+            titleHistory: [firstObservation, secondObservation]
+        )
+        try await client.upsertWindow(window)
+
+        // Two screenshots in the "Untitled" segment [110, 150), two in "Notes.txt" [150, 200].
+        for (index, capturedAt) in [110, 130, 160, 200].enumerated() {
+            let screenshot = try ScreenshotRecord(
+                id: uuid("00000000-0000-0000-0000-00000000080\(index)"),
+                windowID: window.id,
+                sessionID: session.id,
+                capturedAt: Date(timeIntervalSince1970: TimeInterval(capturedAt)),
+                fileURL: URL(filePath: "/tmp/shot-\(index).heic"),
+                fileSizeBytes: 10
+            )
+            try await client.recordScreenshot(screenshot)
+        }
+
+        let unavailable = try CaptureUnavailableRecord(
+            id: uuid("00000000-0000-0000-0000-000000000901"),
+            sessionID: session.id,
+            startedAt: Date(timeIntervalSince1970: 200),
+            endedAt: Date(timeIntervalSince1970: 210),
+            reason: .windowMinimized
+        )
+        try await client.recordCaptureUnavailable(unavailable)
+
+        let timeline = try await client.sessionTimeline(session.id)
+
+        XCTAssertEqual(timeline.startedAt, Date(timeIntervalSince1970: 100))
+        XCTAssertNil(timeline.endedAt)
+        XCTAssertEqual(timeline.unavailableSpans, [
+            TimeSpan(startedAt: Date(timeIntervalSince1970: 200), endedAt: Date(timeIntervalSince1970: 210)),
+        ])
+
+        let lane = try XCTUnwrap(timeline.lanes.first)
+        XCTAssertEqual(timeline.lanes.count, 1)
+        XCTAssertEqual(lane.windowID, window.id)
+        XCTAssertEqual(lane.displayNumber, 1)
+        XCTAssertEqual(lane.bornAt, Date(timeIntervalSince1970: 110))
+        XCTAssertEqual(lane.diedAt, Date(timeIntervalSince1970: 200))
+        XCTAssertEqual(lane.screenshotCount, 4)
+
+        XCTAssertEqual(lane.segments.map(\.title), ["Untitled", "Notes.txt"])
+        XCTAssertEqual(lane.segments.map(\.id), [firstObservation.id, secondObservation.id])
+        XCTAssertEqual(
+            lane.segments.map(\.startedAt),
+            [Date(timeIntervalSince1970: 110), Date(timeIntervalSince1970: 150)]
+        )
+        XCTAssertEqual(
+            lane.segments.map(\.endedAt),
+            [Date(timeIntervalSince1970: 150), Date(timeIntervalSince1970: 200)]
+        )
+        // First segment [110,150): captures at 110 and 130. Second [150,200]: 160 and 200.
+        XCTAssertEqual(lane.segments.map(\.screenshotCount), [2, 2])
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: Schema.elapseRecorder, configurations: [configuration])

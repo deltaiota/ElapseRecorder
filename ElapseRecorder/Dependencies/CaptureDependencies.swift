@@ -81,6 +81,7 @@ nonisolated struct PersistenceClient {
     var timelineForSession: @Sendable (_ sessionID: UUID) async throws -> [CaptureTimelineEntry]
     var timelineForWindow: @Sendable (_ sessionID: UUID, _ windowID: UUID) async throws -> [CaptureTimelineEntry]
     var timelineForApp: @Sendable (_ bundleIdentifier: String) async throws -> [CaptureTimelineEntry]
+    var sessionTimeline: @Sendable (_ sessionID: UUID) async throws -> SessionTimeline
 }
 
 nonisolated struct ThumbnailClient {
@@ -655,6 +656,10 @@ nonisolated extension PersistenceClient {
         timelineForApp: { _ in
             reportIssue("PersistenceClient.timelineForApp is unimplemented")
             return []
+        },
+        sessionTimeline: { _ in
+            reportIssue("PersistenceClient.sessionTimeline is unimplemented")
+            return SessionTimeline(sessionID: UUID(), startedAt: .distantPast, endedAt: nil, lanes: [], unavailableSpans: [])
         }
     )
 }

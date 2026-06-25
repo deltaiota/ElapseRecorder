@@ -13,12 +13,18 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
-            $0.exportDestinationClient.chooseVideoDestination = { _ in destination }
+            $0.exportPanelClient.present = { _ in
+                ExportSelection(
+                    destinationURL: destination,
+                    options: ExportOptions(format: .movHEVC, framesPerSecond: 24)
+                )
+            }
             $0.timelapseExportClient.export = { request in
                 AsyncThrowingStream { continuation in
                     XCTAssertEqual(request.imageURLs, urls)
                     XCTAssertEqual(request.destinationURL, destination)
-                    XCTAssertEqual(request.framesPerSecond, 12)
+                    XCTAssertEqual(request.format, .movHEVC)
+                    XCTAssertEqual(request.framesPerSecond, 24)
                     continuation.yield(0.5)
                     continuation.yield(1.0)
                     continuation.finish()
@@ -27,7 +33,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.fileRevealClient.reveal = { url in revealed.setValue(url) }
         }
 
-        await store.send(.exportTimelapseRequested(urls: urls, framesPerSecond: 12)) {
+        await store.send(.exportTimelapseRequested(urls: urls)) {
             $0.exportProgress = 0
         }
         await store.receive(\.exportProgressed) {
@@ -47,11 +53,11 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
-            $0.exportDestinationClient.chooseVideoDestination = { _ in nil }
+            $0.exportPanelClient.present = { _ in nil }
             $0.fileRevealClient.reveal = { _ in }
         }
 
-        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")], framesPerSecond: 12)) {
+        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")])) {
             $0.exportProgress = 0
         }
         await store.receive(\.exportCancelled) {

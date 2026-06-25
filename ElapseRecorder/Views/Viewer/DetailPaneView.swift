@@ -11,7 +11,6 @@ struct DetailPaneView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
     @Default(.screenshotGridItemSize) private var gridItemSize
-    @Default(.exportFramesPerSecond) private var exportFramesPerSecond
     @State private var jumpToLatestTrigger = 0
 
     var body: some View {
@@ -178,10 +177,7 @@ struct DetailPaneView: View {
             onJumpToLatest: { jumpToLatestTrigger += 1 },
             isExportDisabled: exportScopeURLs.isEmpty || store.exportProgress != nil,
             onExport: {
-                store.send(.exportTimelapseRequested(
-                    urls: exportScopeURLs,
-                    framesPerSecond: exportFramesPerSecond
-                ))
+                store.send(.exportTimelapseRequested(urls: exportScopeURLs))
             }
         )
     }

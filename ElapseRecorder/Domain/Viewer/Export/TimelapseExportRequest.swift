@@ -4,5 +4,6 @@ import Foundation
 nonisolated struct TimelapseExportRequest: Equatable {
     var imageURLs: [URL]
     var destinationURL: URL
+    var format: TimelapseVideoFormat
     var framesPerSecond: Int
 }

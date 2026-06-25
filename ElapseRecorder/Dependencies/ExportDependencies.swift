@@ -3,7 +3,39 @@ import AppKit
 import ComposableArchitecture
 import CoreVideo
 import Foundation
+import SwiftUI
 import UniformTypeIdentifiers
+
+// MARK: - Format → AVFoundation mapping
+
+extension TimelapseVideoFormat {
+    var contentType: UTType {
+        switch self {
+        case .mp4H264:
+            .mpeg4Movie
+        case .movH264, .movHEVC:
+            .quickTimeMovie
+        }
+    }
+
+    var avFileType: AVFileType {
+        switch self {
+        case .mp4H264:
+            .mp4
+        case .movH264, .movHEVC:
+            .mov
+        }
+    }
+
+    var codec: AVVideoCodecType {
+        switch self {
+        case .mp4H264, .movH264:
+            .h264
+        case .movHEVC:
+            .hevc
+        }
+    }
+}
 
 // MARK: - Clients
 
@@ -12,9 +44,10 @@ nonisolated struct TimelapseExportClient {
     var export: @Sendable (_ request: TimelapseExportRequest) -> AsyncThrowingStream<Double, Error>
 }
 
-/// Asks the user where to save an exported file via a save panel.
-nonisolated struct ExportDestinationClient {
-    var chooseVideoDestination: @Sendable (_ suggestedName: String) async -> URL?
+/// Presents the export save panel — with an accessory view for format and frame rate — and
+/// returns the chosen destination plus options.
+nonisolated struct ExportPanelClient {
+    var present: @Sendable (_ suggestedName: String) async -> ExportSelection?
 }
 
 // MARK: - Live values
@@ -44,20 +77,32 @@ extension TimelapseExportClient: DependencyKey {
     }
 }
 
-extension ExportDestinationClient: DependencyKey {
+extension ExportPanelClient: DependencyKey {
     static let liveValue = Self { suggestedName in
         await MainActor.run {
             let panel = NSSavePanel()
-            panel.allowedContentTypes = [.mpeg4Movie]
+            let model = ExportAccessoryModel()
+
+            panel.allowedContentTypes = [model.format.contentType]
             panel.nameFieldStringValue = suggestedName
             panel.canCreateDirectories = true
             panel.isExtensionHidden = false
-            return panel.runModal() == .OK ? panel.url : nil
+
+            let accessory = NSHostingView(
+                rootView: ExportOptionsAccessory(model: model) { [weak panel] format in
+                    panel?.allowedContentTypes = [format.contentType]
+                }
+            )
+            accessory.setFrameSize(accessory.fittingSize)
+            panel.accessoryView = accessory
+
+            guard panel.runModal() == .OK, let url = panel.url else { return nil }
+            return ExportSelection(destinationURL: url, options: model.options)
         }
     }
 
     static let testValue = Self { _ in
-        reportIssue("ExportDestinationClient.chooseVideoDestination is unimplemented")
+        reportIssue("ExportPanelClient.present is unimplemented")
         return nil
     }
 }
@@ -68,9 +113,9 @@ extension DependencyValues {
         set { self[TimelapseExportClient.self] = newValue }
     }
 
-    var exportDestinationClient: ExportDestinationClient {
-        get { self[ExportDestinationClient.self] }
-        set { self[ExportDestinationClient.self] = newValue }
+    var exportPanelClient: ExportPanelClient {
+        get { self[ExportPanelClient.self] }
+        set { self[ExportPanelClient.self] = newValue }
     }
 }
 
@@ -88,11 +133,11 @@ private enum TimelapseEncoder {
         let canvas = try canvasSize(for: request.imageURLs)
         try? FileManager.default.removeItem(at: request.destinationURL)
 
-        let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: .mp4)
+        let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: request.format.avFileType)
         let input = AVAssetWriterInput(
             mediaType: .video,
             outputSettings: [
-                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoCodecKey: request.format.codec,
                 AVVideoWidthKey: Int(canvas.width),
                 AVVideoHeightKey: Int(canvas.height),
             ]
@@ -152,7 +197,7 @@ private enum TimelapseEncoder {
         }
     }
 
-    /// The smallest even-sized canvas that fits every frame (H.264 wants even dimensions).
+    /// The smallest even-sized canvas that fits every frame (H.264/HEVC want even sides).
     private static func canvasSize(for urls: [URL]) throws -> CGSize {
         var maxWidth = 0
         var maxHeight = 0

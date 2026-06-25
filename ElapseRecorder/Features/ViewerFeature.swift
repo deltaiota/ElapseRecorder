@@ -97,7 +97,7 @@ struct ViewerFeature: Reducer {
         case quickLookURLChanged(URL?)
         case refresh
         case revealScreenshotInFinder(ScreenshotRecord)
-        case exportTimelapseRequested(urls: [URL], framesPerSecond: Int)
+        case exportTimelapseRequested(urls: [URL])
         case exportProgressed(Double)
         case exportCompleted(URL)
         case exportFailed(String)
@@ -113,7 +113,7 @@ struct ViewerFeature: Reducer {
     @Dependency(\.fileStorageClient) private var fileStorage
     @Dependency(\.persistenceClient) private var persistence
     @Dependency(\.timelapseExportClient) private var timelapseExport
-    @Dependency(\.exportDestinationClient) private var exportDestination
+    @Dependency(\.exportPanelClient) private var exportPanel
 
     private nonisolated enum CancelID: Hashable { case export }
 
@@ -264,17 +264,17 @@ struct ViewerFeature: Reducer {
                     await fileReveal.reveal(record.fileURL)
                 }
 
-            case let .exportTimelapseRequested(urls, framesPerSecond):
+            case let .exportTimelapseRequested(urls):
                 guard !urls.isEmpty, state.exportProgress == nil else { return .none }
                 state.exportProgress = 0
 
                 let exporter = timelapseExport
-                let destinationClient = exportDestination
+                let panel = exportPanel
                 let fileReveal = fileReveal
                 let suggestedName = state.exportSuggestedFileName
 
                 return .run { send in
-                    guard let destination = await destinationClient.chooseVideoDestination(suggestedName) else {
+                    guard let selection = await panel.present(suggestedName) else {
                         await send(.exportCancelled)
                         return
                     }
@@ -282,14 +282,15 @@ struct ViewerFeature: Reducer {
                     do {
                         let request = TimelapseExportRequest(
                             imageURLs: urls,
-                            destinationURL: destination,
-                            framesPerSecond: framesPerSecond
+                            destinationURL: selection.destinationURL,
+                            format: selection.options.format,
+                            framesPerSecond: selection.options.framesPerSecond
                         )
                         for try await progress in exporter.export(request) {
                             await send(.exportProgressed(progress))
                         }
-                        await send(.exportCompleted(destination))
-                        await fileReveal.reveal(destination)
+                        await send(.exportCompleted(selection.destinationURL))
+                        await fileReveal.reveal(selection.destinationURL)
                     } catch is CancellationError {
                         await send(.exportCancelled)
                     } catch {

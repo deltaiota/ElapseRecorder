@@ -16,6 +16,7 @@ struct ViewerFeature: Reducer {
         var selectedSegment: WindowTitleSegment?
         var selectedScreenshotIDs: Set<UUID> = []
         var quickLookURL: URL?
+        var exportProgress: Double?
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
@@ -96,6 +97,12 @@ struct ViewerFeature: Reducer {
         case quickLookURLChanged(URL?)
         case refresh
         case revealScreenshotInFinder(ScreenshotRecord)
+        case exportTimelapseRequested(urls: [URL], framesPerSecond: Int)
+        case exportProgressed(Double)
+        case exportCompleted(URL)
+        case exportFailed(String)
+        case exportCancelled
+        case exportCancelButtonTapped
         case deleteSessionButtonTapped(CaptureSessionSummary)
         case deleteSelectedSessionButtonTapped
         case sessionDeleted(UUID)
@@ -105,6 +112,10 @@ struct ViewerFeature: Reducer {
     @Dependency(\.fileRevealClient) private var fileReveal
     @Dependency(\.fileStorageClient) private var fileStorage
     @Dependency(\.persistenceClient) private var persistence
+    @Dependency(\.timelapseExportClient) private var timelapseExport
+    @Dependency(\.exportDestinationClient) private var exportDestination
+
+    private nonisolated enum CancelID: Hashable { case export }
 
     var body: some Reducer<State, Action> {
         Reduce { state, action in
@@ -252,6 +263,61 @@ struct ViewerFeature: Reducer {
                 return .run { _ in
                     await fileReveal.reveal(record.fileURL)
                 }
+
+            case let .exportTimelapseRequested(urls, framesPerSecond):
+                guard !urls.isEmpty, state.exportProgress == nil else { return .none }
+                state.exportProgress = 0
+
+                let exporter = timelapseExport
+                let destinationClient = exportDestination
+                let fileReveal = fileReveal
+                let suggestedName = state.exportSuggestedFileName
+
+                return .run { send in
+                    guard let destination = await destinationClient.chooseVideoDestination(suggestedName) else {
+                        await send(.exportCancelled)
+                        return
+                    }
+
+                    do {
+                        let request = TimelapseExportRequest(
+                            imageURLs: urls,
+                            destinationURL: destination,
+                            framesPerSecond: framesPerSecond
+                        )
+                        for try await progress in exporter.export(request) {
+                            await send(.exportProgressed(progress))
+                        }
+                        await send(.exportCompleted(destination))
+                        await fileReveal.reveal(destination)
+                    } catch is CancellationError {
+                        await send(.exportCancelled)
+                    } catch {
+                        await send(.exportFailed(error.localizedDescription))
+                    }
+                }
+                .cancellable(id: CancelID.export)
+
+            case let .exportProgressed(progress):
+                state.exportProgress = progress
+                return .none
+
+            case .exportCompleted:
+                state.exportProgress = nil
+                return .none
+
+            case let .exportFailed(message):
+                state.exportProgress = nil
+                state.errorMessage = message
+                return .none
+
+            case .exportCancelled:
+                state.exportProgress = nil
+                return .none
+
+            case .exportCancelButtonTapped:
+                state.exportProgress = nil
+                return .cancel(id: CancelID.export)
 
             case let .deleteSessionButtonTapped(session):
                 return deleteSession(session, state: &state)
@@ -478,6 +544,20 @@ extension ViewerFeature.State {
     var selectedSession: CaptureSessionSummary? {
         guard let selectedSessionID else { return nil }
         return sessions.first { $0.id == selectedSessionID }
+    }
+
+    /// A friendly default file name for an exported timelapse, based on the current app and
+    /// session selection.
+    var exportSuggestedFileName: String {
+        let appName = selectedBundleIdentifier
+            .flatMap { id in apps.first { $0.bundleIdentifier == id } }?
+            .displayName ?? "Capture"
+
+        if let startedAt = selectedSession?.startedAt {
+            let stamp = startedAt.formatted(.dateTime.year().month().day().hour().minute())
+            return "\(appName) Timelapse \(stamp)"
+        }
+        return "\(appName) Timelapse"
     }
 
     mutating func clearSelection() {

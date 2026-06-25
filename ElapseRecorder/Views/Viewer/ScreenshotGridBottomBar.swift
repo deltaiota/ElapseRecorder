@@ -5,6 +5,7 @@ import SwiftUI
 struct ScreenshotGridBottomBar: View {
     @Binding var gridItemSize: GridItemSize
     var onJumpToLatest: () -> Void
+    var isExportDisabled: Bool = false
     var onExport: () -> Void
 
     @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
@@ -77,6 +78,8 @@ struct ScreenshotGridBottomBar: View {
                 Spacer()
 
                 Button("Export…") { onExport() }
+                    .disabled(isExportDisabled)
+                    .help("Export the shown screenshots as a timelapse video")
             }
             .padding()
         }

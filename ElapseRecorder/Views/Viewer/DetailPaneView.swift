@@ -11,6 +11,7 @@ struct DetailPaneView: View {
     @Bindable var store: StoreOf<ViewerFeature>
 
     @Default(.screenshotGridItemSize) private var gridItemSize
+    @Default(.exportFramesPerSecond) private var exportFramesPerSecond
     @State private var jumpToLatestTrigger = 0
 
     var body: some View {
@@ -37,10 +38,40 @@ struct DetailPaneView: View {
             }
         }
         .background(.background)
+        .overlay {
+            if let progress = store.exportProgress {
+                exportProgressOverlay(progress)
+            }
+        }
         .quickLookPreview(
             $store.quickLookURL.sending(\.quickLookURLChanged),
             in: currentScreenshotURLs
         )
+    }
+
+    private func exportProgressOverlay(_ progress: Double) -> some View {
+        ZStack {
+            Color.black.opacity(0.25)
+                .ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                ProgressView(value: progress) {
+                    Text("Exporting Timelapse…")
+                        .font(.headline)
+                } currentValueLabel: {
+                    Text(progress, format: .percent.precision(.fractionLength(0)))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+                .frame(width: 240)
+
+                Button("Cancel", role: .cancel) {
+                    store.send(.exportCancelButtonTapped)
+                }
+            }
+            .padding(24)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }
     }
 
     /// Timeline graph or a window's grid, under a persistent breadcrumb.
@@ -145,7 +176,13 @@ struct DetailPaneView: View {
         ScreenshotGridBottomBar(
             gridItemSize: $gridItemSize,
             onJumpToLatest: { jumpToLatestTrigger += 1 },
-            onExport: {}
+            isExportDisabled: exportScopeURLs.isEmpty || store.exportProgress != nil,
+            onExport: {
+                store.send(.exportTimelapseRequested(
+                    urls: exportScopeURLs,
+                    framesPerSecond: exportFramesPerSecond
+                ))
+            }
         )
     }
 
@@ -156,6 +193,20 @@ struct DetailPaneView: View {
         return entries.compactMap { entry in
             if case let .screenshot(record) = entry { return record.fileURL }
             return nil
+        }
+    }
+
+    /// What a timelapse export covers: the multi-selection if the user picked several
+    /// frames, otherwise the whole current grid — always in chronological order.
+    private var exportScopeURLs: [URL] {
+        let entries = store.isShowingFlatGallery ? store.flatTimelineEntries : store.windowTimelineEntries
+        let selection = store.selectedScreenshotIDs
+        let useSelection = selection.count >= 2
+
+        return entries.compactMap { entry in
+            guard case let .screenshot(record) = entry else { return nil }
+            if useSelection, !selection.contains(record.id) { return nil }
+            return record.fileURL
         }
     }
 }

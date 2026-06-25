@@ -5,6 +5,61 @@ import XCTest
 
 final class ViewerFeatureTests: XCTestCase {
     @MainActor
+    func testExportTimelapseChoosesDestinationEncodesAndReveals() async {
+        let urls = [URL(filePath: "/tmp/a.heic"), URL(filePath: "/tmp/b.heic")]
+        let destination = URL(filePath: "/tmp/out.mp4")
+        let revealed = LockIsolated<URL?>(nil)
+
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.exportDestinationClient.chooseVideoDestination = { _ in destination }
+            $0.timelapseExportClient.export = { request in
+                AsyncThrowingStream { continuation in
+                    XCTAssertEqual(request.imageURLs, urls)
+                    XCTAssertEqual(request.destinationURL, destination)
+                    XCTAssertEqual(request.framesPerSecond, 12)
+                    continuation.yield(0.5)
+                    continuation.yield(1.0)
+                    continuation.finish()
+                }
+            }
+            $0.fileRevealClient.reveal = { url in revealed.setValue(url) }
+        }
+
+        await store.send(.exportTimelapseRequested(urls: urls, framesPerSecond: 12)) {
+            $0.exportProgress = 0
+        }
+        await store.receive(\.exportProgressed) {
+            $0.exportProgress = 0.5
+        }
+        await store.receive(\.exportProgressed) {
+            $0.exportProgress = 1.0
+        }
+        await store.receive(\.exportCompleted) {
+            $0.exportProgress = nil
+        }
+        XCTAssertEqual(revealed.value, destination)
+    }
+
+    @MainActor
+    func testExportTimelapseCancelledWhenNoDestinationChosen() async {
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.exportDestinationClient.chooseVideoDestination = { _ in nil }
+            $0.fileRevealClient.reveal = { _ in }
+        }
+
+        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")], framesPerSecond: 12)) {
+            $0.exportProgress = 0
+        }
+        await store.receive(\.exportCancelled) {
+            $0.exportProgress = nil
+        }
+    }
+
+    @MainActor
     func testSelectingSessionLoadsWindowsAndTimelineGraph() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000601"))
         let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000602"))

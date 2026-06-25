@@ -157,3 +157,47 @@ struct SessionListColumn: View {
         return Text(session.startedAt, style: .timer)
     }
 }
+
+#Preview {
+    SessionListColumn(
+        store: Store(
+            initialState: {
+                var state = ViewerFeature.State()
+                state.selectedBundleIdentifier = "com.apple.TextEdit"
+                state.selectedSessionID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")
+                state.sessions = [
+                    CaptureSessionSummary(
+                        id: UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!,
+                        bundleIdentifier: "com.apple.TextEdit",
+                        displayName: "TextEdit",
+                        startedAt: Date.now.addingTimeInterval(-1800),
+                        endedAt: nil,
+                        windowCount: 2,
+                        screenshotCount: 40
+                    ),
+                    CaptureSessionSummary(
+                        id: UUID(),
+                        bundleIdentifier: "com.apple.TextEdit",
+                        displayName: "TextEdit",
+                        startedAt: Date.now.addingTimeInterval(-90000),
+                        endedAt: Date.now.addingTimeInterval(-86400),
+                        windowCount: 1,
+                        screenshotCount: 12
+                    ),
+                ]
+                return state
+            }()
+        ) {
+            ViewerFeature()
+        },
+        settingsContext: CaptureSettingsView.Context(
+            app: AppCaptureSummary(bundleIdentifier: "com.apple.TextEdit", displayName: "TextEdit", sessionCount: 2, screenshotCount: 52, lastCapturedAt: .now),
+            whitelistConfig: WhitelistedAppConfig(bundleIdentifier: "com.apple.TextEdit", displayName: "TextEdit", captureInterval: 5, isEnabled: true),
+            isRunning: true,
+            isCapturing: true
+        ),
+        defaultCaptureInterval: 5,
+        actions: ViewerView.Actions()
+    )
+    .frame(width: 300, height: 640)
+}

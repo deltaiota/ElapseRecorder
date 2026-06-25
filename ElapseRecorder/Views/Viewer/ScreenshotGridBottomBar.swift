@@ -54,6 +54,14 @@ struct ScreenshotGridBottomBar: View {
                     .disabled(gridItemSize.isAtMaximum)
                     .help("Larger thumbnails")
                 }
+                .background {
+                    // The visible buttons carry Cmd+= (larger) and Cmd+- (smaller).
+                    // This hidden alias adds Cmd+Shift+= / numpad "+" as a second zoom-in binding.
+                    Button("Zoom In") { gridItemSize = gridItemSize.steppedUp() }
+                        .keyboardShortcut("+", modifiers: .command)
+                        .opacity(0)
+                        .accessibilityHidden(true)
+                }
 
                 Button {
                     onJumpToLatest()
@@ -74,4 +82,13 @@ struct ScreenshotGridBottomBar: View {
         }
         .background(.bar)
     }
+}
+
+#Preview {
+    ScreenshotGridBottomBar(
+        gridItemSize: .constant(.default),
+        onJumpToLatest: {},
+        onExport: {}
+    )
+    .frame(width: 520)
 }

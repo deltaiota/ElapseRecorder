@@ -191,7 +191,7 @@ private struct ScreenshotCell: View {
         ScreenshotThumbnailView(record: record, prefetch: prefetch)
             .aspectRatio(16 / 10, contentMode: .fit)
             .overlay(alignment: .bottomLeading) {
-                timestamp
+                timestamp()
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay {
@@ -216,7 +216,8 @@ private struct ScreenshotCell: View {
             .help(Text(record.capturedAt, format: .dateTime.hour().minute().second()))
     }
 
-    private var timestamp: some View {
+    @ViewBuilder
+    private func timestamp() -> some View {
         Text(record.capturedAt, format: .dateTime.hour().minute().second())
             .font(.caption2)
             .monospacedDigit()

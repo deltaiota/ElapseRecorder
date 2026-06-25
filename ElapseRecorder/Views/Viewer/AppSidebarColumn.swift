@@ -269,3 +269,31 @@ extension AppSidebarColumn {
         }
     }
 }
+
+#Preview {
+    AppSidebarColumn(
+        store: Store(
+            initialState: {
+                var state = ViewerFeature.State()
+                state.apps = [
+                    AppCaptureSummary(bundleIdentifier: "com.apple.TextEdit", displayName: "TextEdit", sessionCount: 3, screenshotCount: 128, lastCapturedAt: .now),
+                    AppCaptureSummary(bundleIdentifier: "com.apple.Safari", displayName: "Safari", sessionCount: 1, screenshotCount: 20, lastCapturedAt: .now),
+                ]
+                return state
+            }()
+        ) {
+            ViewerFeature()
+        },
+        captureConfiguration: ViewerView.CaptureConfiguration(
+            whitelistConfigs: [
+                WhitelistedAppConfig(bundleIdentifier: "com.apple.TextEdit", displayName: "TextEdit", captureInterval: 5, isEnabled: true),
+            ],
+            defaultCaptureInterval: 5,
+            activeCaptureBundleIdentifiers: ["com.apple.TextEdit"],
+            runningApplicationBundleIdentifiers: ["com.apple.TextEdit"],
+            unavailableReasonsByBundleIdentifier: [:]
+        ),
+        actions: ViewerView.Actions()
+    )
+    .frame(width: 260, height: 500)
+}

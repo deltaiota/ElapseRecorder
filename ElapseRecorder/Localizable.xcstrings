@@ -1,9 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "·" : {
-
-    },
     "%lld" : {
 
     },
@@ -369,9 +366,6 @@
     "Auto Capture" : {
 
     },
-    "Back to timeline" : {
-
-    },
     "Capture Interval" : {
 
     },
@@ -421,6 +415,28 @@
     },
     "Delete Session" : {
 
+    },
+    "DetailPaneView.WindowMenuTitle.windowWindowDisplayNumber" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Window %lld"
+          }
+        }
+      }
+    },
+    "DetailPaneView.WindowMenuTitle.windowWindowDisplayNumberLabel" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Window %1$lld: %2$@"
+          }
+        }
+      }
     },
     "Diagnostics" : {
 
@@ -634,7 +650,7 @@
     "Timeline" : {
 
     },
-    "TimelineGraphView.SegmentLayer.titleForSegmentSegmentScreenshotCountScreenshots" : {
+    "TimelineGraphView.SegmentBlock.titleForSegmentSegmentScreenshotCountScreenshots" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -645,7 +661,7 @@
         }
       }
     },
-    "TimelineGraphView.WindowHeader.windowLaneDisplayNumber" : {
+    "TimelineGraphView.WindowTag.windowLaneDisplayNumber" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
@@ -655,9 +671,6 @@
           }
         }
       }
-    },
-    "Unavailable" : {
-
     },
     "UnavailableCell.unavailableForFormatted" : {
       "extractionState" : "extracted_with_value",
@@ -680,6 +693,9 @@
 
     },
     "Whitelist this app to configure capture." : {
+
+    },
+    "Window" : {
 
     },
     "Windows and screenshots will appear here." : {

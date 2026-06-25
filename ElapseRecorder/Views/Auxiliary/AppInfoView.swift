@@ -79,3 +79,12 @@ struct AppInfoView: View {
         .padding()
     }
 }
+
+#Preview {
+    AppInfoView(
+        app: AppCaptureSummary(bundleIdentifier: "com.apple.Safari", displayName: "Safari", sessionCount: 5, screenshotCount: 210, lastCapturedAt: .now),
+        identity: InstalledAppIdentity(bundleIdentifier: "com.apple.Safari", recordedName: "Safari")
+    )
+    .padding()
+    .frame(width: 360)
+}

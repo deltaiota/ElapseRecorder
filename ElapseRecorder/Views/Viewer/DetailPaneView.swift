@@ -22,7 +22,7 @@ struct DetailPaneView: View {
                         bottomBar()
                     }
             } else if store.selectedSessionID != nil {
-                sessionDetail
+                sessionDetail()
             } else {
                 Color.clear
             }
@@ -37,14 +37,6 @@ struct DetailPaneView: View {
             }
         }
         .background(.background)
-        .background {
-            // The visible bottom-bar buttons carry Cmd+= (larger) and Cmd+- (smaller).
-            // This hidden alias adds Cmd+Shift+= / numpad "+" as a second zoom-in binding.
-            Button("Zoom In") { gridItemSize = gridItemSize.steppedUp() }
-                .keyboardShortcut("+", modifiers: .command)
-                .opacity(0)
-                .accessibilityHidden(true)
-        }
         .quickLookPreview(
             $store.quickLookURL.sending(\.quickLookURLChanged),
             in: currentScreenshotURLs
@@ -52,14 +44,15 @@ struct DetailPaneView: View {
     }
 
     /// Timeline graph or a window's grid, under a persistent breadcrumb.
-    private var sessionDetail: some View {
+    @ViewBuilder
+    private func sessionDetail() -> some View {
         VStack(spacing: 0) {
-            breadcrumbHeader
+            breadcrumbHeader()
 
             Divider()
 
             if store.isShowingTimelineGraph {
-                timelineGraph
+                timelineGraph()
             } else {
                 grid(entries: store.windowTimelineEntries)
                     .safeAreaInset(edge: .bottom) {
@@ -69,7 +62,8 @@ struct DetailPaneView: View {
         }
     }
 
-    private var breadcrumbHeader: some View {
+    @ViewBuilder
+    private func breadcrumbHeader() -> some View {
         HStack(spacing: 8) {
             if store.isShowingTimelineGraph {
                 Text("Timeline")
@@ -78,12 +72,13 @@ struct DetailPaneView: View {
                 Button("Timeline") {
                     store.send(.windowSelected(nil))
                 }
-                .buttonStyle(.link)
+                .buttonStyle(.plain)
 
                 Image(systemSymbol: .chevronCompactRight)
                     .foregroundStyle(.tertiary)
 
-                windowPicker
+                windowPicker()
+                    .menuStyle(.borderlessButton)
             }
 
             Spacer()
@@ -93,7 +88,8 @@ struct DetailPaneView: View {
         .background(.bar)
     }
 
-    private var windowPicker: some View {
+    @ViewBuilder
+    private func windowPicker() -> some View {
         Picker(
             "Window",
             selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)
@@ -115,7 +111,7 @@ struct DetailPaneView: View {
     }
 
     @ViewBuilder
-    private var timelineGraph: some View {
+    private func timelineGraph() -> some View {
         if let timeline = store.sessionTimeline {
             TimelineGraphView(
                 timeline: timeline,
@@ -162,4 +158,40 @@ struct DetailPaneView: View {
             return nil
         }
     }
+}
+
+#Preview {
+    DetailPaneView(
+        store: Store(
+            initialState: {
+                var state = ViewerFeature.State()
+                state.selectedBundleIdentifier = "com.apple.TextEdit"
+                state.selectedSessionID = UUID()
+                state.sessionTimeline = SessionTimeline(
+                    sessionID: state.selectedSessionID!,
+                    startedAt: Date(timeIntervalSince1970: 0),
+                    endedAt: Date(timeIntervalSince1970: 480),
+                    lanes: [
+                        WindowLane(
+                            windowID: UUID(),
+                            displayNumber: 1,
+                            systemWindowID: 1,
+                            bornAt: Date(timeIntervalSince1970: 0),
+                            diedAt: Date(timeIntervalSince1970: 480),
+                            segments: [
+                                WindowTitleSegment(id: UUID(), title: "Untitled", startedAt: Date(timeIntervalSince1970: 0), endedAt: Date(timeIntervalSince1970: 200), screenshotCount: 4),
+                                WindowTitleSegment(id: UUID(), title: "Notes.txt", startedAt: Date(timeIntervalSince1970: 200), endedAt: Date(timeIntervalSince1970: 480), screenshotCount: 9),
+                            ],
+                            screenshotCount: 13
+                        ),
+                    ],
+                    unavailableSpans: []
+                )
+                return state
+            }()
+        ) {
+            ViewerFeature()
+        }
+    )
+    .frame(width: 720, height: 600)
 }

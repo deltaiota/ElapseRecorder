@@ -11,8 +11,8 @@ struct CaptureSettingsView: View {
         HStack {
             if context.isWhitelisted {
                 VStack(spacing: 12) {
-                    captureIntervalSettings
-                    captureModeSettings
+                    captureIntervalSettings()
+                    captureModeSettings()
                 }
             } else {
                 Label("Whitelist this app to configure capture.", systemSymbol: .minusCircle)
@@ -25,7 +25,7 @@ struct CaptureSettingsView: View {
     }
 
     @ViewBuilder
-    private var captureIntervalSettings: some View {
+    private func captureIntervalSettings() -> some View {
         VStack(alignment: .leading) {
             Label("Capture Interval", systemSymbol: .timer)
                 .font(.caption)
@@ -75,7 +75,7 @@ struct CaptureSettingsView: View {
     }
 
     @ViewBuilder
-    private var captureModeSettings: some View {
+    private func captureModeSettings() -> some View {
         VStack(alignment: .leading) {
             Label("Capture Mode", systemSymbol: .camera)
                 .font(.caption)
@@ -95,13 +95,13 @@ struct CaptureSettingsView: View {
 
                 Spacer(minLength: 12)
 
-                captureModeControl
+                captureModeControl()
             }
         }
     }
 
     @ViewBuilder
-    private var captureModeControl: some View {
+    private func captureModeControl() -> some View {
         switch context.whitelistConfig?.captureMode {
         case .auto:
             if context.whitelistConfig?.isEnabled == true {
@@ -218,4 +218,19 @@ extension CaptureSettingsView {
             whitelistConfig != nil
         }
     }
+}
+
+#Preview {
+    CaptureSettingsView(
+        context: CaptureSettingsView.Context(
+            app: AppCaptureSummary(bundleIdentifier: "com.apple.TextEdit", displayName: "TextEdit", sessionCount: 3, screenshotCount: 128, lastCapturedAt: .now),
+            whitelistConfig: WhitelistedAppConfig(bundleIdentifier: "com.apple.TextEdit", displayName: "TextEdit", captureInterval: 5, isEnabled: true),
+            isRunning: true,
+            isCapturing: true
+        ),
+        defaultCaptureInterval: 5,
+        actions: ViewerView.Actions()
+    )
+    .padding()
+    .frame(width: 380)
 }

@@ -83,6 +83,10 @@ struct TimelineGraphView: View {
         let y0 = metrics.y(segment.startedAt)
         let height = max(20, metrics.y(segment.endedAt) - y0)
         let isSelected = selectedSegmentID == segment.id
+        // The first segment starts where the window tag rests, so push its title below the
+        // tag to avoid the tag covering it; later segments only clear their small node.
+        let isFirst = lane.segments.first?.id == segment.id
+        let titleY: CGFloat = isFirst ? tagHeight / 2 + 8 : 4
 
         return ZStack(alignment: .topLeading) {
             Color.clear
@@ -100,7 +104,7 @@ struct TimelineGraphView: View {
                 )
                 .overlay(Capsule().strokeBorder(isSelected ? AnyShapeStyle(color) : AnyShapeStyle(.clear), lineWidth: 1))
                 .frame(maxWidth: metrics.laneWidth - metrics.lineInset - 16, alignment: .leading)
-                .offset(x: metrics.lineInset + 10, y: 4)
+                .offset(x: metrics.lineInset + 10, y: titleY)
                 .allowsHitTesting(false)
         }
         .frame(width: metrics.laneWidth, height: height, alignment: .topLeading)
@@ -339,4 +343,47 @@ private struct TimelineCanvas: View, Equatable {
             return (start, end, unavailable)
         }
     }
+}
+
+#Preview {
+    TimelineGraphView(
+        timeline: SessionTimeline(
+            sessionID: UUID(),
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: Date(timeIntervalSince1970: 600),
+            lanes: [
+                WindowLane(
+                    windowID: UUID(),
+                    displayNumber: 1,
+                    systemWindowID: 1,
+                    bornAt: Date(timeIntervalSince1970: 0),
+                    diedAt: Date(timeIntervalSince1970: 600),
+                    segments: [
+                        WindowTitleSegment(id: UUID(), title: "Untitled", startedAt: Date(timeIntervalSince1970: 0), endedAt: Date(timeIntervalSince1970: 220), screenshotCount: 5),
+                        WindowTitleSegment(id: UUID(), title: "Report.txt", startedAt: Date(timeIntervalSince1970: 220), endedAt: Date(timeIntervalSince1970: 600), screenshotCount: 12),
+                    ],
+                    screenshotCount: 17
+                ),
+                WindowLane(
+                    windowID: UUID(),
+                    displayNumber: 2,
+                    systemWindowID: 2,
+                    bornAt: Date(timeIntervalSince1970: 120),
+                    diedAt: Date(timeIntervalSince1970: 480),
+                    segments: [
+                        WindowTitleSegment(id: UUID(), title: "Reference Image", startedAt: Date(timeIntervalSince1970: 120), endedAt: Date(timeIntervalSince1970: 480), screenshotCount: 8),
+                    ],
+                    screenshotCount: 8
+                ),
+            ],
+            unavailableSpans: [
+                TimeSpan(startedAt: Date(timeIntervalSince1970: 300), endedAt: Date(timeIntervalSince1970: 360)),
+            ]
+        ),
+        selectedWindowID: nil,
+        selectedSegmentID: nil,
+        onSelectWindow: { _ in },
+        onSelectSegment: { _, _ in }
+    )
+    .frame(width: 640, height: 720)
 }

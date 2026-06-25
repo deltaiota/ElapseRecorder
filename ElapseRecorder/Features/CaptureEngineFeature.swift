@@ -334,8 +334,17 @@ struct CaptureEngineFeature: Reducer {
                 active.unavailableStartedAt = nil
 
                 for window in capturableWindows {
+                    let title = normalizedWindowTitle(window.title)
+
                     if var monitoredWindow = active.windowsBySystemID[window.systemWindowID] {
                         monitoredWindow.lastSeenAt = seenAt
+                        // Record a rename only when the title actually changed, so the
+                        // history is one entry per distinct title rather than per tick.
+                        if monitoredWindow.titleHistory.last?.title != title {
+                            monitoredWindow.titleHistory.append(
+                                WindowTitleObservation(id: ids.uuid(), title: title, observedAt: seenAt)
+                            )
+                        }
                         active.windowsBySystemID[window.systemWindowID] = monitoredWindow
                         monitoredWindows.append(monitoredWindow)
                     } else {
@@ -344,9 +353,12 @@ struct CaptureEngineFeature: Reducer {
                             sessionID: active.session.id,
                             systemWindowID: window.systemWindowID,
                             displayNumber: active.nextWindowNumber,
-                            label: window.title,
+                            label: title,
                             firstSeenAt: seenAt,
-                            lastSeenAt: seenAt
+                            lastSeenAt: seenAt,
+                            titleHistory: [
+                                WindowTitleObservation(id: ids.uuid(), title: title, observedAt: seenAt),
+                            ]
                         )
                         active.nextWindowNumber += 1
                         active.windowsBySystemID[window.systemWindowID] = monitoredWindow
@@ -611,6 +623,17 @@ struct CaptureEngineFeature: Reducer {
 
     private func captureCycleID(_ sessionID: UUID) -> String {
         "capture-cycle-\(sessionID.uuidString)"
+    }
+
+    /// Normalize a raw window title for history tracking: trim whitespace and treat an
+    /// empty result as no title, so blank/whitespace flicker isn't recorded as a rename.
+    private func normalizedWindowTitle(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty
+        else {
+            return nil
+        }
+        return trimmed
     }
 
     private var workspaceEventsID: String {

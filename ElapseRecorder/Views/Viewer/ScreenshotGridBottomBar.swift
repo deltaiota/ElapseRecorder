@@ -12,7 +12,7 @@ struct ScreenshotGridBottomBar: View {
     @Binding var windowSelection: ViewerFeature.State.WindowPickerSelection
     var onJumpToLatest: () -> Void
     var onExport: () -> Void
-    
+
     @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
     @State private var gridItemSizeLargerButtonAnimationTrigger: Int = 0
     @State private var jumpToLatestButtonAnimationTrigger: Int = 0

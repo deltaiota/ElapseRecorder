@@ -52,6 +52,9 @@ final class MonitoredWindowModel {
     @Relationship(deleteRule: .cascade, inverse: \ScreenshotRecordModel.window)
     var screenshots: [ScreenshotRecordModel]
 
+    @Relationship(deleteRule: .cascade, inverse: \WindowTitleObservationModel.window)
+    var titleObservations: [WindowTitleObservationModel]
+
     init(
         id: UUID,
         systemWindowID: Int,
@@ -69,6 +72,27 @@ final class MonitoredWindowModel {
         self.lastSeenAt = lastSeenAt
         self.session = session
         screenshots = []
+        titleObservations = []
+    }
+}
+
+@Model
+final class WindowTitleObservationModel {
+    @Attribute(.unique) var id: UUID
+    var title: String?
+    var observedAt: Date
+    var window: MonitoredWindowModel?
+
+    init(
+        id: UUID,
+        title: String?,
+        observedAt: Date,
+        window: MonitoredWindowModel?
+    ) {
+        self.id = id
+        self.title = title
+        self.observedAt = observedAt
+        self.window = window
     }
 }
 
@@ -125,6 +149,7 @@ extension Schema {
     static let elapseRecorder = Schema([
         CaptureSessionModel.self,
         MonitoredWindowModel.self,
+        WindowTitleObservationModel.self,
         ScreenshotRecordModel.self,
         CaptureUnavailableRecordModel.self,
     ])
@@ -170,7 +195,10 @@ extension MonitoredWindowModel {
             displayNumber: displayNumber,
             label: label,
             firstSeenAt: firstSeenAt,
-            lastSeenAt: lastSeenAt
+            lastSeenAt: lastSeenAt,
+            titleHistory: titleObservations
+                .sorted { $0.observedAt < $1.observedAt }
+                .map(\.domainValue)
         )
     }
 
@@ -183,6 +211,12 @@ extension MonitoredWindowModel {
             lastSeenAt: lastSeenAt,
             screenshotCount: screenshots.count
         )
+    }
+}
+
+extension WindowTitleObservationModel {
+    var domainValue: WindowTitleObservation {
+        WindowTitleObservation(id: id, title: title, observedAt: observedAt)
     }
 }
 

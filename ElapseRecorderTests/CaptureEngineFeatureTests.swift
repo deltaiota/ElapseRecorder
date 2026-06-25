@@ -668,10 +668,10 @@ final class CaptureEngineFeatureTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1)
         )
         let firstWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000011"))
-        let secondWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000012"))
-        let firstUnavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
-        let secondUnavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
-        let ids = UUIDSequence([firstWindowID, secondWindowID, firstUnavailableID, secondUnavailableID])
+        let firstObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000012"))
+        let secondWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
+        let secondObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
+        let ids = UUIDSequence([firstWindowID, firstObservationID, secondWindowID, secondObservationID])
 
         var state = CaptureEngineFeature.State()
         state.whitelist = [config.bundleIdentifier: config]
@@ -728,7 +728,14 @@ final class CaptureEngineFeatureTests: XCTestCase {
                 displayNumber: 1,
                 label: "Canvas",
                 firstSeenAt: Date(timeIntervalSince1970: 10),
-                lastSeenAt: Date(timeIntervalSince1970: 10)
+                lastSeenAt: Date(timeIntervalSince1970: 10),
+                titleHistory: [
+                    WindowTitleObservation(
+                        id: firstObservationID,
+                        title: "Canvas",
+                        observedAt: Date(timeIntervalSince1970: 10)
+                    ),
+                ]
             )
             active.windowsBySystemID[777] = MonitoredWindow(
                 id: secondWindowID,
@@ -737,10 +744,102 @@ final class CaptureEngineFeatureTests: XCTestCase {
                 displayNumber: 2,
                 label: "Reference",
                 firstSeenAt: Date(timeIntervalSince1970: 10),
-                lastSeenAt: Date(timeIntervalSince1970: 10)
+                lastSeenAt: Date(timeIntervalSince1970: 10),
+                titleHistory: [
+                    WindowTitleObservation(
+                        id: secondObservationID,
+                        title: "Reference",
+                        observedAt: Date(timeIntervalSince1970: 10)
+                    ),
+                ]
             )
             $0.activeSessions[app.bundleIdentifier] = active
         }
+    }
+
+    @MainActor
+    func testWindowTitleChangeRecordsNewObservationInHistory() async throws {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.TextApp",
+            displayName: "Text App",
+            processIdentifier: 55
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let session = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A0")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1"))
+        let firstObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A2"))
+        let secondObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A3"))
+        let ids = UUIDSequence([windowID, firstObservationID, secondObservationID])
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session
+        )
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
+            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
+            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
+            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
+            $0.fileStorageClient.write = { data, _ in data.count }
+            $0.imageEncodingClient.encode = { _, _ in Data() }
+            $0.idGeneratorClient.uuid = { ids.next() }
+            $0.persistenceClient.recordCaptureUnavailable = { _ in }
+            $0.persistenceClient.upsertWindow = { _ in }
+            $0.screenCaptureClient.capture = { _ in throw CaptureEngineError.windowCaptureFailed(systemWindowID: -1) }
+            $0.loggingClient.log = { _, _, _ in }
+        }
+        store.exhaustivity = .off
+
+        // First tick: the window is seen as "Untitled".
+        await store.send(
+            .windowsLoaded(app.bundleIdentifier, [
+                CapturableWindow(
+                    systemWindowID: 700,
+                    title: "Untitled",
+                    frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+                    layer: 0,
+                    isOnScreen: true
+                ),
+            ])
+        )
+        await store.skipReceivedActions()
+
+        // Second tick: the same window (same system id) is now "Notes.txt".
+        await store.send(
+            .windowsLoaded(app.bundleIdentifier, [
+                CapturableWindow(
+                    systemWindowID: 700,
+                    title: "Notes.txt",
+                    frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+                    layer: 0,
+                    isOnScreen: true
+                ),
+            ])
+        )
+        await store.skipReceivedActions()
+
+        let history = try XCTUnwrap(
+            store.state.activeSessions[app.bundleIdentifier]?.windowsBySystemID[700]?.titleHistory
+        )
+        XCTAssertEqual(history.map(\.title), ["Untitled", "Notes.txt"])
+        XCTAssertEqual(history.map(\.id), [firstObservationID, secondObservationID])
     }
 
     @MainActor
@@ -764,8 +863,8 @@ final class CaptureEngineFeatureTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1)
         )
         let parentWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000031"))
-        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000032"))
-        let ids = UUIDSequence([parentWindowID, unavailableID])
+        let observationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000032"))
+        let ids = UUIDSequence([parentWindowID, observationID])
 
         var state = CaptureEngineFeature.State()
         state.whitelist = [config.bundleIdentifier: config]
@@ -822,7 +921,14 @@ final class CaptureEngineFeatureTests: XCTestCase {
                 displayNumber: 1,
                 label: "Document",
                 firstSeenAt: Date(timeIntervalSince1970: 10),
-                lastSeenAt: Date(timeIntervalSince1970: 10)
+                lastSeenAt: Date(timeIntervalSince1970: 10),
+                titleHistory: [
+                    WindowTitleObservation(
+                        id: observationID,
+                        title: "Document",
+                        observedAt: Date(timeIntervalSince1970: 10)
+                    ),
+                ]
             )
             $0.activeSessions[app.bundleIdentifier] = active
         }
@@ -1164,7 +1270,14 @@ final class CaptureEngineFeatureTests: XCTestCase {
             displayNumber: 1,
             label: "Main",
             firstSeenAt: Date(timeIntervalSince1970: 10),
-            lastSeenAt: Date(timeIntervalSince1970: 10)
+            lastSeenAt: Date(timeIntervalSince1970: 10),
+            titleHistory: [
+                WindowTitleObservation(
+                    id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000073")),
+                    title: "Main",
+                    observedAt: Date(timeIntervalSince1970: 10)
+                ),
+            ]
         )
         let failedAt = Date(timeIntervalSince1970: 70)
         let error = CaptureEngineError.windowCaptureFailed(systemWindowID: window.systemWindowID)

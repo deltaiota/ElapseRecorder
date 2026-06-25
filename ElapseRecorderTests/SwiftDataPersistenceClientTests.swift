@@ -284,6 +284,63 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         XCTAssertEqual(sessions, [])
     }
 
+    @MainActor
+    func testWindowTitleHistoryIsPersistedAndDeduplicated() async throws {
+        let container = try inMemoryContainer()
+        let client = PersistenceClient.live(modelContainer: container)
+
+        let session = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000401"),
+            bundleIdentifier: "com.example.TextApp",
+            displayName: "Text App",
+            processIdentifier: 401,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        try await client.openSession(session)
+
+        let firstObservation = try WindowTitleObservation(
+            id: uuid("00000000-0000-0000-0000-000000000501"),
+            title: "Untitled",
+            observedAt: Date(timeIntervalSince1970: 110)
+        )
+        let secondObservation = try WindowTitleObservation(
+            id: uuid("00000000-0000-0000-0000-000000000502"),
+            title: "Notes.txt",
+            observedAt: Date(timeIntervalSince1970: 130)
+        )
+
+        var window = try MonitoredWindow(
+            id: uuid("00000000-0000-0000-0000-000000000403"),
+            sessionID: session.id,
+            systemWindowID: 700,
+            displayNumber: 1,
+            label: "Untitled",
+            firstSeenAt: Date(timeIntervalSince1970: 110),
+            lastSeenAt: Date(timeIntervalSince1970: 110),
+            titleHistory: [firstObservation]
+        )
+        try await client.upsertWindow(window)
+
+        // A later tick adds a rename; the engine re-sends the full history each time.
+        window.lastSeenAt = Date(timeIntervalSince1970: 130)
+        window.titleHistory = [firstObservation, secondObservation]
+        try await client.upsertWindow(window)
+
+        // Re-upserting the identical history must not duplicate observations.
+        try await client.upsertWindow(window)
+
+        let context = ModelContext(container)
+        let models = try context.fetch(FetchDescriptor<MonitoredWindowModel>())
+        let stored = try XCTUnwrap(models.first { $0.id == window.id })
+        let history = stored.titleObservations.sorted { $0.observedAt < $1.observedAt }
+
+        XCTAssertEqual(history.map(\.title), ["Untitled", "Notes.txt"])
+        XCTAssertEqual(history.map(\.id), [firstObservation.id, secondObservation.id])
+
+        let domainHistory = try XCTUnwrap(stored.domainValue).titleHistory
+        XCTAssertEqual(domainHistory.map(\.title), ["Untitled", "Notes.txt"])
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: Schema.elapseRecorder, configurations: [configuration])

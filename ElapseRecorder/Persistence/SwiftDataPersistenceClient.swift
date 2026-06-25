@@ -92,21 +92,43 @@ final class SwiftDataPersistenceStore {
         if let model = try windowModel(id: window.id, context: context) {
             model.label = window.label
             model.lastSeenAt = window.lastSeenAt
+            syncTitleObservations(window.titleHistory, into: model, context: context)
         } else {
-            context.insert(
-                MonitoredWindowModel(
-                    id: window.id,
-                    systemWindowID: window.systemWindowID,
-                    displayNumber: window.displayNumber,
-                    label: window.label,
-                    firstSeenAt: window.firstSeenAt,
-                    lastSeenAt: window.lastSeenAt,
-                    session: session
-                )
+            let model = MonitoredWindowModel(
+                id: window.id,
+                systemWindowID: window.systemWindowID,
+                displayNumber: window.displayNumber,
+                label: window.label,
+                firstSeenAt: window.firstSeenAt,
+                lastSeenAt: window.lastSeenAt,
+                session: session
             )
+            context.insert(model)
+            syncTitleObservations(window.titleHistory, into: model, context: context)
         }
 
         try context.save()
+    }
+
+    /// Insert any title observations not already persisted for this window. The engine
+    /// re-sends the window's full title history each tick, so matching on the observation's
+    /// stable id keeps each rename recorded exactly once.
+    private func syncTitleObservations(
+        _ history: [WindowTitleObservation],
+        into model: MonitoredWindowModel,
+        context: ModelContext
+    ) {
+        let existingIDs = Set(model.titleObservations.map(\.id))
+        for observation in history where !existingIDs.contains(observation.id) {
+            context.insert(
+                WindowTitleObservationModel(
+                    id: observation.id,
+                    title: observation.title,
+                    observedAt: observation.observedAt,
+                    window: model
+                )
+            )
+        }
     }
 
     func recordScreenshot(_ record: ScreenshotRecord) throws {

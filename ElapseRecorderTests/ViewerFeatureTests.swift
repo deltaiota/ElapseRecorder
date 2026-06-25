@@ -5,10 +5,9 @@ import XCTest
 
 final class ViewerFeatureTests: XCTestCase {
     @MainActor
-    func testSelectingSessionDefaultsToAllWindowsAndLoadsSessionScreenshots() async throws {
+    func testSelectingSessionLoadsWindowsAndTimelineGraph() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000601"))
         let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000602"))
-        let screenshotID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000603"))
         let window = WindowCaptureSummary(
             id: windowID,
             displayNumber: 1,
@@ -17,13 +16,30 @@ final class ViewerFeatureTests: XCTestCase {
             lastSeenAt: Date(timeIntervalSince1970: 200),
             screenshotCount: 1
         )
-        let screenshot = ScreenshotRecord(
-            id: screenshotID,
-            windowID: windowID,
+        let timeline = SessionTimeline(
             sessionID: sessionID,
-            capturedAt: Date(timeIntervalSince1970: 150),
-            fileURL: URL(filePath: "/tmp/session.heic"),
-            fileSizeBytes: 1024
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: nil,
+            lanes: [
+                WindowLane(
+                    windowID: windowID,
+                    displayNumber: 1,
+                    systemWindowID: 5,
+                    bornAt: Date(timeIntervalSince1970: 100),
+                    diedAt: Date(timeIntervalSince1970: 200),
+                    segments: [
+                        WindowTitleSegment(
+                            id: windowID,
+                            title: "Canvas",
+                            startedAt: Date(timeIntervalSince1970: 100),
+                            endedAt: Date(timeIntervalSince1970: 200),
+                            screenshotCount: 1
+                        ),
+                    ],
+                    screenshotCount: 1
+                ),
+            ],
+            unavailableSpans: []
         )
         var state = ViewerFeature.State()
         state.selectedBundleIdentifier = "com.example.ArtApp"
@@ -32,43 +48,31 @@ final class ViewerFeatureTests: XCTestCase {
             ViewerFeature()
         } withDependencies: {
             $0.persistenceClient.windows = { _ in [window] }
-            $0.persistenceClient.timelineForSession = { _ in
+            $0.persistenceClient.sessionTimeline = { _ in
                 try await Task.sleep(nanoseconds: 1_000_000)
-                return [.screenshot(screenshot)]
+                return timeline
             }
         }
 
         await store.send(.sessionSelected(sessionID)) {
             $0.selectedSessionID = sessionID
-            $0.selectedWindowID = nil
-            $0.windows = []
-            $0.windowTimelineEntries = []
-            $0.isShowingFlatGallery = false
             $0.isLoading = true
         }
         await store.receive(.windowsLoaded([window])) {
             $0.windows = [window]
             $0.isLoading = false
         }
-        await store.receive(.timelineEntriesLoaded([.screenshot(screenshot)])) {
-            $0.windowTimelineEntries = [.screenshot(screenshot)]
-            $0.isLoading = false
+        await store.receive(.sessionTimelineLoaded(timeline)) {
+            $0.sessionTimeline = timeline
         }
+        XCTAssertTrue(store.state.isShowingTimelineGraph)
         XCTAssertEqual(store.state.windowPickerSelection, .all)
     }
 
     @MainActor
-    func testWindowPickerSwitchesBetweenWindowAndAllScreenshots() async throws {
+    func testSelectingWindowThenReturningToTimeline() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000604"))
         let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000605"))
-        let allScreenshot = try ScreenshotRecord(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000606")),
-            windowID: windowID,
-            sessionID: sessionID,
-            capturedAt: Date(timeIntervalSince1970: 150),
-            fileURL: URL(filePath: "/tmp/all.heic"),
-            fileSizeBytes: 1024
-        )
         let windowScreenshot = try ScreenshotRecord(
             id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000607")),
             windowID: windowID,
@@ -79,15 +83,14 @@ final class ViewerFeatureTests: XCTestCase {
         )
         var state = ViewerFeature.State()
         state.selectedSessionID = sessionID
-        state.windowTimelineEntries = [.screenshot(allScreenshot)]
 
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
             $0.persistenceClient.timelineForWindow = { _, _ in [.screenshot(windowScreenshot)] }
-            $0.persistenceClient.timelineForSession = { _ in [.screenshot(allScreenshot)] }
         }
 
+        // Selecting a window (e.g. tapping its lane) loads that window's screenshots.
         await store.send(.windowPickerSelectionChanged(.window(id: windowID))) {
             $0.selectedWindowID = windowID
             $0.windowTimelineEntries = []
@@ -98,15 +101,64 @@ final class ViewerFeatureTests: XCTestCase {
             $0.windowTimelineEntries = [.screenshot(windowScreenshot)]
             $0.isLoading = false
         }
+        XCTAssertFalse(store.state.isShowingTimelineGraph)
 
+        // Clearing the window selection returns to the timeline graph without loading a grid.
         await store.send(.windowPickerSelectionChanged(.all)) {
             $0.selectedWindowID = nil
-            $0.isShowingFlatGallery = false
             $0.windowTimelineEntries = []
+        }
+        XCTAssertTrue(store.state.isShowingTimelineGraph)
+    }
+
+    @MainActor
+    func testSelectingWindowSegmentFiltersGridToSegmentRange() async throws {
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000620"))
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000621"))
+        let inRange = try ScreenshotRecord(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000622")),
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: Date(timeIntervalSince1970: 160),
+            fileURL: URL(filePath: "/tmp/in.heic"),
+            fileSizeBytes: 10
+        )
+        let outOfRange = try ScreenshotRecord(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000623")),
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: Date(timeIntervalSince1970: 260),
+            fileURL: URL(filePath: "/tmp/out.heic"),
+            fileSizeBytes: 10
+        )
+        let segment = try WindowTitleSegment(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000624")),
+            title: "Untitled",
+            startedAt: Date(timeIntervalSince1970: 150),
+            endedAt: Date(timeIntervalSince1970: 200),
+            screenshotCount: 1
+        )
+        var state = ViewerFeature.State()
+        state.selectedSessionID = sessionID
+
+        let store = TestStore(initialState: state) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.timelineForWindow = { _, _ in
+                [.screenshot(inRange), .screenshot(outOfRange)]
+            }
+        }
+
+        await store.send(.windowSegmentSelected(windowID: windowID, segment: segment)) {
+            $0.selectedWindowID = windowID
+            $0.selectedSegment = segment
+            $0.windowTimelineEntries = []
+            $0.isShowingFlatGallery = false
             $0.isLoading = true
         }
-        await store.receive(.timelineEntriesLoaded([.screenshot(allScreenshot)])) {
-            $0.windowTimelineEntries = [.screenshot(allScreenshot)]
+        // Only the screenshot inside the segment's [150, 200] range survives the filter.
+        await store.receive(.timelineEntriesLoaded([.screenshot(inRange)])) {
+            $0.windowTimelineEntries = [.screenshot(inRange)]
             $0.isLoading = false
         }
     }
@@ -119,39 +171,29 @@ final class ViewerFeatureTests: XCTestCase {
         state.selectedSessionID = sessionID
         state.selectedWindowID = windowID
 
-        let sessionTimelineLoadCount = LockIsolated(0)
         let windowTimelineLoadCount = LockIsolated(0)
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
-            $0.persistenceClient.timelineForSession = { _ in
-                sessionTimelineLoadCount.withValue { $0 += 1 }
-                return []
-            }
             $0.persistenceClient.timelineForWindow = { _, _ in
                 windowTimelineLoadCount.withValue { $0 += 1 }
                 return []
             }
         }
 
+        // Re-selecting the current window is a no-op.
         await store.send(.windowPickerSelectionChanged(.window(id: windowID)))
-        XCTAssertEqual(sessionTimelineLoadCount.value, 0)
         XCTAssertEqual(windowTimelineLoadCount.value, 0)
 
+        // Returning to the timeline graph loads no grid.
         await store.send(.windowPickerSelectionChanged(.all)) {
             $0.selectedWindowID = nil
-            $0.isShowingFlatGallery = false
-            $0.windowTimelineEntries = []
-            $0.isLoading = true
         }
-        await store.receive(.timelineEntriesLoaded([])) {
-            $0.isLoading = false
-        }
-        XCTAssertEqual(sessionTimelineLoadCount.value, 1)
         XCTAssertEqual(windowTimelineLoadCount.value, 0)
+        XCTAssertTrue(store.state.isShowingTimelineGraph)
 
+        // Already on the timeline graph; selecting "all" again is a no-op.
         await store.send(.windowPickerSelectionChanged(.all))
-        XCTAssertEqual(sessionTimelineLoadCount.value, 1)
         XCTAssertEqual(windowTimelineLoadCount.value, 0)
     }
 

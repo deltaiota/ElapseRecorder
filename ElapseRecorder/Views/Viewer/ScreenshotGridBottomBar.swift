@@ -12,6 +12,7 @@ struct ScreenshotGridBottomBar: View {
     @Binding var windowSelection: ViewerFeature.State.WindowPickerSelection
     var onJumpToLatest: () -> Void
     var onExport: () -> Void
+    var onBackToTimeline: (() -> Void)? = nil
 
     @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
     @State private var gridItemSizeLargerButtonAnimationTrigger: Int = 0
@@ -22,6 +23,18 @@ struct ScreenshotGridBottomBar: View {
             Divider()
 
             HStack(spacing: 12) {
+                if let onBackToTimeline {
+                    Button {
+                        onBackToTimeline()
+                    } label: {
+                        Label("Timeline", systemSymbol: .chevronBackward)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Back to timeline")
+
+                    Divider().frame(height: 16)
+                }
+
                 HStack(spacing: 6) {
                     Button {
                         gridItemSize = gridItemSize.steppedDown()

@@ -18,12 +18,15 @@ struct DetailPaneView: View {
                 grid(entries: store.flatTimelineEntries)
                     .navigationTitle("All Screenshots")
                     .safeAreaInset(edge: .bottom) {
-                        bottomBar(showsWindowPicker: false)
+                        bottomBar(showsWindowPicker: false, showsBackToTimeline: false)
                     }
+            } else if store.isShowingTimelineGraph {
+                timelineGraph
             } else if store.selectedSessionID != nil {
                 grid(entries: store.windowTimelineEntries)
+                    .navigationTitle(windowGridTitle)
                     .safeAreaInset(edge: .bottom) {
-                        bottomBar(showsWindowPicker: true)
+                        bottomBar(showsWindowPicker: true, showsBackToTimeline: true)
                     }
             } else {
                 Color.clear
@@ -54,6 +57,35 @@ struct DetailPaneView: View {
     }
 
     @ViewBuilder
+    private var timelineGraph: some View {
+        if let timeline = store.sessionTimeline {
+            TimelineGraphView(
+                timeline: timeline,
+                selectedWindowID: store.selectedWindowID,
+                selectedSegmentID: store.selectedSegment?.id,
+                onSelectWindow: { store.send(.windowSelected($0)) },
+                onSelectSegment: { windowID, segment in
+                    store.send(.windowSegmentSelected(windowID: windowID, segment: segment))
+                }
+            )
+        } else {
+            Color.clear
+        }
+    }
+
+    private var windowGridTitle: String {
+        if let segment = store.selectedSegment, let title = segment.title, !title.isEmpty {
+            return title
+        }
+        if let windowID = store.selectedWindowID,
+           let window = store.windows.first(where: { $0.id == windowID })
+        {
+            return window.label ?? "Window \(window.displayNumber)"
+        }
+        return ""
+    }
+
+    @ViewBuilder
     private func grid(entries: [CaptureTimelineEntry]) -> some View {
         ScreenshotGrid(
             entries: entries,
@@ -67,14 +99,15 @@ struct DetailPaneView: View {
     }
 
     @ViewBuilder
-    private func bottomBar(showsWindowPicker: Bool) -> some View {
+    private func bottomBar(showsWindowPicker: Bool, showsBackToTimeline: Bool) -> some View {
         ScreenshotGridBottomBar(
             gridItemSize: $gridItemSize,
             showsWindowPicker: showsWindowPicker,
             windows: store.windows,
             windowSelection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged),
             onJumpToLatest: { jumpToLatestTrigger += 1 },
-            onExport: {}
+            onExport: {},
+            onBackToTimeline: showsBackToTimeline ? { store.send(.windowSelected(nil)) } : nil
         )
     }
 

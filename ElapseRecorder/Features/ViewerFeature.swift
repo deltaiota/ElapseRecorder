@@ -7,11 +7,13 @@ struct ViewerFeature: Reducer {
         var apps: [AppCaptureSummary] = []
         var sessions: [CaptureSessionSummary] = []
         var windows: [WindowCaptureSummary] = []
+        var sessionTimeline: SessionTimeline?
         var windowTimelineEntries: [CaptureTimelineEntry] = []
         var flatTimelineEntries: [CaptureTimelineEntry] = []
         var selectedBundleIdentifier: String?
         var selectedSessionID: UUID?
         var selectedWindowID: UUID?
+        var selectedSegment: WindowTitleSegment?
         var selectedScreenshotIDs: Set<UUID> = []
         var quickLookURL: URL?
         var isShowingFlatGallery = false
@@ -66,6 +68,12 @@ struct ViewerFeature: Reducer {
                 }
             }
         }
+
+        /// A session is selected but no specific window/segment is — show the lifecycle
+        /// timeline graph rather than a screenshot grid.
+        var isShowingTimelineGraph: Bool {
+            selectedSessionID != nil && selectedWindowID == nil && !isShowingFlatGallery
+        }
     }
 
     @CasePathable
@@ -76,7 +84,9 @@ struct ViewerFeature: Reducer {
         case sessionsLoaded([CaptureSessionSummary])
         case sessionSelected(UUID?)
         case windowsLoaded([WindowCaptureSummary])
+        case sessionTimelineLoaded(SessionTimeline)
         case windowSelected(UUID?)
+        case windowSegmentSelected(windowID: UUID, segment: WindowTitleSegment)
         case windowPickerSelectionChanged(State.WindowPickerSelection)
         case timelineEntriesLoaded([CaptureTimelineEntry])
         case sessionListSelectionChanged(State.SessionListSelection?)
@@ -120,8 +130,10 @@ struct ViewerFeature: Reducer {
                 state.selectedBundleIdentifier = bundleIdentifier
                 state.selectedSessionID = nil
                 state.selectedWindowID = nil
+                state.selectedSegment = nil
                 state.sessions = []
                 state.windows = []
+                state.sessionTimeline = nil
                 state.windowTimelineEntries = []
                 state.flatTimelineEntries = []
                 state.clearScreenshotSelection()
@@ -138,8 +150,10 @@ struct ViewerFeature: Reducer {
                 {
                     state.selectedSessionID = nil
                     state.selectedWindowID = nil
+                    state.selectedSegment = nil
                     state.clearScreenshotSelection()
                     state.windows = []
+                    state.sessionTimeline = nil
                     state.windowTimelineEntries = []
                 }
                 state.isLoading = false
@@ -154,11 +168,20 @@ struct ViewerFeature: Reducer {
                    !windows.contains(where: { $0.id == selectedWindowID })
                 {
                     state.selectedWindowID = nil
+                    state.selectedSegment = nil
                     state.clearScreenshotSelection()
                     state.windowTimelineEntries = []
                 }
                 state.isLoading = false
                 return .none
+
+            case let .sessionTimelineLoaded(timeline):
+                state.sessionTimeline = timeline
+                state.isLoading = false
+                return .none
+
+            case let .windowSegmentSelected(windowID, segment):
+                return selectWindowSegment(windowID: windowID, segment: segment, state: &state)
 
             case let .windowSelected(windowID):
                 guard windowID != state.selectedWindowID else { return .none }
@@ -192,9 +215,11 @@ struct ViewerFeature: Reducer {
                 case nil:
                     state.selectedSessionID = nil
                     state.selectedWindowID = nil
+                    state.selectedSegment = nil
                     state.clearScreenshotSelection()
                     state.isShowingFlatGallery = false
                     state.windows = []
+                    state.sessionTimeline = nil
                     state.windowTimelineEntries = []
                     state.flatTimelineEntries = []
                     return .none
@@ -239,8 +264,10 @@ struct ViewerFeature: Reducer {
                 if state.selectedSessionID == sessionID {
                     state.selectedSessionID = nil
                     state.selectedWindowID = nil
+                    state.selectedSegment = nil
                     state.clearScreenshotSelection()
                     state.windows = []
+                    state.sessionTimeline = nil
                     state.windowTimelineEntries = []
                 }
                 state.isLoading = false
@@ -267,15 +294,12 @@ struct ViewerFeature: Reducer {
 
         if let sessionID = state.selectedSessionID {
             effects.append(loadWindows(sessionID: sessionID))
+            effects.append(loadTimelineGraph(sessionID: sessionID))
 
-            if state.selectedWindowID == nil {
-                effects.append(loadSessionTimeline(sessionID: sessionID))
-            }
-        }
-
-        if let windowID = state.selectedWindowID {
-            if let sessionID = state.selectedSessionID {
-                effects.append(loadWindowTimeline(sessionID: sessionID, windowID: windowID))
+            if let windowID = state.selectedWindowID {
+                effects.append(
+                    loadWindowTimeline(sessionID: sessionID, windowID: windowID, range: state.selectedSegment)
+                )
             }
         }
 
@@ -288,7 +312,9 @@ struct ViewerFeature: Reducer {
     ) -> Effect<Action> {
         state.selectedSessionID = sessionID
         state.selectedWindowID = nil
+        state.selectedSegment = nil
         state.windows = []
+        state.sessionTimeline = nil
         state.windowTimelineEntries = []
         state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
@@ -297,7 +323,7 @@ struct ViewerFeature: Reducer {
         state.isLoading = true
         return .merge(
             loadWindows(sessionID: sessionID),
-            loadSessionTimeline(sessionID: sessionID)
+            loadTimelineGraph(sessionID: sessionID)
         )
     }
 
@@ -305,22 +331,24 @@ struct ViewerFeature: Reducer {
         guard let bundleIdentifier = state.selectedBundleIdentifier else { return .none }
         state.selectedSessionID = nil
         state.selectedWindowID = nil
+        state.selectedSegment = nil
         state.clearScreenshotSelection()
         state.isShowingFlatGallery = true
+        state.sessionTimeline = nil
         state.flatTimelineEntries = []
         state.isLoading = true
         return loadFlatTimeline(bundleIdentifier: bundleIdentifier)
     }
 
+    /// Clearing the window selection returns to the session's timeline graph (already
+    /// loaded on session select), so no screenshot grid is loaded here.
     private func selectAllWindows(state: inout State) -> Effect<Action> {
         state.selectedWindowID = nil
+        state.selectedSegment = nil
+        state.windowTimelineEntries = []
         state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
-
-        guard let sessionID = state.selectedSessionID else { return .none }
-        state.windowTimelineEntries = []
-        state.isLoading = true
-        return loadSessionTimeline(sessionID: sessionID)
+        return .none
     }
 
     private func selectWindow(
@@ -328,12 +356,28 @@ struct ViewerFeature: Reducer {
         state: inout State
     ) -> Effect<Action> {
         state.selectedWindowID = windowID
+        state.selectedSegment = nil
         state.windowTimelineEntries = []
         state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
         state.isLoading = true
         guard let sessionID = state.selectedSessionID else { return .none }
-        return loadWindowTimeline(sessionID: sessionID, windowID: windowID)
+        return loadWindowTimeline(sessionID: sessionID, windowID: windowID, range: nil)
+    }
+
+    private func selectWindowSegment(
+        windowID: UUID,
+        segment: WindowTitleSegment,
+        state: inout State
+    ) -> Effect<Action> {
+        state.selectedWindowID = windowID
+        state.selectedSegment = segment
+        state.windowTimelineEntries = []
+        state.clearScreenshotSelection()
+        state.isShowingFlatGallery = false
+        state.isLoading = true
+        guard let sessionID = state.selectedSessionID else { return .none }
+        return loadWindowTimeline(sessionID: sessionID, windowID: windowID, range: segment)
     }
 
     private func deleteSession(
@@ -392,22 +436,26 @@ struct ViewerFeature: Reducer {
         }
     }
 
-    private func loadSessionTimeline(sessionID: UUID) -> Effect<Action> {
+    private func loadTimelineGraph(sessionID: UUID) -> Effect<Action> {
         .run { send in
             do {
-                let entries = try await persistence.timelineForSession(sessionID)
-                await send(.timelineEntriesLoaded(entries))
+                let timeline = try await persistence.sessionTimeline(sessionID)
+                await send(.sessionTimelineLoaded(timeline))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
         }
     }
 
-    private func loadWindowTimeline(sessionID: UUID, windowID: UUID) -> Effect<Action> {
+    private func loadWindowTimeline(sessionID: UUID, windowID: UUID, range: WindowTitleSegment?) -> Effect<Action> {
         .run { send in
             do {
                 let entries = try await persistence.timelineForWindow(sessionID, windowID)
-                await send(.timelineEntriesLoaded(entries))
+                // A selected title segment narrows the grid to that segment's time range.
+                let filtered = range.map { segment in
+                    entries.filter { $0.occurredAt >= segment.startedAt && $0.occurredAt <= segment.endedAt }
+                } ?? entries
+                await send(.timelineEntriesLoaded(filtered))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
@@ -436,10 +484,12 @@ extension ViewerFeature.State {
         selectedBundleIdentifier = nil
         selectedSessionID = nil
         selectedWindowID = nil
+        selectedSegment = nil
         clearScreenshotSelection()
         isShowingFlatGallery = false
         sessions = []
         windows = []
+        sessionTimeline = nil
         windowTimelineEntries = []
         flatTimelineEntries = []
     }

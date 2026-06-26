@@ -14,6 +14,7 @@ final class ExportAccessoryModel {
     var fpsChoice: FPSChoice
     var customFPS: Int
     var interpolationFrames: Int
+    let frameCount: Int
 
     static let presetFPS = [2, 4, 8, 12, 24, 30, 60, 120, 240]
     static let maxInterpolationFrames = 30
@@ -23,11 +24,12 @@ final class ExportAccessoryModel {
         case custom
     }
 
-    init(options: ExportOptions = .default) {
+    init(options: ExportOptions = .default, frameCount: Int = 0) {
         codec = options.codec
         container = options.container
         customFPS = options.framesPerSecond
         interpolationFrames = options.interpolationFrames
+        self.frameCount = frameCount
         fpsChoice = Self.presetFPS.contains(options.framesPerSecond)
             ? .preset(options.framesPerSecond)
             : .custom
@@ -50,12 +52,26 @@ final class ExportAccessoryModel {
         }
     }
 
+    var resolvedInterpolationFrames: Int {
+        min(Self.maxInterpolationFrames, max(0, interpolationFrames))
+    }
+
+    /// Total frames the export will emit: one per screenshot plus the inserted crossfades.
+    var estimatedFrameCount: Int {
+        guard frameCount > 1 else { return max(0, frameCount) }
+        return frameCount + (frameCount - 1) * resolvedInterpolationFrames
+    }
+
+    var estimatedDuration: Duration {
+        .seconds(Double(estimatedFrameCount) / Double(resolvedFramesPerSecond))
+    }
+
     var options: ExportOptions {
         ExportOptions(
             codec: codec,
             container: container,
             framesPerSecond: resolvedFramesPerSecond,
-            interpolationFrames: min(Self.maxInterpolationFrames, max(0, interpolationFrames))
+            interpolationFrames: resolvedInterpolationFrames
         )
     }
 }
@@ -68,98 +84,112 @@ struct ExportOptionsAccessory: View {
     var onContainerChange: (TimelapseVideoContainer) -> Void
 
     var body: some View {
-        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-            GridRow {
-                Text("Format")
-                    .gridColumnAlignment(.trailing)
-                    .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+                GridRow {
+                    Text("Format")
+                        .gridColumnAlignment(.trailing)
+                        .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
-                    Picker("Codec", selection: $model.codec) {
-                        ForEach(TimelapseVideoCodec.allCases) { codec in
-                            Text(codec.title).tag(codec)
+                    HStack(spacing: 8) {
+                        Picker("Codec", selection: $model.codec) {
+                            ForEach(TimelapseVideoCodec.allCases) { codec in
+                                Text(codec.title).tag(codec)
+                            }
                         }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+                        .labelsHidden()
+                        .fixedSize()
 
-                    Picker("Container", selection: $model.container) {
-                        ForEach(TimelapseVideoContainer.allCases) { container in
-                            Text(container.title)
-                                .tag(container)
-                                .selectionDisabled(!model.codec.allowedContainers.contains(container))
+                        Picker("Container", selection: $model.container) {
+                            ForEach(TimelapseVideoContainer.allCases) { container in
+                                Text(container.title)
+                                    .tag(container)
+                                    .selectionDisabled(!model.codec.allowedContainers.contains(container))
+                            }
                         }
+                        .fixedSize()
+                        .pickerStyle(.radioGroup)
+                        .horizontalRadioGroupLayout()
+                        .labelsHidden()
                     }
-                    .fixedSize()
-                    .pickerStyle(.radioGroup)
-                    .horizontalRadioGroupLayout()
-                    .labelsHidden()
+                    .onChange(of: model.container) { _, newValue in
+                        onContainerChange(newValue)
+                    }
                 }
-                .onChange(of: model.container) { _, newValue in
-                    onContainerChange(newValue)
-                }
-            }
 
-            GridRow {
-                Text("Frame Rate")
-                    .gridColumnAlignment(.trailing)
-                    .foregroundStyle(.secondary)
+                GridRow {
+                    Text("Frame Rate")
+                        .gridColumnAlignment(.trailing)
+                        .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
-                    Picker("Frame Rate", selection: $model.fpsChoice) {
-                        ForEach(ExportAccessoryModel.presetFPS, id: \.self) { fps in
-                            Text("\(fps)").tag(ExportAccessoryModel.FPSChoice.preset(fps))
+                    HStack(spacing: 8) {
+                        Picker("Frame Rate", selection: $model.fpsChoice) {
+                            ForEach(ExportAccessoryModel.presetFPS, id: \.self) { fps in
+                                Text("\(fps)").tag(ExportAccessoryModel.FPSChoice.preset(fps))
+                            }
+                            Divider()
+                            Text("Custom").tag(ExportAccessoryModel.FPSChoice.custom)
                         }
-                        Divider()
-                        Text("Custom").tag(ExportAccessoryModel.FPSChoice.custom)
-                    }
-                    .labelsHidden()
-                    .fixedSize()
+                        .labelsHidden()
+                        .fixedSize()
 
-                    if model.fpsChoice == .custom {
-                        TextField("fps", value: $model.customFPS, format: .number)
-                            .frame(width: 56, height: 20)
+                        if model.fpsChoice == .custom {
+                            TextField("fps", value: $model.customFPS, format: .number)
+                                .frame(width: 56, height: 20)
+                                .multilineTextAlignment(.trailing)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        Text("fps")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                GridRow {
+                    Text("Interpolation")
+                        .gridColumnAlignment(.trailing)
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Stepper(
+                            value: $model.interpolationFrames,
+                            in: 0 ... ExportAccessoryModel.maxInterpolationFrames
+                        ) {
+                            TextField(
+                                "frames",
+                                value: $model.interpolationFrames,
+                                format: .number
+                            )
+                            .frame(width: 44, height: 20)
                             .multilineTextAlignment(.trailing)
                             .textFieldStyle(.roundedBorder)
-                    }
+                        }
+                        .fixedSize()
 
-                    Text("fps")
-                        .foregroundStyle(.secondary)
+                        Text(#tk("\(model.interpolationFrames) crossfade frames").replacing(/^\d+\w*/, with: ""))
+                            .foregroundStyle(.secondary)
+                    }
+                    .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")
                 }
             }
 
-            GridRow {
-                Text("Interpolation")
-                    .gridColumnAlignment(.trailing)
-                    .foregroundStyle(.secondary)
-
-                HStack {
-                    Stepper(
-                        value: $model.interpolationFrames,
-                        in: 0 ... ExportAccessoryModel.maxInterpolationFrames
-                    ) {
-                        TextField(
-                            "frames",
-                            value: $model.interpolationFrames,
-                            format: .number
-                        )
-                        .frame(width: 44, height: 20)
-                        .multilineTextAlignment(.trailing)
-                        .textFieldStyle(.roundedBorder)
-                    }
-                    .fixedSize()
-
-                    Text(#tk("\(model.interpolationFrames) crossfade frames").replacing(/^\d+\w*/, with: ""))
-                        .foregroundStyle(.secondary)
-                }
-                .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")
-            }
+            Text(estimateText)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
         .frame(width: 360)
     }
+
+    private var estimateText: String {
+        let duration = model.estimatedDuration.formatted(
+            .units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2)
+        )
+        return #tk("Estimated length: \(duration) · \(model.estimatedFrameCount) frames")
+    }
 }
 
 #Preview {
-    ExportOptionsAccessory(model: ExportAccessoryModel(), onContainerChange: { _ in })
+    ExportOptionsAccessory(model: ExportAccessoryModel(frameCount: 120), onContainerChange: { _ in })
 }

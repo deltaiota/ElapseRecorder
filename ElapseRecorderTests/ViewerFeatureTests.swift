@@ -13,7 +13,7 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
-            $0.exportPanelClient.present = { _ in
+            $0.exportPanelClient.present = { _, _ in
                 ExportSelection(
                     destinationURL: destination,
                     options: ExportOptions(codec: .hevc, container: .mov, framesPerSecond: 24, interpolationFrames: 3)
@@ -55,7 +55,7 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
-            $0.exportPanelClient.present = { _ in nil }
+            $0.exportPanelClient.present = { _, _ in nil }
             $0.fileRevealClient.reveal = { _ in }
         }
 

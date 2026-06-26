@@ -271,9 +271,10 @@ struct ViewerFeature: Reducer {
                 let panel = exportPanel
                 let fileReveal = fileReveal
                 let suggestedName = state.exportSuggestedFileName
+                let frameCount = urls.count
 
                 return .run { send in
-                    guard let selection = await panel.present(suggestedName) else {
+                    guard let selection = await panel.present(suggestedName, frameCount) else {
                         await send(.exportCancelled)
                         return
                     }

@@ -74,10 +74,16 @@ struct ExportOptionsAccessory: View {
                     .labelsHidden()
                     .fixedSize()
 
-                    ContainerSegmentedPicker(
-                        selection: $model.container,
-                        allowed: model.codec.allowedContainers
-                    )
+                    Picker("Container", selection: $model.container) {
+                        ForEach(TimelapseVideoContainer.allCases) { container in
+                            Text(container.title)
+                                .tag(container)
+                                .disabled(!model.codec.allowedContainers.contains(container))
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .horizontalRadioGroupLayout()
+                    .labelsHidden()
                 }
                 .onChange(of: model.container) { _, newValue in
                     onContainerChange(newValue)
@@ -112,47 +118,6 @@ struct ExportOptionsAccessory: View {
         }
         .padding(16)
         .frame(width: 360)
-    }
-}
-
-/// A small segmented control over the video containers, greying out (disabling) any the
-/// current codec can't use.
-private struct ContainerSegmentedPicker: View {
-    @Binding var selection: TimelapseVideoContainer
-    let allowed: [TimelapseVideoContainer]
-
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(TimelapseVideoContainer.allCases) { container in
-                let isEnabled = allowed.contains(container)
-                let isSelected = selection == container
-
-                Button {
-                    selection = container
-                } label: {
-                    Text(container.title)
-                        .font(.callout)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 3)
-                        .background(
-                            isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear),
-                            in: RoundedRectangle(cornerRadius: 5)
-                        )
-                        .foregroundStyle(foreground(isSelected: isSelected, isEnabled: isEnabled))
-                }
-                .buttonStyle(.plain)
-                .disabled(!isEnabled)
-            }
-        }
-        .padding(2)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-        .fixedSize()
-    }
-
-    private func foreground(isSelected: Bool, isEnabled: Bool) -> AnyShapeStyle {
-        if isSelected { return AnyShapeStyle(.white) }
-        return isEnabled ? AnyShapeStyle(.primary) : AnyShapeStyle(.tertiary)
     }
 }
 

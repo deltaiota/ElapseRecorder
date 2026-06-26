@@ -381,29 +381,6 @@
     "Captured sessions will appear here." : {
 
     },
-    "Capturing %lld Apps" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "Capturing %lld App"
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "new",
-                  "value" : "Capturing %lld Apps"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "Choose a Session" : {
 
     },
@@ -465,6 +442,28 @@
     "Export…" : {
 
     },
+    "ExportOptionsAccessory.modelInterpolationFramesCrossfadeFrames" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld crossfade frame"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "new",
+                  "value" : "%lld crossfade frames"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Format" : {
 
     },
@@ -474,10 +473,19 @@
     "Frame Rate" : {
 
     },
+    "frames" : {
+
+    },
     "Grant Permission" : {
 
     },
     "If granting permission failed, open System Settings > Privacy & Security > Screen & System Audio Recording (click to open), remove Elapse Recorder and add it back, then reopen the app." : {
+
+    },
+    "Insert this many crossfaded frames between each screenshot for a smoother dissolve." : {
+
+    },
+    "Interpolation" : {
 
     },
     "Jump to latest" : {

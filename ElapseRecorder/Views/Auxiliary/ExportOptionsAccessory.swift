@@ -1,4 +1,5 @@
 import SwiftUI
+import TranslateKit
 
 /// Shared state for the export save-panel accessory. A reference type so the AppKit save
 /// panel can read the final choices back after the SwiftUI accessory has mutated them.
@@ -14,7 +15,7 @@ final class ExportAccessoryModel {
     var customFPS: Int
     var interpolationFrames: Int
 
-    static let presetFPS = [8, 12, 24, 30, 60]
+    static let presetFPS = [2, 4, 8, 12, 24, 30, 60, 120, 240]
     static let maxInterpolationFrames = 30
 
     enum FPSChoice: Hashable {
@@ -107,7 +108,7 @@ struct ExportOptionsAccessory: View {
                 HStack(spacing: 8) {
                     Picker("Frame Rate", selection: $model.fpsChoice) {
                         ForEach(ExportAccessoryModel.presetFPS, id: \.self) { fps in
-                            Text("\(fps) fps").tag(ExportAccessoryModel.FPSChoice.preset(fps))
+                            Text("\(fps)").tag(ExportAccessoryModel.FPSChoice.preset(fps))
                         }
                         Divider()
                         Text("Custom").tag(ExportAccessoryModel.FPSChoice.custom)
@@ -120,9 +121,10 @@ struct ExportOptionsAccessory: View {
                             .frame(width: 56, height: 20)
                             .multilineTextAlignment(.trailing)
                             .textFieldStyle(.roundedBorder)
-                        Text("fps")
-                            .foregroundStyle(.secondary)
                     }
+
+                    Text("fps")
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -131,26 +133,24 @@ struct ExportOptionsAccessory: View {
                     .gridColumnAlignment(.trailing)
                     .foregroundStyle(.secondary)
 
-                HStack(spacing: 8) {
+                HStack {
                     Stepper(
                         value: $model.interpolationFrames,
                         in: 0 ... ExportAccessoryModel.maxInterpolationFrames
                     ) {
-                        HStack(spacing: 4) {
-                            TextField(
-                                "frames",
-                                value: $model.interpolationFrames,
-                                format: .number
-                            )
-                            .frame(width: 44, height: 20)
-                            .multilineTextAlignment(.trailing)
-                            .textFieldStyle(.roundedBorder)
-
-                            Text("\(model.interpolationFrames) crossfade frames")
-                                .foregroundStyle(.secondary)
-                        }
+                        TextField(
+                            "frames",
+                            value: $model.interpolationFrames,
+                            format: .number
+                        )
+                        .frame(width: 44, height: 20)
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
                     }
                     .fixedSize()
+
+                    Text(#tk("\(model.interpolationFrames) crossfade frames").replacing(/^\d+\w*/, with: ""))
+                        .foregroundStyle(.secondary)
                 }
                 .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")
             }

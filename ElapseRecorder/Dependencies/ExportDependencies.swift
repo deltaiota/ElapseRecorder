@@ -217,12 +217,15 @@ private enum TimelapseEncoder {
             for index in 0 ..< frameCount - 1 {
                 let next = try loadImage(at: request.imageURLs[index + 1])
 
-                // Hold the current screenshot, then dissolve toward the next one.
+                // Hold the current screenshot, then dissolve toward the next one. Drawing
+                // `current` fully opaque and compositing `next` over it at alpha f yields a
+                // true crossfade (current·(1-f) + next·f), which stays fully opaque — unlike
+                // fading both, which dips translucent and shows the background mid-transition.
                 try await append { context in drawFrame(current, in: context, canvas: canvas) }
                 for step in stride(from: 1, through: interpolation, by: 1) {
                     let progressFraction = Double(step) / Double(interpolation + 1)
                     try await append { context in
-                        drawFrame(current, in: context, canvas: canvas, alpha: 1 - progressFraction)
+                        drawFrame(current, in: context, canvas: canvas)
                         drawFrame(next, in: context, canvas: canvas, alpha: progressFraction, clearBackground: false)
                     }
                 }

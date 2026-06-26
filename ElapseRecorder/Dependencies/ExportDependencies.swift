@@ -81,26 +81,44 @@ extension TimelapseExportClient: DependencyKey {
 
 extension ExportPanelClient: DependencyKey {
     static let liveValue = Self { suggestedName in
-        await MainActor.run {
-            let panel = NSSavePanel()
-            let model = ExportAccessoryModel()
+        await present(suggestedName: suggestedName)
+    }
 
-            panel.allowedContentTypes = [model.container.contentType]
-            panel.nameFieldStringValue = suggestedName
-            panel.canCreateDirectories = true
-            panel.isExtensionHidden = false
+    @MainActor
+    private static func present(suggestedName: String) async -> ExportSelection? {
+        let panel = NSSavePanel()
+        let model = ExportAccessoryModel()
 
-            let accessory = NSHostingView(
-                rootView: ExportOptionsAccessory(model: model) { [weak panel] container in
-                    panel?.allowedContentTypes = [container.contentType]
-                }
-            )
-            accessory.setFrameSize(accessory.fittingSize)
-            panel.accessoryView = accessory
+        panel.allowedContentTypes = [model.container.contentType]
+        panel.nameFieldStringValue = suggestedName
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
 
-            guard panel.runModal() == .OK, let url = panel.url else { return nil }
-            return ExportSelection(destinationURL: url, options: model.options)
+        let accessory = NSHostingView(
+            rootView: ExportOptionsAccessory(model: model) { [weak panel] container in
+                panel?.allowedContentTypes = [container.contentType]
+            }
+        )
+        accessory.setFrameSize(accessory.fittingSize)
+        panel.accessoryView = accessory
+
+        // Present as a window-attached sheet (slides from the title bar, dims the window),
+        // matching SwiftUI's file exporter. Fall back to a modal panel only if there's no
+        // window to host the sheet.
+        let response: NSApplication.ModalResponse
+        if let window = hostWindow() {
+            response = await panel.beginSheetModal(for: window)
+        } else {
+            response = panel.runModal()
         }
+
+        guard response == .OK, let url = panel.url else { return nil }
+        return ExportSelection(destinationURL: url, options: model.options)
+    }
+
+    @MainActor
+    private static func hostWindow() -> NSWindow? {
+        NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible }
     }
 
     static let testValue = Self { _ in

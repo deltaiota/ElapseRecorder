@@ -78,9 +78,10 @@ struct ExportOptionsAccessory: View {
                         ForEach(TimelapseVideoContainer.allCases) { container in
                             Text(container.title)
                                 .tag(container)
-                                .disabled(!model.codec.allowedContainers.contains(container))
+                                .selectionDisabled(!model.codec.allowedContainers.contains(container))
                         }
                     }
+                    .fixedSize()
                     .pickerStyle(.radioGroup)
                     .horizontalRadioGroupLayout()
                     .labelsHidden()
@@ -108,8 +109,9 @@ struct ExportOptionsAccessory: View {
 
                     if model.fpsChoice == .custom {
                         TextField("fps", value: $model.customFPS, format: .number)
-                            .frame(width: 56)
+                            .frame(width: 56, height: 20)
                             .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
                         Text("fps")
                             .foregroundStyle(.secondary)
                     }

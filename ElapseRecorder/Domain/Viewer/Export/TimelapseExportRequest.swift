@@ -7,4 +7,5 @@ nonisolated struct TimelapseExportRequest: Equatable {
     var codec: TimelapseVideoCodec
     var container: TimelapseVideoContainer
     var framesPerSecond: Int
+    var interpolationFrames: Int
 }

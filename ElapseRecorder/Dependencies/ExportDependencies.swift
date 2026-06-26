@@ -185,28 +185,51 @@ private enum TimelapseEncoder {
 
         let fps = max(1, request.framesPerSecond)
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
-        let total = request.imageURLs.count
+        let interpolation = max(0, request.interpolationFrames)
+        let frameCount = request.imageURLs.count
+        // Each consecutive pair contributes 1 "hold" frame plus N crossfade frames, and the
+        // very last screenshot is held once at the end.
+        let outputFrameCount = frameCount == 1 ? 1 : frameCount + (frameCount - 1) * interpolation
 
-        for (index, url) in request.imageURLs.enumerated() {
+        var emitted = 0
+        func append(_ draw: (CGContext) -> Void) async throws {
             try Task.checkCancellation()
-
             while !input.isReadyForMoreMediaData {
                 try await Task.sleep(nanoseconds: 5_000_000)
             }
-
             guard let pool = adaptor.pixelBufferPool else {
                 throw TimelapseExportError.encodingFailed("missing pixel buffer pool")
             }
-
-            let image = try loadImage(at: url)
-            let buffer = try pixelBuffer(for: image, canvas: canvas, pool: pool)
-            let time = CMTimeMultiply(frameDuration, multiplier: Int32(index))
-
+            let buffer = try pixelBuffer(canvas: canvas, pool: pool, draw: draw)
+            let time = CMTimeMultiply(frameDuration, multiplier: Int32(emitted))
             if !adaptor.append(buffer, withPresentationTime: time) {
                 throw TimelapseExportError.encodingFailed(writer.error?.localizedDescription ?? "frame append failed")
             }
+            emitted += 1
+            progress(Double(emitted) / Double(outputFrameCount))
+        }
 
-            progress(Double(index + 1) / Double(total))
+        if frameCount == 1 {
+            let image = try loadImage(at: request.imageURLs[0])
+            try await append { context in drawFrame(image, in: context, canvas: canvas) }
+        } else {
+            var current = try loadImage(at: request.imageURLs[0])
+            for index in 0 ..< frameCount - 1 {
+                let next = try loadImage(at: request.imageURLs[index + 1])
+
+                // Hold the current screenshot, then dissolve toward the next one.
+                try await append { context in drawFrame(current, in: context, canvas: canvas) }
+                for step in stride(from: 1, through: interpolation, by: 1) {
+                    let progressFraction = Double(step) / Double(interpolation + 1)
+                    try await append { context in
+                        drawFrame(current, in: context, canvas: canvas, alpha: 1 - progressFraction)
+                        drawFrame(next, in: context, canvas: canvas, alpha: progressFraction, clearBackground: false)
+                    }
+                }
+                current = next
+            }
+            // Hold the final screenshot.
+            try await append { context in drawFrame(current, in: context, canvas: canvas) }
         }
 
         input.markAsFinished()
@@ -246,7 +269,11 @@ private enum TimelapseEncoder {
         return image
     }
 
-    private static func pixelBuffer(for image: CGImage, canvas: CGSize, pool: CVPixelBufferPool) throws -> CVPixelBuffer {
+    private static func pixelBuffer(
+        canvas: CGSize,
+        pool: CVPixelBufferPool,
+        draw: (CGContext) -> Void
+    ) throws -> CVPixelBuffer {
         var bufferOut: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &bufferOut) == kCVReturnSuccess,
               let buffer = bufferOut
@@ -269,15 +296,31 @@ private enum TimelapseEncoder {
             throw TimelapseExportError.encodingFailed("could not create a drawing context")
         }
 
-        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
-        context.fill(CGRect(origin: .zero, size: canvas))
+        draw(context)
+        return buffer
+    }
 
-        // Aspect-fit the frame, centered, so differing window sizes letterbox cleanly.
+    /// Draw a single frame aspect-fit and centered. `alpha` enables crossfade dissolves;
+    /// `clearBackground` paints black first (skip it when compositing a second image on top).
+    private static func drawFrame(
+        _ image: CGImage,
+        in context: CGContext,
+        canvas: CGSize,
+        alpha: CGFloat = 1,
+        clearBackground: Bool = true
+    ) {
+        if clearBackground {
+            context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+            context.fill(CGRect(origin: .zero, size: canvas))
+        }
+
         let scale = min(canvas.width / CGFloat(image.width), canvas.height / CGFloat(image.height))
         let drawSize = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
         let origin = CGPoint(x: (canvas.width - drawSize.width) / 2, y: (canvas.height - drawSize.height) / 2)
-        context.draw(image, in: CGRect(origin: origin, size: drawSize))
 
-        return buffer
+        context.saveGState()
+        context.setAlpha(alpha)
+        context.draw(image, in: CGRect(origin: origin, size: drawSize))
+        context.restoreGState()
     }
 }

@@ -16,7 +16,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.exportPanelClient.present = { _ in
                 ExportSelection(
                     destinationURL: destination,
-                    options: ExportOptions(codec: .hevc, container: .mov, framesPerSecond: 24)
+                    options: ExportOptions(codec: .hevc, container: .mov, framesPerSecond: 24, interpolationFrames: 3)
                 )
             }
             $0.timelapseExportClient.export = { request in
@@ -26,6 +26,7 @@ final class ViewerFeatureTests: XCTestCase {
                     XCTAssertEqual(request.codec, .hevc)
                     XCTAssertEqual(request.container, .mov)
                     XCTAssertEqual(request.framesPerSecond, 24)
+                    XCTAssertEqual(request.interpolationFrames, 3)
                     continuation.yield(0.5)
                     continuation.yield(1.0)
                     continuation.finish()

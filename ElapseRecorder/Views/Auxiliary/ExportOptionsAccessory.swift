@@ -12,8 +12,10 @@ final class ExportAccessoryModel {
     var container: TimelapseVideoContainer
     var fpsChoice: FPSChoice
     var customFPS: Int
+    var interpolationFrames: Int
 
     static let presetFPS = [8, 12, 24, 30, 60]
+    static let maxInterpolationFrames = 30
 
     enum FPSChoice: Hashable {
         case preset(Int)
@@ -24,6 +26,7 @@ final class ExportAccessoryModel {
         codec = options.codec
         container = options.container
         customFPS = options.framesPerSecond
+        interpolationFrames = options.interpolationFrames
         fpsChoice = Self.presetFPS.contains(options.framesPerSecond)
             ? .preset(options.framesPerSecond)
             : .custom
@@ -47,7 +50,12 @@ final class ExportAccessoryModel {
     }
 
     var options: ExportOptions {
-        ExportOptions(codec: codec, container: container, framesPerSecond: resolvedFramesPerSecond)
+        ExportOptions(
+            codec: codec,
+            container: container,
+            framesPerSecond: resolvedFramesPerSecond,
+            interpolationFrames: min(Self.maxInterpolationFrames, max(0, interpolationFrames))
+        )
     }
 }
 
@@ -116,6 +124,35 @@ struct ExportOptionsAccessory: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+            }
+
+            GridRow {
+                Text("Interpolation")
+                    .gridColumnAlignment(.trailing)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    Stepper(
+                        value: $model.interpolationFrames,
+                        in: 0 ... ExportAccessoryModel.maxInterpolationFrames
+                    ) {
+                        HStack(spacing: 4) {
+                            TextField(
+                                "frames",
+                                value: $model.interpolationFrames,
+                                format: .number
+                            )
+                            .frame(width: 44, height: 20)
+                            .multilineTextAlignment(.trailing)
+                            .textFieldStyle(.roundedBorder)
+
+                            Text("\(model.interpolationFrames) crossfade frames")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .fixedSize()
+                }
+                .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")
             }
         }
         .padding(16)

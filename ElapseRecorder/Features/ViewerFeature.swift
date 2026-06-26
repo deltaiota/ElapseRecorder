@@ -284,7 +284,8 @@ struct ViewerFeature: Reducer {
                             destinationURL: selection.destinationURL,
                             codec: selection.options.codec,
                             container: selection.options.container,
-                            framesPerSecond: selection.options.framesPerSecond
+                            framesPerSecond: selection.options.framesPerSecond,
+                            interpolationFrames: selection.options.interpolationFrames
                         )
                         for try await progress in exporter.export(request) {
                             await send(.exportProgressed(progress))

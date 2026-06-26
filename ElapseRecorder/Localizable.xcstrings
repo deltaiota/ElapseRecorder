@@ -4,6 +4,9 @@
     "%lld" : {
 
     },
+    "%lld fps" : {
+
+    },
     "1h" : {
 
     },
@@ -366,6 +369,9 @@
     "Auto Capture" : {
 
     },
+    "Cancel" : {
+
+    },
     "Capture Interval" : {
 
     },
@@ -410,6 +416,9 @@
     "Choose App Files…" : {
 
     },
+    "Custom" : {
+
+    },
     "Delete All Captures" : {
 
     },
@@ -447,7 +456,22 @@
     "Every" : {
 
     },
+    "Export the shown screenshots as a timelapse video" : {
+
+    },
     "Export…" : {
+
+    },
+    "Exporting Timelapse…" : {
+
+    },
+    "Format" : {
+
+    },
+    "fps" : {
+
+    },
+    "Frame Rate" : {
 
     },
     "Grant Permission" : {

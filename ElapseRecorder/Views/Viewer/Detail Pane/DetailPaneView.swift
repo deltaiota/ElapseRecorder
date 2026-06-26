@@ -37,40 +37,10 @@ struct DetailPaneView: View {
             }
         }
         .background(.background)
-        .overlay {
-            if let progress = store.exportProgress {
-                exportProgressOverlay(progress)
-            }
-        }
         .quickLookPreview(
             $store.quickLookURL.sending(\.quickLookURLChanged),
             in: currentScreenshotURLs
         )
-    }
-
-    private func exportProgressOverlay(_ progress: Double) -> some View {
-        ZStack {
-            Color.black.opacity(0.25)
-                .ignoresSafeArea()
-
-            VStack(spacing: 14) {
-                ProgressView(value: progress) {
-                    Text("Exporting Timelapse…")
-                        .font(.headline)
-                } currentValueLabel: {
-                    Text(progress, format: .percent.precision(.fractionLength(0)))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
-                .frame(width: 240)
-
-                Button("Cancel", role: .cancel) {
-                    store.send(.exportCancelButtonTapped)
-                }
-            }
-            .padding(24)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        }
     }
 
     /// Timeline graph or a window's grid, under a persistent breadcrumb.

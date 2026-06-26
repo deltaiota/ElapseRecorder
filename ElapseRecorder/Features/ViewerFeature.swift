@@ -102,7 +102,6 @@ struct ViewerFeature: Reducer {
         case exportCompleted(URL)
         case exportFailed(String)
         case exportCancelled
-        case exportCancelButtonTapped
         case deleteSessionButtonTapped(CaptureSessionSummary)
         case deleteSelectedSessionButtonTapped
         case sessionDeleted(UUID)
@@ -283,7 +282,8 @@ struct ViewerFeature: Reducer {
                         let request = TimelapseExportRequest(
                             imageURLs: urls,
                             destinationURL: selection.destinationURL,
-                            format: selection.options.format,
+                            codec: selection.options.codec,
+                            container: selection.options.container,
                             framesPerSecond: selection.options.framesPerSecond
                         )
                         for try await progress in exporter.export(request) {
@@ -315,10 +315,6 @@ struct ViewerFeature: Reducer {
             case .exportCancelled:
                 state.exportProgress = nil
                 return .none
-
-            case .exportCancelButtonTapped:
-                state.exportProgress = nil
-                return .cancel(id: CancelID.export)
 
             case let .deleteSessionButtonTapped(session):
                 return deleteSession(session, state: &state)

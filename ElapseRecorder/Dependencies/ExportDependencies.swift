@@ -6,33 +6,35 @@ import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Format → AVFoundation mapping
+// MARK: - Codec / container → AVFoundation mapping
 
-extension TimelapseVideoFormat {
+extension TimelapseVideoCodec {
+    var avCodec: AVVideoCodecType {
+        switch self {
+        case .h264:
+            .h264
+        case .hevc:
+            .hevc
+        }
+    }
+}
+
+extension TimelapseVideoContainer {
     var contentType: UTType {
         switch self {
-        case .mp4H264:
+        case .mp4:
             .mpeg4Movie
-        case .movH264, .movHEVC:
+        case .mov:
             .quickTimeMovie
         }
     }
 
     var avFileType: AVFileType {
         switch self {
-        case .mp4H264:
+        case .mp4:
             .mp4
-        case .movH264, .movHEVC:
+        case .mov:
             .mov
-        }
-    }
-
-    var codec: AVVideoCodecType {
-        switch self {
-        case .mp4H264, .movH264:
-            .h264
-        case .movHEVC:
-            .hevc
         }
     }
 }
@@ -83,14 +85,14 @@ extension ExportPanelClient: DependencyKey {
             let panel = NSSavePanel()
             let model = ExportAccessoryModel()
 
-            panel.allowedContentTypes = [model.format.contentType]
+            panel.allowedContentTypes = [model.container.contentType]
             panel.nameFieldStringValue = suggestedName
             panel.canCreateDirectories = true
             panel.isExtensionHidden = false
 
             let accessory = NSHostingView(
-                rootView: ExportOptionsAccessory(model: model) { [weak panel] format in
-                    panel?.allowedContentTypes = [format.contentType]
+                rootView: ExportOptionsAccessory(model: model) { [weak panel] container in
+                    panel?.allowedContentTypes = [container.contentType]
                 }
             )
             accessory.setFrameSize(accessory.fittingSize)
@@ -133,11 +135,11 @@ private enum TimelapseEncoder {
         let canvas = try canvasSize(for: request.imageURLs)
         try? FileManager.default.removeItem(at: request.destinationURL)
 
-        let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: request.format.avFileType)
+        let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: request.container.avFileType)
         let input = AVAssetWriterInput(
             mediaType: .video,
             outputSettings: [
-                AVVideoCodecKey: request.format.codec,
+                AVVideoCodecKey: request.codec.avCodec,
                 AVVideoWidthKey: Int(canvas.width),
                 AVVideoHeightKey: Int(canvas.height),
             ]

@@ -16,14 +16,15 @@ final class ViewerFeatureTests: XCTestCase {
             $0.exportPanelClient.present = { _ in
                 ExportSelection(
                     destinationURL: destination,
-                    options: ExportOptions(format: .movHEVC, framesPerSecond: 24)
+                    options: ExportOptions(codec: .hevc, container: .mov, framesPerSecond: 24)
                 )
             }
             $0.timelapseExportClient.export = { request in
                 AsyncThrowingStream { continuation in
                     XCTAssertEqual(request.imageURLs, urls)
                     XCTAssertEqual(request.destinationURL, destination)
-                    XCTAssertEqual(request.format, .movHEVC)
+                    XCTAssertEqual(request.codec, .hevc)
+                    XCTAssertEqual(request.container, .mov)
                     XCTAssertEqual(request.framesPerSecond, 24)
                     continuation.yield(0.5)
                     continuation.yield(1.0)

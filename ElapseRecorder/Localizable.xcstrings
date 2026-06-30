@@ -49,6 +49,23 @@
         }
       }
     },
+    "About Elapse Recorder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About Elapse Recorder"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关于 Elapse Recorder"
+          }
+        }
+      }
+    },
     "Add %@ to Whitelist": {
       "localizations": {
         "en": {
@@ -684,6 +701,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "捕获模式"
+          }
+        }
+      }
+    },
+    "Capture whitelisted apps on a schedule and turn long, fragmented sessions into a fast-forward timelapse.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capture whitelisted apps on a schedule and turn long, fragmented sessions into a fast-forward timelapse."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按计划捕获白名单应用，将漫长、零散的工作过程汇聚成快进的延时影像。"
           }
         }
       }
@@ -1930,6 +1964,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "未命名"
+          }
+        }
+      }
+    },
+    "Version %@ (%@)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %@ (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本 %@（%@）"
           }
         }
       }

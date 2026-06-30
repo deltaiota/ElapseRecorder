@@ -36,6 +36,18 @@ struct ElapseRecorderApp: App {
             ContentView(store: store)
         }
         .modelContainer(sharedModelContainer)
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                AboutMenuButton()
+            }
+        }
+
+        Window("About Elapse Recorder", id: Self.aboutWindowID) {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
+        .defaultPosition(.center)
 
         MenuBarExtra("Elapse Recorder", systemImage: "record.circle") {
             MenuBarView(
@@ -47,4 +59,17 @@ struct ElapseRecorderApp: App {
     }
 
     private static let libraryWindowID = "library"
+    static let aboutWindowID = "about"
+}
+
+/// Replaces the standard "About" item so it opens our custom About window.
+private struct AboutMenuButton: View {
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Button("About Elapse Recorder") {
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: ElapseRecorderApp.aboutWindowID)
+        }
+    }
 }

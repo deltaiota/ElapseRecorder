@@ -11,7 +11,7 @@ struct CaptureEngineFeature: Reducer {
         var permissionStatus: CapturePermissionStatus = .notDetermined
         var lastError: String?
         var lastWorkspaceEvent: WorkspaceEvent?
-        var recentDiagnostics: [String] = []
+        var recentDiagnostics: [CaptureDiagnostic] = []
 
         struct ActiveSession: Equatable {
             var application: RunningApplication
@@ -114,7 +114,7 @@ struct CaptureEngineFeature: Reducer {
                     return .none
                 }
                 guard let application = state.runningApplications[bundleIdentifier] else {
-                    state.recordDiagnostic("Cannot start capture because \(config.displayName) is not running.")
+                    state.recordDiagnostic(.appNotRunning(displayName: config.displayName))
                     return .none
                 }
                 return startSession(application, config: config, state: &state)
@@ -127,12 +127,12 @@ struct CaptureEngineFeature: Reducer {
 
             case let .staleOpenSessionsClosed(count):
                 if count > 0 {
-                    state.recordDiagnostic("Closed \(count) stale open capture sessions.")
+                    state.recordDiagnostic(.closedStaleSessions(count: count))
                 }
                 return .none
 
             case let .staleOpenSessionCloseFailed(message):
-                state.recordDiagnostic(message)
+                state.recordDiagnostic(.failure(message))
                 logger.log(.error, message, [:])
                 return .none
 
@@ -219,7 +219,7 @@ struct CaptureEngineFeature: Reducer {
 
                 guard status == .authorized else {
                     if status == .denied {
-                        state.recordDiagnostic(CaptureEngineError.screenRecordingPermissionDenied.localizedDescription)
+                        state.recordDiagnostic(.permissionRequired)
                     }
                     return .none
                 }
@@ -266,7 +266,7 @@ struct CaptureEngineFeature: Reducer {
                 {
                     state.activeSessions[bundleIdentifier] = nil
                 }
-                state.recordDiagnostic(message)
+                state.recordDiagnostic(.failure(message))
                 return .none
 
             case let .captureTick(bundleIdentifier):
@@ -372,7 +372,7 @@ struct CaptureEngineFeature: Reducer {
             case let .windowsFailed(bundleIdentifier, message):
                 state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
                 let shouldLog = state.lastError != message
-                state.recordDiagnostic(message)
+                state.recordDiagnostic(.failure(message))
                 if shouldLog {
                     logger.log(.error, message, [:])
                 }
@@ -397,7 +397,7 @@ struct CaptureEngineFeature: Reducer {
 
             case let .screenshotFailed(_, message):
                 let shouldLog = state.lastError != message
-                state.recordDiagnostic(message)
+                state.recordDiagnostic(.failure(message))
                 if shouldLog {
                     logger.log(.error, message, [:])
                 }
@@ -642,10 +642,10 @@ struct CaptureEngineFeature: Reducer {
 }
 
 extension CaptureEngineFeature.State {
-    mutating func recordDiagnostic(_ message: String) {
-        lastError = message
-        if recentDiagnostics.last != message {
-            recentDiagnostics.append(message)
+    mutating func recordDiagnostic(_ diagnostic: CaptureDiagnostic) {
+        lastError = diagnostic.message
+        if recentDiagnostics.last != diagnostic {
+            recentDiagnostics.append(diagnostic)
         }
         if recentDiagnostics.count > 6 {
             recentDiagnostics.removeFirst(recentDiagnostics.count - 6)

@@ -18,6 +18,7 @@
       }
     },
     "1h": {
+      "comment": "A maximum capture interval of 1 hour",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -34,6 +35,7 @@
       }
     },
     "1s": {
+      "comment": "A minimum capture interval of 1 second",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -646,6 +648,23 @@
         }
       }
     },
+    "Cannot start capture because %@ is not running.": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot start capture because %@ is not running."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法开始捕获，因为%@未在运行。"
+          }
+        }
+      }
+    },
     "Capture Interval": {
       "localizations": {
         "en": {
@@ -658,6 +677,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "捕获间隔"
+          }
+        }
+      }
+    },
+    "Capture metadata storage is unavailable.": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capture metadata storage is unavailable."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "捕获元数据存储不可用。"
           }
         }
       }
@@ -691,6 +727,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "按计划捕获白名单应用，将漫长、零散的工作过程汇聚成快进的延时影像。"
+          }
+        }
+      }
+    },
+    "Capture session %@ could not be found.": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capture session %@ could not be found."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到捕获会话%@。"
           }
         }
       }
@@ -771,6 +824,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择应用文件…"
+          }
+        }
+      }
+    },
+    "Closed %lld stale open capture sessions.": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Closed %lld stale open capture sessions."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭%lld个过期的打开捕获会话。"
           }
         }
       }
@@ -1579,6 +1649,7 @@
       }
     },
     "s": {
+      "comment": "Time unit suffix for seconds",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1590,6 +1661,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "秒"
+          }
+        }
+      }
+    },
+    "Screen Recording permission is required before Elapse Recorder can capture windows.": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screen Recording permission is required before Elapse Recorder can capture windows."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Elapse Recorder 捕获窗口之前，需要先授予屏幕录制权限。"
           }
         }
       }
@@ -1638,6 +1726,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "屏幕录制就绪"
+          }
+        }
+      }
+    },
+    "Screenshot could not be written to %@.": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot could not be written to %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法将截图写入%@。"
           }
         }
       }
@@ -2023,6 +2128,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "窗口"
+          }
+        }
+      }
+    },
+    "Window %lld could not be captured.": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Window %lld could not be captured."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法捕获窗口%lld。"
           }
         }
       }

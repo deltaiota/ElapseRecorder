@@ -642,8 +642,8 @@ final class CaptureEngineFeatureTests: XCTestCase {
         }
 
         await store.send(.staleOpenSessionsClosed(2)) {
-            $0.lastError = "Closed 2 stale open capture sessions."
-            $0.recentDiagnostics = ["Closed 2 stale open capture sessions."]
+            $0.lastError = CaptureDiagnostic.closedStaleSessions(count: 2).message
+            $0.recentDiagnostics = [.closedStaleSessions(count: 2)]
         }
     }
 
@@ -1329,7 +1329,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
         }
         await store.receive(.screenshotFailed(app.bundleIdentifier, error.localizedDescription)) {
             $0.lastError = error.localizedDescription
-            $0.recentDiagnostics = [error.localizedDescription]
+            $0.recentDiagnostics = [.failure(error.localizedDescription)]
         }
         await store.receive(.captureCycleFinished(app.bundleIdentifier)) {
             $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false

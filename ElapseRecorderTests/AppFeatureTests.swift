@@ -346,7 +346,7 @@ final class AppFeatureTests: XCTestCase {
             $0.captureEngine.permissionStatus = .denied
             $0.captureEngine.lastError = CaptureEngineError.screenRecordingPermissionDenied.localizedDescription
             $0.captureEngine.recentDiagnostics = [
-                CaptureEngineError.screenRecordingPermissionDenied.localizedDescription,
+                .permissionRequired,
             ]
         }
     }

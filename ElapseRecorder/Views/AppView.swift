@@ -237,10 +237,19 @@ struct AppView: View {
                 .foregroundStyle(.secondary)
         } else {
             ForEach(Array(store.captureEngine.recentDiagnostics.reversed().enumerated()), id: \.offset) { _, diagnostic in
-                Text(diagnostic)
+                diagnosticText(diagnostic)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private func diagnosticText(_ diagnostic: CaptureDiagnostic) -> Text {
+        switch diagnostic {
+        case let .failure(message):
+            Text(message)
+        case .appNotRunning, .closedStaleSessions, .permissionRequired:
+            Text(diagnostic.resource ?? "")
         }
     }
 

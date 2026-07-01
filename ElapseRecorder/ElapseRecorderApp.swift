@@ -36,6 +36,8 @@ struct ElapseRecorderApp: App {
             ContentView(store: store)
         }
         .modelContainer(sharedModelContainer)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 AboutMenuButton()

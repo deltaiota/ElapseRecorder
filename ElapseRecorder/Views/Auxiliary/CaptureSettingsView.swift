@@ -50,7 +50,7 @@ struct CaptureSettingsView: View {
                         .frame(width: 48)
                         .textFieldStyle(.plain)
 
-                        Text("s")
+                        Text("s", comment: "Time unit suffix for seconds")
                     }
                 }
                 .controlSize(.small)
@@ -65,9 +65,9 @@ struct CaptureSettingsView: View {
                 ) {
                     Text("Capture Interval")
                 } minimumValueLabel: {
-                    Text("1s")
+                    Text("1s", comment: "A minimum capture interval of 1 second")
                 } maximumValueLabel: {
-                    Text("1h")
+                    Text("1h", comment: "A maximum capture interval of 1 hour")
                 }
                 .labelsHidden()
             }

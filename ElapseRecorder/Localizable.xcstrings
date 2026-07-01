@@ -28,7 +28,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 小时"
+            "value": "1小时"
           }
         }
       }
@@ -44,7 +44,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "1 秒"
+            "value": "1秒"
           }
         }
       }
@@ -77,7 +77,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将 %@ 加入白名单"
+            "value": "将%@加入白名单"
           }
         }
       }
@@ -115,7 +115,6 @@
       }
     },
     "ApplicationSelectionSheet.chooseApplicationFilesManuallyIfTheApplicationYouWantIs…": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -132,7 +131,6 @@
       }
     },
     "ApplicationSelectionSheet.ImportApplications.noUsableAppBundlesWereFound": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -149,7 +147,6 @@
       }
     },
     "ApplicationSelectionSheet.noApplicationsAvailable": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -166,7 +163,6 @@
       }
     },
     "ApplicationSelectionSheet.noMatchingApplications": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -208,7 +204,7 @@
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已选择 %lld 个应用"
+                  "value": "已选择%lld个应用"
                 }
               }
             }
@@ -217,7 +213,6 @@
       }
     },
     "ApplicationSelectionSheet.tryADifferentApplicationNameOrBundleIdentifier": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -259,7 +254,7 @@
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "将 %lld 个应用加入白名单"
+                  "value": "将%lld个应用加入白名单"
                 }
               }
             }
@@ -268,7 +263,6 @@
       }
     },
     "ApplicationSelectionSource.chosen": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -285,7 +279,6 @@
       }
     },
     "ApplicationSelectionSource.chosenApplications": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -302,7 +295,6 @@
       }
     },
     "ApplicationSelectionSource.installed": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -319,7 +311,6 @@
       }
     },
     "ApplicationSelectionSource.installedApplications": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -336,7 +327,6 @@
       }
     },
     "ApplicationSelectionSource.running": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -353,7 +343,6 @@
       }
     },
     "ApplicationSelectionSource.runningApplications": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -370,7 +359,6 @@
       }
     },
     "AppSidebarColumn.AppRowCaptureAction.pauseCapture": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -387,7 +375,6 @@
       }
     },
     "AppSidebarColumn.AppRowCaptureAction.resumeCapture": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -404,7 +391,6 @@
       }
     },
     "AppSidebarColumn.AppRowCaptureAction.startCapture": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -421,7 +407,6 @@
       }
     },
     "AppSidebarColumn.AppRowCaptureAction.stopCapture": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -438,7 +423,6 @@
       }
     },
     "AppView.ActiveSessionSummary.capturing": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -455,7 +439,6 @@
       }
     },
     "AppView.ActiveSessionSummary.pidActiveApplicationProcessIdentifierSessionSessionIDEveryInt…": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -466,13 +449,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "PID %1$d，会话 %2$@，每 %3$lld 秒，%4$@"
+            "value": "PID %1$d，会话%2$@，每%3$lld秒，%4$@"
           }
         }
       }
     },
     "AppView.ActiveSessionSummary.waiting": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -489,7 +471,6 @@
       }
     },
     "AppView.authorized": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -506,7 +487,6 @@
       }
     },
     "AppView.capturingActiveCaptureSessionsCountApps": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -517,13 +497,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在捕获 %lld 个应用"
+            "value": "正在捕获%lld个应用"
           }
         }
       }
     },
     "AppView.denied": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -540,7 +519,6 @@
       }
     },
     "AppView.diagnostics": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -557,7 +535,6 @@
       }
     },
     "AppView.diagnosticsStoreCaptureEngineRecentDiagnosticsCount": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -568,13 +545,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "诊断 %lld"
+            "value": "诊断%lld"
           }
         }
       }
     },
     "AppView.notDetermined": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -591,7 +567,6 @@
       }
     },
     "AppView.WorkspaceEventSummary.lastEventActivatedApplicationDisplayName": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -602,13 +577,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最近事件：激活 %@"
+            "value": "最近事件：激活%@"
           }
         }
       }
     },
     "AppView.WorkspaceEventSummary.lastEventLaunchedApplicationDisplayName": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -619,13 +593,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最近事件：启动 %@"
+            "value": "最近事件：启动%@"
           }
         }
       }
     },
     "AppView.WorkspaceEventSummary.lastEventQuitApplicationDisplayName": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -636,7 +609,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最近事件：退出 %@"
+            "value": "最近事件：退出%@"
           }
         }
       }
@@ -883,7 +856,6 @@
       }
     },
     "DetailPaneView.WindowMenuTitle.windowWindowDisplayNumber": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -894,13 +866,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "窗口 %lld"
+            "value": "窗口%lld"
           }
         }
       }
     },
     "DetailPaneView.WindowMenuTitle.windowWindowDisplayNumberLabel": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -911,7 +882,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "窗口 %1$lld：%2$@"
+            "value": "窗口%1$lld：%2$@"
           }
         }
       }
@@ -996,6 +967,23 @@
         }
       }
     },
+    "ExportOptionsAccessory.estimatedLengthDurationModelEstimatedFrameCountFrames": {
+      "extractionState": "extracted_with_value",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estimated length: %1$@ · %2$lld frames"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预计时长：%1$@ · %2$lld帧"
+          }
+        }
+      }
+    },
     "ExportOptionsAccessory.modelInterpolationFramesCrossfadeFrames": {
       "localizations": {
         "en": {
@@ -1022,7 +1010,7 @@
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld 个交叉淡化帧"
+                  "value": "%lld个交叉淡化帧"
                 }
               }
             }
@@ -1255,7 +1243,6 @@
       }
     },
     "MenuBarView.capturingStoreCaptureEngineActiveSessionsCountApps": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1266,13 +1253,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在捕获 %lld 个应用"
+            "value": "正在捕获%lld个应用"
           }
         }
       }
     },
     "MenuBarView.FrontmostCaptureStatusTitle.autoCapturePaused": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1289,7 +1275,6 @@
       }
     },
     "MenuBarView.FrontmostCaptureStatusTitle.autoCaptureReady": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1306,7 +1291,6 @@
       }
     },
     "MenuBarView.FrontmostCaptureStatusTitle.capturing": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1323,7 +1307,6 @@
       }
     },
     "MenuBarView.FrontmostCaptureStatusTitle.manualCaptureStopped": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1340,7 +1323,6 @@
       }
     },
     "MenuBarView.FrontmostCaptureStatusTitle.notWhitelisted": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1357,7 +1339,6 @@
       }
     },
     "MenuBarView.totalStoreViewerAppsReduce001ScreenshotCountScreenshots": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1368,7 +1349,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "共 %lld 张截图"
+            "value": "共%lld张截图"
           }
         }
       }
@@ -1528,7 +1509,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "将 %@ 移出白名单"
+            "value": "将%@移出白名单"
           }
         }
       }
@@ -1902,7 +1883,6 @@
       }
     },
     "TimelineGraphView.SegmentBlock.titleForSegmentSegmentScreenshotCountScreenshots": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1913,13 +1893,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ · %2$lld 张截图"
+            "value": "%1$@ · %2$lld张截图"
           }
         }
       }
     },
     "TimelineGraphView.WindowTag.windowLaneDisplayNumber": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1930,13 +1909,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "窗口 %lld"
+            "value": "窗口%lld"
           }
         }
       }
     },
     "UnavailableCell.unavailableForFormatted": {
-      "extractionState": "extracted_with_value",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -1947,7 +1925,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "不可用 %@"
+            "value": "不可用%@"
           }
         }
       }
@@ -1980,7 +1958,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "版本 %@（%@）"
+            "value": "版本%@（%@）"
           }
         }
       }

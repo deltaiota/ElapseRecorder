@@ -651,6 +651,23 @@
         }
       }
     },
+    "Balanced" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Balanced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "均衡"
+          }
+        }
+      }
+    },
     "Cannot start capture because %@ is not running." : {
       "localizations" : {
         "en" : {
@@ -845,6 +862,23 @@
         }
       }
     },
+    "Clear" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清晰"
+          }
+        }
+      }
+    },
     "Codec" : {
       "localizations" : {
         "en" : {
@@ -857,6 +891,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "编解码器"
+          }
+        }
+      }
+    },
+    "Compact" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compact"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "紧凑"
           }
         }
       }
@@ -1167,6 +1218,57 @@
         }
       }
     },
+    "HEIC, good clarity with moderate file size" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HEIC, good clarity with moderate file size"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HEIC，清晰度良好，文件大小适中"
+          }
+        }
+      }
+    },
+    "HEIC, sharper frames with larger files" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HEIC, sharper frames with larger files"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HEIC，画面更锐利，文件更大"
+          }
+        }
+      }
+    },
+    "HEIC, smaller files with lighter detail" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HEIC, smaller files with lighter detail"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HEIC，文件更小，细节更少"
+          }
+        }
+      }
+    },
     "If granting permission failed, open System Settings > Privacy & Security > Screen & System Audio Recording (click to open), remove Elapse Recorder and add it back, then reopen the app." : {
       "localizations" : {
         "en" : {
@@ -1263,6 +1365,23 @@
         }
       }
     },
+    "Largest files, exact pixels" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Largest files, exact pixels"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件最大，像素精确"
+          }
+        }
+      }
+    },
     "Last Capture" : {
       "localizations" : {
         "en" : {
@@ -1275,6 +1394,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最近捕获"
+          }
+        }
+      }
+    },
+    "Lossless PNG" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lossless PNG"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无损 PNG"
           }
         }
       }

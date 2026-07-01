@@ -122,7 +122,11 @@ struct MenuBarView: View {
         Button {
             applyScreenshotQualityPreset(preset)
         } label: {
-            Text(selectedScreenshotQualityPreset == preset ? "✓ \(preset.title)" : preset.title)
+            if selectedScreenshotQualityPreset == preset {
+                Text(verbatim: "✓ ") + Text(preset.title)
+            } else {
+                Text(preset.title)
+            }
             Text(preset.subtitle)
         }
     }
@@ -250,12 +254,9 @@ struct MenuBarView: View {
     }
 
     private struct ScreenshotQualityPreset: Equatable, Identifiable {
-        var id: String {
-            title
-        }
-
-        var title: String
-        var subtitle: String
+        var id: String
+        var title: LocalizedStringKey
+        var subtitle: LocalizedStringKey
         var format: CaptureImageFormat
         var heicQuality: Double
     }
@@ -267,6 +268,7 @@ struct MenuBarView: View {
     }
 
     private static let defaultScreenshotQualityPreset = ScreenshotQualityPreset(
+        id: "balanced",
         title: "Balanced",
         subtitle: "HEIC, good clarity with moderate file size",
         format: .heic,
@@ -274,6 +276,7 @@ struct MenuBarView: View {
     )
 
     private static let pngScreenshotQualityPreset = ScreenshotQualityPreset(
+        id: "png",
         title: "Lossless PNG",
         subtitle: "Largest files, exact pixels",
         format: .png,
@@ -282,6 +285,7 @@ struct MenuBarView: View {
 
     private static let screenshotQualityPresets = [
         ScreenshotQualityPreset(
+            id: "compact",
             title: "Compact",
             subtitle: "HEIC, smaller files with lighter detail",
             format: .heic,
@@ -289,6 +293,7 @@ struct MenuBarView: View {
         ),
         defaultScreenshotQualityPreset,
         ScreenshotQualityPreset(
+            id: "clear",
             title: "Clear",
             subtitle: "HEIC, sharper frames with larger files",
             format: .heic,

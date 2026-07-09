@@ -1349,6 +1349,23 @@
         }
       }
     },
+    "Launch at Login" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Launch at Login"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开机时启动"
+          }
+        }
+      }
+    },
     "Larger thumbnails" : {
       "localizations" : {
         "en" : {

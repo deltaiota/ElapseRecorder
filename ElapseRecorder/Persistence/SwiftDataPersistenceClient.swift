@@ -426,7 +426,7 @@ extension PersistenceClient {
             if let modelContainer {
                 container = modelContainer
             } else {
-                container = try ModelContainer(for: Schema.elapseRecorder)
+                container = try ModelContainer.elapseRecorder()
             }
         } catch {
             return unavailable

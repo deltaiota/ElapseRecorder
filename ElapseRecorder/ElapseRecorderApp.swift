@@ -15,11 +15,8 @@ struct ElapseRecorderApp: App {
     private let store: StoreOf<AppFeature>
 
     init() {
-        let schema = Schema.elapseRecorder
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
         do {
-            let modelContainer = try ModelContainer(for: schema, configurations: [modelConfiguration])
+            let modelContainer = try ModelContainer.elapseRecorder()
             sharedModelContainer = modelContainer
             store = Store(initialState: AppFeature.State()) {
                 AppFeature()

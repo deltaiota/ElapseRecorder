@@ -401,6 +401,23 @@ nonisolated enum FileStoragePaths {
         return root
     }
 
+    /// Deterministic on-disk location for the SwiftData store.
+    ///
+    /// The default store location (`default.store` in the bare Application Support directory)
+    /// can fail to open in a signed, non-sandboxed build, so we pin the database to a stable
+    /// app-owned subdirectory that we create ourselves.
+    static func databaseURL() throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        let directory = base.appending(path: "ElapseRecorder", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appending(path: "ElapseRecorder.store", directoryHint: .notDirectory)
+    }
+
     static func sessionDirectory(
         bundleIdentifier: String,
         sessionID: UUID,

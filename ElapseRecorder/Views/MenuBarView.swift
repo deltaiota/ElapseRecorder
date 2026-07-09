@@ -31,7 +31,9 @@ struct MenuBarView: View {
         }
 
         Section(totalScreenshotCountTitle) {
-            LaunchAtLogin.Toggle()
+            LaunchAtLogin.Toggle {
+                Text("Launch at Login")
+            }
 
             Button("Quit") {
                 NSApp.terminate(nil)

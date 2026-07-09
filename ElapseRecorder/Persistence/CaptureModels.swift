@@ -155,6 +155,18 @@ extension Schema {
     ])
 }
 
+extension ModelContainer {
+    /// Builds the app's SwiftData container backed by a stable, app-owned store URL so it
+    /// opens reliably in signed, non-sandboxed builds.
+    static func elapseRecorder() throws -> ModelContainer {
+        let configuration = try ModelConfiguration(
+            schema: .elapseRecorder,
+            url: FileStoragePaths.databaseURL()
+        )
+        return try ModelContainer(for: .elapseRecorder, configurations: configuration)
+    }
+}
+
 extension CaptureSessionModel {
     var isEmpty: Bool {
         windows.isEmpty && screenshots.isEmpty && unavailableRecords.isEmpty

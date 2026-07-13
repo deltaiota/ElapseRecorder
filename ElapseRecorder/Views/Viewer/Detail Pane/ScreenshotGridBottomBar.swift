@@ -6,7 +6,9 @@ struct ScreenshotGridBottomBar: View {
     @Binding var gridItemSize: GridItemSize
     var onJumpToLatest: () -> Void
     var isExportDisabled: Bool = false
+    var exportProgress: Double? = nil
     var onExport: () -> Void
+    var onCancelExport: () -> Void = {}
 
     @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
     @State private var gridItemSizeLargerButtonAnimationTrigger: Int = 0
@@ -77,13 +79,34 @@ struct ScreenshotGridBottomBar: View {
 
                 Spacer()
 
-                Button("Export…") { onExport() }
-                    .disabled(isExportDisabled)
-                    .help("Export the shown screenshots as a timelapse video")
+                if let exportProgress {
+                    exportProgressControls(exportProgress)
+                } else {
+                    Button("Export…") { onExport() }
+                        .disabled(isExportDisabled)
+                        .help("Export the shown screenshots as a timelapse video")
+                }
             }
             .padding()
         }
         .background(.bar)
+    }
+
+    @ViewBuilder
+    private func exportProgressControls(_ progress: Double) -> some View {
+        HStack(spacing: 8) {
+            ProgressView(value: progress)
+                .progressViewStyle(.linear)
+                .frame(width: 120)
+
+            Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                .font(.callout)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+
+            Button("Cancel") { onCancelExport() }
+                .help("Cancel the timelapse export")
+        }
     }
 }
 
@@ -91,6 +114,16 @@ struct ScreenshotGridBottomBar: View {
     ScreenshotGridBottomBar(
         gridItemSize: .constant(.default),
         onJumpToLatest: {},
+        onExport: {}
+    )
+    .frame(width: 520)
+}
+
+#Preview("Exporting") {
+    ScreenshotGridBottomBar(
+        gridItemSize: .constant(.default),
+        onJumpToLatest: {},
+        exportProgress: 0.42,
         onExport: {}
     )
     .frame(width: 520)

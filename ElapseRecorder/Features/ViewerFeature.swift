@@ -98,6 +98,7 @@ struct ViewerFeature: Reducer {
         case refresh
         case revealScreenshotInFinder(ScreenshotRecord)
         case exportTimelapseRequested(urls: [URL])
+        case exportCancelButtonTapped
         case exportProgressed(Double)
         case exportCompleted(URL)
         case exportFailed(String)
@@ -291,6 +292,7 @@ struct ViewerFeature: Reducer {
                         for try await progress in exporter.export(request) {
                             await send(.exportProgressed(progress))
                         }
+                        try Task.checkCancellation()
                         await send(.exportCompleted(selection.destinationURL))
                         await fileReveal.reveal(selection.destinationURL)
                     } catch is CancellationError {
@@ -300,6 +302,11 @@ struct ViewerFeature: Reducer {
                     }
                 }
                 .cancellable(id: CancelID.export)
+
+            case .exportCancelButtonTapped:
+                guard state.exportProgress != nil else { return .none }
+                state.exportProgress = nil
+                return .cancel(id: CancelID.export)
 
             case let .exportProgressed(progress):
                 state.exportProgress = progress

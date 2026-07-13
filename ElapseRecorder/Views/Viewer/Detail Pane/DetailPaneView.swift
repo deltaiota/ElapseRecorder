@@ -100,7 +100,7 @@ struct DetailPaneView: View {
             }
         }
         .labelsHidden()
-        .fixedSize()
+        .frame(maxWidth: 240)
     }
 
     private func windowMenuTitle(_ window: WindowCaptureSummary) -> String {
@@ -146,8 +146,12 @@ struct DetailPaneView: View {
             gridItemSize: $gridItemSize,
             onJumpToLatest: { jumpToLatestTrigger += 1 },
             isExportDisabled: exportScopeURLs.isEmpty || store.exportProgress != nil,
+            exportProgress: store.exportProgress,
             onExport: {
                 store.send(.exportTimelapseRequested(urls: exportScopeURLs))
+            },
+            onCancelExport: {
+                store.send(.exportCancelButtonTapped)
             }
         )
     }

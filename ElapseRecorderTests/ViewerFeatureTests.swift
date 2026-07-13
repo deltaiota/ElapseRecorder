@@ -68,6 +68,37 @@ final class ViewerFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testExportCancelButtonCancelsInFlightExport() async {
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.exportPanelClient.present = { _, _ in
+                ExportSelection(
+                    destinationURL: URL(filePath: "/tmp/out.mp4"),
+                    options: ExportOptions(codec: .h264, container: .mp4, framesPerSecond: 24, interpolationFrames: 0)
+                )
+            }
+            $0.timelapseExportClient.export = { _ in
+                AsyncThrowingStream { continuation in
+                    continuation.yield(0.5)
+                    // Stay open so the export is still in flight when we cancel it.
+                }
+            }
+            $0.fileRevealClient.reveal = { _ in }
+        }
+
+        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")])) {
+            $0.exportProgress = 0
+        }
+        await store.receive(\.exportProgressed) {
+            $0.exportProgress = 0.5
+        }
+        await store.send(.exportCancelButtonTapped) {
+            $0.exportProgress = nil
+        }
+    }
+
+    @MainActor
     func testSelectingSessionLoadsWindowsAndTimelineGraph() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000601"))
         let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000602"))

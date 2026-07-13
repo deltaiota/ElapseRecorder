@@ -193,6 +193,18 @@ private enum TimelapseEncoder {
         let outputFrameCount = frameCount == 1 ? 1 : frameCount + (frameCount - 1) * interpolation
 
         var emitted = 0
+        var lastReportedPercent = -1
+        /// Report at most ~101 times (whole-percent steps). Yielding progress for every one of
+        /// a very long export's frames (10k+) would flood the main-actor reducer with actions
+        /// and make the UI unresponsive, so we coalesce to visible increments.
+        func report() {
+            let fraction = Double(emitted) / Double(outputFrameCount)
+            let percent = Int(fraction * 100)
+            if percent != lastReportedPercent {
+                lastReportedPercent = percent
+                progress(fraction)
+            }
+        }
         func append(_ draw: (CGContext) -> Void) async throws {
             try Task.checkCancellation()
             while !input.isReadyForMoreMediaData {
@@ -207,40 +219,48 @@ private enum TimelapseEncoder {
                 throw TimelapseExportError.encodingFailed(writer.error?.localizedDescription ?? "frame append failed")
             }
             emitted += 1
-            progress(Double(emitted) / Double(outputFrameCount))
+            report()
         }
 
-        if frameCount == 1 {
-            let image = try loadImage(at: request.imageURLs[0])
-            try await append { context in drawFrame(image, in: context, canvas: canvas) }
-        } else {
-            var current = try loadImage(at: request.imageURLs[0])
-            for index in 0 ..< frameCount - 1 {
-                let next = try loadImage(at: request.imageURLs[index + 1])
+        do {
+            if frameCount == 1 {
+                let image = try loadImage(at: request.imageURLs[0])
+                try await append { context in drawFrame(image, in: context, canvas: canvas) }
+            } else {
+                var current = try loadImage(at: request.imageURLs[0])
+                for index in 0 ..< frameCount - 1 {
+                    let next = try loadImage(at: request.imageURLs[index + 1])
 
-                // Hold the current screenshot, then dissolve toward the next one. Drawing
-                // `current` fully opaque and compositing `next` over it at alpha f yields a
-                // true crossfade (current·(1-f) + next·f), which stays fully opaque — unlike
-                // fading both, which dips translucent and shows the background mid-transition.
-                try await append { context in drawFrame(current, in: context, canvas: canvas) }
-                for step in stride(from: 1, through: interpolation, by: 1) {
-                    let progressFraction = Double(step) / Double(interpolation + 1)
-                    try await append { context in
-                        drawFrame(current, in: context, canvas: canvas)
-                        drawFrame(next, in: context, canvas: canvas, alpha: progressFraction, clearBackground: false)
+                    // Hold the current screenshot, then dissolve toward the next one. Drawing
+                    // `current` fully opaque and compositing `next` over it at alpha f yields a
+                    // true crossfade (current·(1-f) + next·f), which stays fully opaque — unlike
+                    // fading both, which dips translucent and shows the background mid-transition.
+                    try await append { context in drawFrame(current, in: context, canvas: canvas) }
+                    for step in stride(from: 1, through: interpolation, by: 1) {
+                        let progressFraction = Double(step) / Double(interpolation + 1)
+                        try await append { context in
+                            drawFrame(current, in: context, canvas: canvas)
+                            drawFrame(next, in: context, canvas: canvas, alpha: progressFraction, clearBackground: false)
+                        }
                     }
+                    current = next
                 }
-                current = next
+                // Hold the final screenshot.
+                try await append { context in drawFrame(current, in: context, canvas: canvas) }
             }
-            // Hold the final screenshot.
-            try await append { context in drawFrame(current, in: context, canvas: canvas) }
-        }
 
-        input.markAsFinished()
-        await writer.finishWriting()
+            input.markAsFinished()
+            await writer.finishWriting()
 
-        if writer.status != .completed {
-            throw TimelapseExportError.encodingFailed(writer.error?.localizedDescription ?? "encoding did not complete")
+            if writer.status != .completed {
+                throw TimelapseExportError.encodingFailed(writer.error?.localizedDescription ?? "encoding did not complete")
+            }
+        } catch {
+            // Discard the half-written file on cancellation or failure so we never leave a
+            // truncated, unplayable video behind.
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: request.destinationURL)
+            throw error
         }
     }
 

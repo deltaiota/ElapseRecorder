@@ -652,7 +652,6 @@
       }
     },
     "Balanced" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -669,7 +668,6 @@
       }
     },
     "Cancel" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -681,23 +679,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取消"
-          }
-        }
-      }
-    },
-    "Cancel the timelapse export" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cancel the timelapse export"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "取消延时视频导出"
           }
         }
       }
@@ -879,6 +860,22 @@
         }
       }
     },
+    "Clear" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清晰"
+          }
+        }
+      }
+    },
     "Closed %lld stale open capture sessions." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -892,23 +889,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已关闭%lld个过期的打开捕获会话。"
-          }
-        }
-      }
-    },
-    "Clear" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Clear"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "清晰"
           }
         }
       }
@@ -930,7 +910,6 @@
       }
     },
     "Compact" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1086,6 +1065,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每"
+          }
+        }
+      }
+    },
+    "Exporting Timelapse…" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting Timelapse…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在导出延时视频…"
           }
         }
       }
@@ -1253,7 +1249,6 @@
       }
     },
     "HEIC, good clarity with moderate file size" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1270,7 +1265,6 @@
       }
     },
     "HEIC, sharper frames with larger files" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1287,7 +1281,6 @@
       }
     },
     "HEIC, smaller files with lighter detail" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1367,6 +1360,23 @@
         }
       }
     },
+    "Keep this window open until the export finishes." : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep this window open until the export finishes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在导出完成前请保持此窗口打开。"
+          }
+        }
+      }
+    },
     "Jump to Latest" : {
       "localizations" : {
         "en" : {
@@ -1379,23 +1389,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跳转到最新"
-          }
-        }
-      }
-    },
-    "Launch at Login" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Launch at Login"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "随macOS启动"
           }
         }
       }
@@ -1417,7 +1410,6 @@
       }
     },
     "Largest files, exact pixels" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1449,8 +1441,23 @@
         }
       }
     },
+    "Launch at Login" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Launch at Login"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "随macOS启动"
+          }
+        }
+      }
+    },
     "Lossless PNG" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {

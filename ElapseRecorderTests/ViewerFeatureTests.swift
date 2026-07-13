@@ -36,6 +36,9 @@ final class ViewerFeatureTests: XCTestCase {
         }
 
         await store.send(.exportTimelapseRequested(urls: urls)) {
+            $0.isExporting = true
+        }
+        await store.receive(\.exportStarted) {
             $0.exportProgress = 0
         }
         await store.receive(\.exportProgressed) {
@@ -45,6 +48,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.exportProgress = 1.0
         }
         await store.receive(\.exportCompleted) {
+            $0.isExporting = false
             $0.exportProgress = nil
         }
         XCTAssertEqual(revealed.value, destination)
@@ -60,10 +64,10 @@ final class ViewerFeatureTests: XCTestCase {
         }
 
         await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")])) {
-            $0.exportProgress = 0
+            $0.isExporting = true
         }
         await store.receive(\.exportCancelled) {
-            $0.exportProgress = nil
+            $0.isExporting = false
         }
     }
 
@@ -88,12 +92,16 @@ final class ViewerFeatureTests: XCTestCase {
         }
 
         await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")])) {
+            $0.isExporting = true
+        }
+        await store.receive(\.exportStarted) {
             $0.exportProgress = 0
         }
         await store.receive(\.exportProgressed) {
             $0.exportProgress = 0.5
         }
         await store.send(.exportCancelButtonTapped) {
+            $0.isExporting = false
             $0.exportProgress = nil
         }
     }

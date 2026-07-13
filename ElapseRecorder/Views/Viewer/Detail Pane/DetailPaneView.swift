@@ -41,6 +41,21 @@ struct DetailPaneView: View {
             $store.quickLookURL.sending(\.quickLookURLChanged),
             in: currentScreenshotURLs
         )
+        .sheet(isPresented: exportProgressSheetPresented) {
+            ExportProgressSheet(
+                progress: store.exportProgress ?? 0,
+                onCancel: { store.send(.exportCancelButtonTapped) }
+            )
+        }
+    }
+
+    /// Presented only while frames are actually being encoded (exportProgress != nil), so it
+    /// never overlaps the AppKit save panel shown during destination selection.
+    private var exportProgressSheetPresented: Binding<Bool> {
+        Binding(
+            get: { store.exportProgress != nil },
+            set: { _ in }
+        )
     }
 
     /// Timeline graph or a window's grid, under a persistent breadcrumb.
@@ -90,17 +105,33 @@ struct DetailPaneView: View {
 
     @ViewBuilder
     private func windowPicker() -> some View {
-        Picker(
-            "Window",
-            selection: $store.windowPickerSelection.sending(\.windowPickerSelectionChanged)
-        ) {
+        Menu {
             ForEach(store.windows) { window in
-                Text(windowMenuTitle(window))
-                    .tag(ViewerFeature.State.WindowPickerSelection.window(id: window.id))
+                Button {
+                    store.send(.windowPickerSelectionChanged(.window(id: window.id)))
+                } label: {
+                    if window.id == store.selectedWindowID {
+                        Label(windowMenuTitle(window), systemSymbol: .checkmark)
+                    } else {
+                        Text(windowMenuTitle(window))
+                    }
+                }
             }
+        } label: {
+            Text(selectedWindowMenuTitle)
+                .lineLimit(1)
+                .truncationMode(.tail)
         }
-        .labelsHidden()
-        .frame(maxWidth: 240)
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .frame(maxWidth: 260, alignment: .leading)
+    }
+
+    private var selectedWindowMenuTitle: String {
+        guard let window = store.windows.first(where: { $0.id == store.selectedWindowID }) else {
+            return #tk("Window")
+        }
+        return windowMenuTitle(window)
     }
 
     private func windowMenuTitle(_ window: WindowCaptureSummary) -> String {
@@ -145,13 +176,9 @@ struct DetailPaneView: View {
         ScreenshotGridBottomBar(
             gridItemSize: $gridItemSize,
             onJumpToLatest: { jumpToLatestTrigger += 1 },
-            isExportDisabled: exportScopeURLs.isEmpty || store.exportProgress != nil,
-            exportProgress: store.exportProgress,
+            isExportDisabled: exportScopeURLs.isEmpty || store.isExporting,
             onExport: {
                 store.send(.exportTimelapseRequested(urls: exportScopeURLs))
-            },
-            onCancelExport: {
-                store.send(.exportCancelButtonTapped)
             }
         )
     }

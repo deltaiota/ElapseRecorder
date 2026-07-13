@@ -16,6 +16,11 @@ struct ViewerFeature: Reducer {
         var selectedSegment: WindowTitleSegment?
         var selectedScreenshotIDs: Set<UUID> = []
         var quickLookURL: URL?
+        /// True from the moment an export is requested until it finishes/cancels — used to
+        /// guard re-entry and disable the Export button (covers the destination-picker phase).
+        var isExporting = false
+        /// Non-nil only while frames are actually being encoded; drives the progress sheet.
+        /// It stays nil during the AppKit save-panel phase so the two sheets never collide.
         var exportProgress: Double?
         var isShowingFlatGallery = false
         var isLoading = false
@@ -99,6 +104,7 @@ struct ViewerFeature: Reducer {
         case revealScreenshotInFinder(ScreenshotRecord)
         case exportTimelapseRequested(urls: [URL])
         case exportCancelButtonTapped
+        case exportStarted
         case exportProgressed(Double)
         case exportCompleted(URL)
         case exportFailed(String)
@@ -265,8 +271,9 @@ struct ViewerFeature: Reducer {
                 }
 
             case let .exportTimelapseRequested(urls):
-                guard !urls.isEmpty, state.exportProgress == nil else { return .none }
-                state.exportProgress = 0
+                guard !urls.isEmpty, !state.isExporting else { return .none }
+                state.isExporting = true
+                state.exportProgress = nil
 
                 let exporter = timelapseExport
                 let panel = exportPanel
@@ -289,6 +296,7 @@ struct ViewerFeature: Reducer {
                             framesPerSecond: selection.options.framesPerSecond,
                             interpolationFrames: selection.options.interpolationFrames
                         )
+                        await send(.exportStarted)
                         for try await progress in exporter.export(request) {
                             await send(.exportProgressed(progress))
                         }
@@ -304,24 +312,32 @@ struct ViewerFeature: Reducer {
                 .cancellable(id: CancelID.export)
 
             case .exportCancelButtonTapped:
-                guard state.exportProgress != nil else { return .none }
+                guard state.isExporting else { return .none }
+                state.isExporting = false
                 state.exportProgress = nil
                 return .cancel(id: CancelID.export)
+
+            case .exportStarted:
+                state.exportProgress = 0
+                return .none
 
             case let .exportProgressed(progress):
                 state.exportProgress = progress
                 return .none
 
             case .exportCompleted:
+                state.isExporting = false
                 state.exportProgress = nil
                 return .none
 
             case let .exportFailed(message):
+                state.isExporting = false
                 state.exportProgress = nil
                 state.errorMessage = message
                 return .none
 
             case .exportCancelled:
+                state.isExporting = false
                 state.exportProgress = nil
                 return .none
 

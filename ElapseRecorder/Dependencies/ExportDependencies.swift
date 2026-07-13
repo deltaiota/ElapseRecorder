@@ -58,7 +58,7 @@ nonisolated struct ExportPanelClient {
 extension TimelapseExportClient: DependencyKey {
     static let liveValue = Self { request in
         AsyncThrowingStream { continuation in
-            let task = Task.detached(priority: .userInitiated) {
+            let task = Task.detached(priority: .utility) {
                 do {
                     try await TimelapseEncoder.encode(request) { progress in
                         continuation.yield(progress)
@@ -220,6 +220,10 @@ private enum TimelapseEncoder {
             }
             emitted += 1
             report()
+            // Yield between frames so a long, CPU-bound export never monopolizes its executor:
+            // this lets progress values and UI updates flow smoothly instead of arriving in a
+            // burst at the end.
+            await Task.yield()
         }
 
         do {

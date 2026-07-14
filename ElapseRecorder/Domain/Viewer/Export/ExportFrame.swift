@@ -13,19 +13,34 @@ nonisolated struct ExportFrame: Equatable {
     var capturedAt: Date
     /// 64-bit difference hash, used by the optional export-time near-duplicate filter.
     var perceptualHash: UInt64
+    /// When set, pixels come from this compacted video at `videoFrameIndex` instead of `url`.
+    var videoURL: URL?
+    var videoFrameIndex: Int?
 
     init(
         url: URL,
         pixelWidth: Int = 0,
         pixelHeight: Int = 0,
         capturedAt: Date = Date(timeIntervalSince1970: 0),
-        perceptualHash: UInt64 = 0
+        perceptualHash: UInt64 = 0,
+        videoURL: URL? = nil,
+        videoFrameIndex: Int? = nil
     ) {
         self.url = url
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.capturedAt = capturedAt
         self.perceptualHash = perceptualHash
+        self.videoURL = videoURL
+        self.videoFrameIndex = videoFrameIndex
+    }
+
+    var frameSource: FrameSource {
+        if let videoURL, let videoFrameIndex {
+            .videoFrame(video: videoURL, index: videoFrameIndex)
+        } else {
+            .file(url)
+        }
     }
 
     var knownPixelSize: CGSize? {

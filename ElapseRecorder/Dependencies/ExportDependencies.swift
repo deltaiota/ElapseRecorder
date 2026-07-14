@@ -245,9 +245,9 @@ private nonisolated enum TimelapseEncoder {
         var decodeTasks = [Task<SendableImage, Error>?](repeating: nil, count: frameCount)
         func startDecode(_ index: Int) {
             guard index < frameCount, decodeTasks[index] == nil else { return }
-            let url = frames[index].url
+            let source = frames[index].frameSource
             decodeTasks[index] = Task.detached(priority: .userInitiated) {
-                try SendableImage(image: loadImage(at: url, fittingWithin: canvas))
+                try await SendableImage(image: loadImage(source, fittingWithin: canvas))
             }
         }
         defer { for task in decodeTasks {
@@ -345,8 +345,12 @@ private nonisolated enum TimelapseEncoder {
             let size: CGSize
             if let known = frame.knownPixelSize {
                 size = known
+            } else if case let .file(url) = frame.frameSource {
+                size = try imagePixelSize(at: url)
             } else {
-                size = try imagePixelSize(at: frame.url)
+                // Video-backed frame without stored dimensions (practically never happens, since
+                // compaction post-dates dimension tracking): rely on sibling frames for the canvas.
+                continue
             }
             maxWidth = max(maxWidth, Int(size.width))
             maxHeight = max(maxHeight, Int(size.height))
@@ -378,23 +382,40 @@ private nonisolated enum TimelapseEncoder {
     /// Decode a source image eagerly and no larger than the canvas needs. Using the thumbnail
     /// API decodes directly at the target size (instead of a lazy full-resolution decode that
     /// would happen on the encoding thread), which keeps the encode loop fed and memory bounded.
-    private static func loadImage(at url: URL, fittingWithin canvas: CGSize) throws -> CGImage {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-            throw TimelapseExportError.unreadableImage(url)
-        }
+    private static func loadImage(_ source: FrameSource, fittingWithin canvas: CGSize) async throws -> CGImage {
+        switch source {
+        case let .file(url):
+            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                throw TimelapseExportError.unreadableImage(url)
+            }
 
-        let maxPixelSize = Int(max(canvas.width, canvas.height))
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-        ]
+            let maxPixelSize = Int(max(canvas.width, canvas.height))
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceShouldCacheImmediately: true,
+                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            ]
 
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
-            throw TimelapseExportError.unreadableImage(url)
+            guard let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+                throw TimelapseExportError.unreadableImage(url)
+            }
+            return image
+
+        case let .videoFrame(video, index):
+            let asset = AVURLAsset(url: video)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            generator.appliesPreferredTrackTransform = true
+            let time = CMTime(value: CMTimeValue(index), timescale: CompactionVideo.frameRate)
+            do {
+                let (image, _) = try await generator.image(at: time)
+                return image
+            } catch {
+                throw TimelapseExportError.unreadableImage(video)
+            }
         }
-        return image
     }
 
     private static func pixelBuffer(

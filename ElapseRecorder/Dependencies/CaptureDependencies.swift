@@ -1,5 +1,6 @@
 @preconcurrency import AppKit
 import ApplicationServices
+import AVFoundation
 import Chronicle
 import ComposableArchitecture
 import CoreGraphics
@@ -121,7 +122,7 @@ nonisolated struct PersistenceClient {
 }
 
 nonisolated struct ThumbnailClient {
-    var thumbnail: @Sendable (_ url: URL, _ maximumPixelSize: Int) async throws -> CGImage
+    var thumbnail: @Sendable (_ source: FrameSource, _ maximumPixelSize: Int) async throws -> CGImage
 }
 
 nonisolated struct ImageLoadingClient {
@@ -636,27 +637,41 @@ extension PersistenceClient: DependencyKey {
 }
 
 extension ThumbnailClient: DependencyKey {
-    static let liveValue = Self { url, maximumPixelSize in
-        try await Task.detached(priority: .high) {
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                throw CaptureEngineError.fileWriteFailed(url)
-            }
+    static let liveValue = Self { source, maximumPixelSize in
+        switch source {
+        case let .file(url):
+            return try await Task.detached(priority: .high) {
+                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                    throw CaptureEngineError.fileWriteFailed(url)
+                }
 
-            let clampedMaximumPixelSize = ImageSourceSizing.clampedMaximumPixelSize(
-                for: source,
-                requested: maximumPixelSize
-            )
-            let options = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: clampedMaximumPixelSize,
-            ] as CFDictionary
+                let clampedMaximumPixelSize = ImageSourceSizing.clampedMaximumPixelSize(
+                    for: source,
+                    requested: maximumPixelSize
+                )
+                let options = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: clampedMaximumPixelSize,
+                ] as CFDictionary
 
-            guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
-                throw CaptureEngineError.fileWriteFailed(url)
-            }
-            return thumbnail
-        }.value
+                guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
+                    throw CaptureEngineError.fileWriteFailed(url)
+                }
+                return thumbnail
+            }.value
+
+        case let .videoFrame(video, index):
+            let asset = AVURLAsset(url: video)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.requestedTimeToleranceBefore = .zero
+            generator.requestedTimeToleranceAfter = .zero
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: maximumPixelSize, height: maximumPixelSize)
+            let time = CMTime(value: CMTimeValue(index), timescale: CompactionVideo.frameRate)
+            let (image, _) = try await generator.image(at: time)
+            return image
+        }
     }
 }
 

@@ -106,6 +106,7 @@ struct ViewerFeature: Reducer {
         case flatTimelineEntriesLoaded([CaptureTimelineEntry])
         case screenshotSelectionChanged(Set<UUID>)
         case quickLookURLChanged(URL?)
+        case quickLookRequested(ScreenshotRecord)
         case refresh
         case revealScreenshotInFinder(ScreenshotRecord)
         case exportTimelapseRequested(frames: [ExportFrame])
@@ -133,6 +134,7 @@ struct ViewerFeature: Reducer {
     @Dependency(\.capturePreferencesClient) private var preferences
     @Dependency(\.timelapseExportClient) private var timelapseExport
     @Dependency(\.exportPanelClient) private var exportPanel
+    @Dependency(\.videoFrameExtractorClient) private var videoFrameExtractor
     @Dependency(\.date) private var date
 
     private nonisolated enum CancelID: Hashable { case export }
@@ -277,6 +279,22 @@ struct ViewerFeature: Reducer {
                     state.selectedScreenshotIDs = [id]
                 }
                 return .none
+
+            case let .quickLookRequested(record):
+                switch record.frameSource {
+                case let .file(url):
+                    state.quickLookURL = url
+                    state.selectedScreenshotIDs = [record.id]
+                    return .none
+                case let .videoFrame(video, index):
+                    // Quick Look needs a real file, so extract the compacted frame to a temp file.
+                    state.selectedScreenshotIDs = [record.id]
+                    let extractor = videoFrameExtractor
+                    return .run { send in
+                        guard let url = try? await extractor.temporaryImageFile(video, index) else { return }
+                        await send(.quickLookURLChanged(url))
+                    }
+                }
 
             case let .revealScreenshotInFinder(record):
                 let fileReveal = fileReveal

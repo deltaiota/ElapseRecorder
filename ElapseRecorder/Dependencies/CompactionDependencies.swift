@@ -4,6 +4,7 @@ import CoreGraphics
 import CoreVideo
 import Foundation
 import ImageIO
+import UniformTypeIdentifiers
 
 // MARK: - Clients
 
@@ -16,6 +17,9 @@ nonisolated struct FrameVideoCompactorClient {
 /// Decodes a single frame image out of a compacted window video.
 nonisolated struct VideoFrameExtractorClient {
     var image: @Sendable (_ videoURL: URL, _ frameIndex: Int) async throws -> CGImage
+    /// Extracts a frame and writes it to a temporary HEIC file, returning that URL. Used by
+    /// Quick Look, which needs a real file to preview.
+    var temporaryImageFile: @Sendable (_ videoURL: URL, _ frameIndex: Int) async throws -> URL
 }
 
 enum CompactionError: Error, Equatable {
@@ -162,7 +166,33 @@ private nonisolated enum CompactionEncoder {
 // MARK: - Live extractor
 
 extension VideoFrameExtractorClient: DependencyKey {
-    static let liveValue = Self { videoURL, frameIndex in
+    static let liveValue = Self(
+        image: { videoURL, frameIndex in
+            try await extractFrame(videoURL: videoURL, frameIndex: frameIndex)
+        },
+        temporaryImageFile: { videoURL, frameIndex in
+            let image = try await extractFrame(videoURL: videoURL, frameIndex: frameIndex)
+            let url = FileManager.default.temporaryDirectory
+                .appending(path: "elapse-ql-\(UUID().uuidString).heic")
+            guard let destination = CGImageDestinationCreateWithURL(
+                url as CFURL,
+                UTType.heic.identifier as CFString,
+                1,
+                nil
+            ) else {
+                throw CompactionError.encoderUnavailable
+            }
+            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+            guard CGImageDestinationFinalize(destination) else {
+                throw CompactionError.encoderUnavailable
+            }
+            return url
+        }
+    )
+
+    static let testValue = liveValue
+
+    private static func extractFrame(videoURL: URL, frameIndex: Int) async throws -> CGImage {
         let asset = AVURLAsset(url: videoURL)
         let generator = AVAssetImageGenerator(asset: asset)
         generator.requestedTimeToleranceBefore = .zero
@@ -172,8 +202,6 @@ extension VideoFrameExtractorClient: DependencyKey {
         let (image, _) = try await generator.image(at: time)
         return image
     }
-
-    static let testValue = liveValue
 }
 
 // MARK: - Registration

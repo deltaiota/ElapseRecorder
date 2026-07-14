@@ -49,7 +49,7 @@ struct ScreenshotThumbnailView: View {
         guard !Task.isCancelled else { return }
 
         guard let loaded = try? await thumbnails.thumbnail(
-            record.fileURL,
+            record.frameSource,
             preferences.thumbnailMaximumPixelSize()
         ) else {
             return
@@ -69,7 +69,7 @@ struct ScreenshotThumbnailView: View {
         for upcoming in prefetch {
             if Task.isCancelled { return }
             guard ThumbnailCache.shared.image(forID: upcoming.id) == nil else { continue }
-            if let loaded = try? await thumbnails.thumbnail(upcoming.fileURL, maximumPixelSize) {
+            if let loaded = try? await thumbnails.thumbnail(upcoming.frameSource, maximumPixelSize) {
                 ThumbnailCache.shared.insert(loaded, forID: upcoming.id)
             }
         }

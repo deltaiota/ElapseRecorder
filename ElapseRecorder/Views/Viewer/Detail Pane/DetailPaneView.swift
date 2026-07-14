@@ -168,7 +168,7 @@ struct DetailPaneView: View {
             itemSize: gridItemSize.value,
             jumpToLatestTrigger: jumpToLatestTrigger,
             isQuickLookOpen: store.quickLookURL != nil,
-            openQuickLook: { store.send(.quickLookURLChanged($0.fileURL)) },
+            openQuickLook: { store.send(.quickLookRequested($0)) },
             revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
         )
     }
@@ -190,7 +190,7 @@ struct DetailPaneView: View {
     private var currentScreenshotURLs: [URL] {
         let entries = store.isShowingFlatGallery ? store.flatTimelineEntries : store.windowTimelineEntries
         return entries.compactMap { entry in
-            if case let .screenshot(record) = entry { return record.fileURL }
+            if case let .screenshot(record) = entry, case let .file(url) = record.frameSource { return url }
             return nil
         }
     }
@@ -211,7 +211,9 @@ struct DetailPaneView: View {
                 pixelWidth: record.pixelWidth,
                 pixelHeight: record.pixelHeight,
                 capturedAt: record.capturedAt,
-                perceptualHash: record.perceptualHash
+                perceptualHash: record.perceptualHash,
+                videoURL: record.videoURL,
+                videoFrameIndex: record.videoFrameIndex
             )
         }
     }

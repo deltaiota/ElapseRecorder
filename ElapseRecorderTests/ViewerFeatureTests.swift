@@ -126,6 +126,97 @@ final class ViewerFeatureTests: XCTestCase {
         }
     }
 
+    // MARK: - Storage management (Phase 2)
+
+    @MainActor
+    func testIntegritySweepPrunesMissingRecordsAndOrphanFiles() async throws {
+        let keepPath = "/captures/keep.heic"
+        let missingPath = "/captures/missing.heic"
+        let orphanURL = URL(filePath: "/captures/orphan.heic")
+        let keptID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1"))
+        let missingID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A2"))
+
+        let deletedRecordIDs = LockIsolated<[UUID]>([])
+        let removedFileURLs = LockIsolated<[URL]>([])
+
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.screenshotFileIndex = {
+                [
+                    ScreenshotFileReference(id: keptID, path: keepPath, sizeBytes: 10),
+                    ScreenshotFileReference(id: missingID, path: missingPath, sizeBytes: 20),
+                ]
+            }
+            $0.persistenceClient.deleteScreenshots = { ids in deletedRecordIDs.setValue(ids) }
+            $0.persistenceClient.apps = { [] }
+            $0.fileStorageClient.captureFileURLs = { [URL(filePath: keepPath), orphanURL] }
+            $0.fileStorageClient.filterExistingPaths = { paths in Set(paths.filter { $0 == keepPath }) }
+            $0.fileStorageClient.removeFiles = { urls in
+                removedFileURLs.setValue(urls)
+                return 20
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.runIntegritySweepButtonTapped) {
+            $0.isRunningStorageMaintenance = true
+        }
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(deletedRecordIDs.value, [missingID])
+        XCTAssertEqual(removedFileURLs.value, [orphanURL])
+        XCTAssertEqual(
+            store.state.storageIntegrityResult,
+            StorageIntegrityResult(removedRecordCount: 1, removedFileCount: 1, reclaimedBytes: 20)
+        )
+        XCTAssertFalse(store.state.isRunningStorageMaintenance)
+    }
+
+    @MainActor
+    func testBulkDeleteRemovesMatchingSessionsFilesAndRecords() async throws {
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000B1"))
+        let session = CaptureSessionSummary(
+            id: sessionID,
+            bundleIdentifier: "com.example.App",
+            displayName: "App",
+            startedAt: Date(timeIntervalSince1970: 100),
+            endedAt: Date(timeIntervalSince1970: 200),
+            windowCount: 1,
+            screenshotCount: 3,
+            sizeBytes: 30
+        )
+        let deletedSessionIDs = LockIsolated<[UUID]>([])
+        let removedFileURLs = LockIsolated<[URL]>([])
+
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.sessionsStartedBefore = { _, _ in [session] }
+            $0.persistenceClient.screenshotPathsForSession = { _ in ["/captures/1.heic", "/captures/2.heic"] }
+            $0.persistenceClient.deleteSession = { id in deletedSessionIDs.withValue { $0.append(id) } }
+            $0.persistenceClient.apps = { [] }
+            $0.fileStorageClient.deleteSessionCaptures = { _, _ in }
+            $0.fileStorageClient.removeFiles = { urls in
+                removedFileURLs.withValue { $0.append(contentsOf: urls) }
+                return 30
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.bulkDeleteRequested(before: Date(timeIntervalSince1970: 500), bundleIdentifier: nil)) {
+            $0.isRunningStorageMaintenance = true
+        }
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(deletedSessionIDs.value, [sessionID])
+        XCTAssertEqual(
+            removedFileURLs.value,
+            [URL(filePath: "/captures/1.heic"), URL(filePath: "/captures/2.heic")]
+        )
+        XCTAssertFalse(store.state.isRunningStorageMaintenance)
+    }
+
     @MainActor
     func testSelectingSessionLoadsWindowsAndTimelineGraph() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000601"))

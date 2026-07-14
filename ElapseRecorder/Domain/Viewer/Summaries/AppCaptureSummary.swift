@@ -10,4 +10,5 @@ nonisolated struct AppCaptureSummary: Equatable, Identifiable {
     var sessionCount: Int
     var screenshotCount: Int
     var lastCapturedAt: Date?
+    var sizeBytes: Int = 0
 }

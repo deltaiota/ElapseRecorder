@@ -83,6 +83,52 @@ final class SwiftDataPersistenceStore {
         try context.save()
     }
 
+    /// Every screenshot record's id, on-disk path, and size — used to reconcile the database
+    /// against files on disk during an integrity sweep.
+    func screenshotFileIndex() throws -> [ScreenshotFileReference] {
+        let context = ModelContext(modelContainer)
+        return try context.fetch(FetchDescriptor<ScreenshotRecordModel>())
+            .map { ScreenshotFileReference(id: $0.id, path: $0.filePath, sizeBytes: $0.fileSizeBytes) }
+    }
+
+    func deleteScreenshots(_ ids: [UUID]) throws {
+        guard !ids.isEmpty else { return }
+        let context = ModelContext(modelContainer)
+        let idSet = Set(ids)
+        let records = try context.fetch(FetchDescriptor<ScreenshotRecordModel>())
+            .filter { idSet.contains($0.id) }
+        for record in records {
+            context.delete(record)
+        }
+        guard !records.isEmpty else { return }
+        try context.save()
+    }
+
+    /// Sessions that started strictly before `cutoff`, optionally limited to one app. Used by
+    /// bulk delete; returned as summaries so the caller can remove files by stored path.
+    func sessionsStarted(before cutoff: Date, bundleIdentifier: String?) throws -> [CaptureSessionSummary] {
+        try allSessions()
+            .filter { $0.startedAt < cutoff }
+            .filter { bundleIdentifier == nil || $0.bundleIdentifier == bundleIdentifier }
+            .sorted { $0.startedAt > $1.startedAt }
+            .map(\.summaryValue)
+    }
+
+    /// Stored file paths for a session's screenshots. Deletion uses these (absolute) paths so it
+    /// stays correct even if the capture location changed after the frames were written.
+    func screenshotPaths(sessionID: UUID) throws -> [String] {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: sessionID, context: context) else { return [] }
+        return session.screenshots.map(\.filePath)
+    }
+
+    func screenshotPaths(bundleIdentifier: String) throws -> [String] {
+        try allSessions()
+            .filter { $0.bundleIdentifier == bundleIdentifier }
+            .flatMap(\.screenshots)
+            .map(\.filePath)
+    }
+
     func upsertWindow(_ window: MonitoredWindow) throws {
         let context = ModelContext(modelContainer)
         guard let session = try sessionModel(id: window.sessionID, context: context) else {
@@ -198,7 +244,8 @@ final class SwiftDataPersistenceStore {
                     displayName: latestSession?.displayName ?? "",
                     sessionCount: sessions.count,
                     screenshotCount: screenshots.count,
-                    lastCapturedAt: latest
+                    lastCapturedAt: latest,
+                    sizeBytes: screenshots.reduce(0) { $0 + $1.fileSizeBytes }
                 )
             }
             .sorted { lhs, rhs in
@@ -453,6 +500,21 @@ extension PersistenceClient {
             deleteApp: { bundleIdentifier in
                 try await store.deleteApp(bundleIdentifier)
             },
+            deleteScreenshots: { ids in
+                try await store.deleteScreenshots(ids)
+            },
+            screenshotFileIndex: {
+                try await store.screenshotFileIndex()
+            },
+            sessionsStartedBefore: { cutoff, bundleIdentifier in
+                try await store.sessionsStarted(before: cutoff, bundleIdentifier: bundleIdentifier)
+            },
+            screenshotPathsForSession: { sessionID in
+                try await store.screenshotPaths(sessionID: sessionID)
+            },
+            screenshotPathsForApp: { bundleIdentifier in
+                try await store.screenshotPaths(bundleIdentifier: bundleIdentifier)
+            },
             upsertWindow: { window in
                 try await store.upsertWindow(window)
             },
@@ -501,6 +563,11 @@ extension PersistenceClient {
         closeOpenSessions: { _ in throw CaptureEngineError.persistenceUnavailable },
         deleteSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         deleteApp: { _ in throw CaptureEngineError.persistenceUnavailable },
+        deleteScreenshots: { _ in throw CaptureEngineError.persistenceUnavailable },
+        screenshotFileIndex: { throw CaptureEngineError.persistenceUnavailable },
+        sessionsStartedBefore: { _, _ in throw CaptureEngineError.persistenceUnavailable },
+        screenshotPathsForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
+        screenshotPathsForApp: { _ in throw CaptureEngineError.persistenceUnavailable },
         upsertWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordScreenshot: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordCaptureUnavailable: { _ in throw CaptureEngineError.persistenceUnavailable },

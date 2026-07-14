@@ -19,6 +19,7 @@ nonisolated extension Defaults.Keys {
     static let skipIdenticalFrames = Key<Bool>("skipIdenticalFrames", default: true)
     static let identicalFrameHammingThreshold = Key<Int>("identicalFrameHammingThreshold", default: 4)
     static let identicalFrameHeartbeatSeconds = Key<Int>("identicalFrameHeartbeatSeconds", default: 300)
+    static let customCaptureRootPath = Key<String>("customCaptureRootPath", default: "")
 }
 
 nonisolated struct DateClient {
@@ -70,6 +71,13 @@ nonisolated struct FileStorageClient {
     var write: @Sendable (_ data: Data, _ url: URL) async throws -> Int
     var deleteSessionCaptures: @Sendable (_ bundleIdentifier: String, _ sessionID: UUID) async throws -> Void
     var deleteAppCaptures: @Sendable (_ bundleIdentifier: String) async throws -> Void
+    /// All regular files under the capture root(s), used by the integrity sweep to find orphans.
+    var captureFileURLs: @Sendable () async throws -> [URL]
+    /// Of the given absolute paths, those that still exist on disk (root-agnostic existence
+    /// check so records written under a previous capture location aren't wrongly pruned).
+    var filterExistingPaths: @Sendable (_ paths: [String]) async -> Set<String>
+    /// Deletes the given files (ignoring any that are already gone) and returns bytes reclaimed.
+    var removeFiles: @Sendable (_ urls: [URL]) async throws -> Int
 }
 
 nonisolated struct PersistenceClient {
@@ -78,6 +86,11 @@ nonisolated struct PersistenceClient {
     var closeOpenSessions: @Sendable (_ endedAt: Date) async throws -> Int
     var deleteSession: @Sendable (_ sessionID: UUID) async throws -> Void
     var deleteApp: @Sendable (_ bundleIdentifier: String) async throws -> Void
+    var deleteScreenshots: @Sendable (_ ids: [UUID]) async throws -> Void
+    var screenshotFileIndex: @Sendable () async throws -> [ScreenshotFileReference]
+    var sessionsStartedBefore: @Sendable (_ cutoff: Date, _ bundleIdentifier: String?) async throws -> [CaptureSessionSummary]
+    var screenshotPathsForSession: @Sendable (_ sessionID: UUID) async throws -> [String]
+    var screenshotPathsForApp: @Sendable (_ bundleIdentifier: String) async throws -> [String]
     var upsertWindow: @Sendable (_ window: MonitoredWindow) async throws -> Void
     var recordScreenshot: @Sendable (_ record: ScreenshotRecord) async throws -> Void
     var recordCaptureUnavailable: @Sendable (_ record: CaptureUnavailableRecord) async throws -> Void
@@ -379,6 +392,30 @@ extension FileStorageClient: DependencyKey {
             )
             guard FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)) else { return }
             try FileManager.default.removeItem(at: directory)
+        },
+        captureFileURLs: {
+            FileStoragePaths.allCaptureFileURLs()
+        },
+        filterExistingPaths: { paths in
+            var existing = Set<String>()
+            for path in paths where FileManager.default.fileExists(atPath: path) {
+                existing.insert(path)
+            }
+            return existing
+        },
+        removeFiles: { urls in
+            var reclaimed = 0
+            for url in urls {
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    reclaimed += size
+                } catch {
+                    // Ignore files that are already gone; keep reclaiming the rest.
+                    continue
+                }
+            }
+            return reclaimed
         }
     )
 }
@@ -453,7 +490,17 @@ nonisolated enum AccessibilityWindowInspector {
 }
 
 nonisolated enum FileStoragePaths {
+    /// The active capture root. Honors a user-chosen custom location (Defaults) for new
+    /// captures; falls back to the default Application Support location.
     static func captureRoot() throws -> URL {
+        if let custom = customCaptureRoot() {
+            try FileManager.default.createDirectory(at: custom, withIntermediateDirectories: true)
+            return custom
+        }
+        return try defaultCaptureRoot()
+    }
+
+    static func defaultCaptureRoot() throws -> URL {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -463,6 +510,36 @@ nonisolated enum FileStoragePaths {
         let root = base.appending(path: "ElapseRecorder/Captures", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         return root
+    }
+
+    /// The user-chosen capture root, or nil when using the default. Empty/blank means default.
+    static func customCaptureRoot() -> URL? {
+        let path = Defaults[.customCaptureRootPath].trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty else { return nil }
+        return URL(filePath: path, directoryHint: .isDirectory)
+    }
+
+    /// Every regular file under the active capture root and (if different) the default root, so
+    /// the integrity sweep can find orphan files even after the capture location has changed.
+    static func allCaptureFileURLs() -> [URL] {
+        var roots: [URL] = []
+        if let active = try? captureRoot() { roots.append(active) }
+        if let fallback = try? defaultCaptureRoot(), !roots.contains(fallback) { roots.append(fallback) }
+
+        var urls: [URL] = []
+        for root in roots {
+            guard let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+
+            for case let url as URL in enumerator {
+                let isRegular = (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) ?? false
+                if isRegular { urls.append(url) }
+            }
+        }
+        return urls
     }
 
     /// Deterministic on-disk location for the SwiftData store.
@@ -704,6 +781,23 @@ nonisolated extension PersistenceClient {
         },
         deleteSession: { _ in reportIssue("PersistenceClient.deleteSession is unimplemented") },
         deleteApp: { _ in reportIssue("PersistenceClient.deleteApp is unimplemented") },
+        deleteScreenshots: { _ in reportIssue("PersistenceClient.deleteScreenshots is unimplemented") },
+        screenshotFileIndex: {
+            reportIssue("PersistenceClient.screenshotFileIndex is unimplemented")
+            return []
+        },
+        sessionsStartedBefore: { _, _ in
+            reportIssue("PersistenceClient.sessionsStartedBefore is unimplemented")
+            return []
+        },
+        screenshotPathsForSession: { _ in
+            reportIssue("PersistenceClient.screenshotPathsForSession is unimplemented")
+            return []
+        },
+        screenshotPathsForApp: { _ in
+            reportIssue("PersistenceClient.screenshotPathsForApp is unimplemented")
+            return []
+        },
         upsertWindow: { _ in reportIssue("PersistenceClient.upsertWindow is unimplemented") },
         recordScreenshot: { _ in reportIssue("PersistenceClient.recordScreenshot is unimplemented") },
         recordCaptureUnavailable: { _ in reportIssue("PersistenceClient.recordCaptureUnavailable is unimplemented") },

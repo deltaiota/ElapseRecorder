@@ -22,6 +22,10 @@ struct ViewerFeature: Reducer {
         /// Non-nil only while frames are actually being encoded; drives the progress sheet.
         /// It stays nil during the AppKit save-panel phase so the two sheets never collide.
         var exportStatus: TimelapseExportStatus?
+        /// True while a storage maintenance task (integrity sweep or bulk delete) is running.
+        var isRunningStorageMaintenance = false
+        /// The outcome of the most recent integrity sweep, shown in the storage management UI.
+        var storageIntegrityResult: StorageIntegrityResult?
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
@@ -112,6 +116,10 @@ struct ViewerFeature: Reducer {
         case deleteSessionButtonTapped(CaptureSessionSummary)
         case deleteSelectedSessionButtonTapped
         case sessionDeleted(UUID)
+        case runIntegritySweepButtonTapped
+        case integritySweepFinished(StorageIntegrityResult)
+        case bulkDeleteRequested(before: Date, bundleIdentifier: String?)
+        case bulkDeleteFinished(deletedSessionCount: Int)
         case loadingFailed(String)
     }
 
@@ -367,9 +375,29 @@ struct ViewerFeature: Reducer {
                 state.isLoading = false
                 return .send(.refresh)
 
+            case .runIntegritySweepButtonTapped:
+                guard !state.isRunningStorageMaintenance else { return .none }
+                state.isRunningStorageMaintenance = true
+                return runIntegritySweep()
+
+            case let .integritySweepFinished(result):
+                state.isRunningStorageMaintenance = false
+                state.storageIntegrityResult = result
+                return .send(.refresh)
+
+            case let .bulkDeleteRequested(cutoff, bundleIdentifier):
+                guard !state.isRunningStorageMaintenance else { return .none }
+                state.isRunningStorageMaintenance = true
+                return bulkDelete(before: cutoff, bundleIdentifier: bundleIdentifier)
+
+            case .bulkDeleteFinished:
+                state.isRunningStorageMaintenance = false
+                return .send(.refresh)
+
             case let .loadingFailed(message):
                 state.errorMessage = message
                 state.isLoading = false
+                state.isRunningStorageMaintenance = false
                 return .none
             }
         }
@@ -488,9 +516,63 @@ struct ViewerFeature: Reducer {
         let persistence = persistence
         return .run { send in
             do {
-                try await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
+                // Remove the exact stored files first (root-agnostic, so it still works if the
+                // capture location changed since these frames were written), then clean up the
+                // now-empty session directory under the current root and delete the record.
+                let paths = try await persistence.screenshotPathsForSession(session.id)
+                _ = try? await fileStorage.removeFiles(paths.map { URL(filePath: $0) })
+                try? await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
                 try await persistence.deleteSession(session.id)
                 await send(.sessionDeleted(session.id))
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+            }
+        }
+    }
+
+    private func runIntegritySweep() -> Effect<Action> {
+        let fileStorage = fileStorage
+        let persistence = persistence
+        return .run { send in
+            do {
+                let index = try await persistence.screenshotFileIndex()
+                let recordedPaths = Set(index.map(\.path))
+
+                // Orphan files: files under our capture root(s) that no record references.
+                let files = try await fileStorage.captureFileURLs()
+                let orphanFiles = files.filter { !recordedPaths.contains($0.path(percentEncoded: false)) }
+
+                // Missing records: records whose file no longer exists (checked by absolute path).
+                let existing = await fileStorage.filterExistingPaths(index.map(\.path))
+                let missingIDs = index.filter { !existing.contains($0.path) }.map(\.id)
+
+                try await persistence.deleteScreenshots(missingIDs)
+                let reclaimed = try await fileStorage.removeFiles(orphanFiles)
+
+                await send(.integritySweepFinished(StorageIntegrityResult(
+                    removedRecordCount: missingIDs.count,
+                    removedFileCount: orphanFiles.count,
+                    reclaimedBytes: reclaimed
+                )))
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+            }
+        }
+    }
+
+    private func bulkDelete(before cutoff: Date, bundleIdentifier: String?) -> Effect<Action> {
+        let fileStorage = fileStorage
+        let persistence = persistence
+        return .run { send in
+            do {
+                let sessions = try await persistence.sessionsStartedBefore(cutoff, bundleIdentifier)
+                for session in sessions {
+                    let paths = try await persistence.screenshotPathsForSession(session.id)
+                    _ = try? await fileStorage.removeFiles(paths.map { URL(filePath: $0) })
+                    try? await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
+                    try await persistence.deleteSession(session.id)
+                }
+                await send(.bulkDeleteFinished(deletedSessionCount: sessions.count))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }

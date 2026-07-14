@@ -474,6 +474,90 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         XCTAssertEqual(stored?.perceptualHash, hash)
     }
 
+    @MainActor
+    func testStorageAggregatesAndMaintenanceQueries() async throws {
+        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+
+        let oldSession = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000901"),
+            bundleIdentifier: "com.example.SizeApp",
+            displayName: "Size App",
+            processIdentifier: 401,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newSession = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000902"),
+            bundleIdentifier: "com.example.SizeApp",
+            displayName: "Size App",
+            processIdentifier: 402,
+            startedAt: Date(timeIntervalSince1970: 5000)
+        )
+        try await client.openSession(oldSession)
+        try await client.openSession(newSession)
+
+        let oldWindow = try MonitoredWindow(
+            id: uuid("00000000-0000-0000-0000-000000000903"),
+            sessionID: oldSession.id,
+            systemWindowID: 1,
+            displayNumber: 1,
+            label: "W",
+            firstSeenAt: Date(timeIntervalSince1970: 100),
+            lastSeenAt: Date(timeIntervalSince1970: 100)
+        )
+        let newWindow = try MonitoredWindow(
+            id: uuid("00000000-0000-0000-0000-000000000904"),
+            sessionID: newSession.id,
+            systemWindowID: 2,
+            displayNumber: 1,
+            label: "W",
+            firstSeenAt: Date(timeIntervalSince1970: 5000),
+            lastSeenAt: Date(timeIntervalSince1970: 5000)
+        )
+        try await client.upsertWindow(oldWindow)
+        try await client.upsertWindow(newWindow)
+
+        let oldShot = try ScreenshotRecord(
+            id: uuid("00000000-0000-0000-0000-000000000905"),
+            windowID: oldWindow.id,
+            sessionID: oldSession.id,
+            capturedAt: Date(timeIntervalSince1970: 110),
+            fileURL: URL(filePath: "/tmp/old.heic"),
+            fileSizeBytes: 100
+        )
+        let newShot = try ScreenshotRecord(
+            id: uuid("00000000-0000-0000-0000-000000000906"),
+            windowID: newWindow.id,
+            sessionID: newSession.id,
+            capturedAt: Date(timeIntervalSince1970: 5010),
+            fileURL: URL(filePath: "/tmp/new.heic"),
+            fileSizeBytes: 250
+        )
+        try await client.recordScreenshot(oldShot)
+        try await client.recordScreenshot(newShot)
+
+        // Aggregates.
+        let app = try await client.apps().first
+        XCTAssertEqual(app?.sizeBytes, 350)
+        XCTAssertEqual(app?.screenshotCount, 2)
+        let sessions = try await client.sessions("com.example.SizeApp")
+        XCTAssertEqual(sessions.first(where: { $0.id == oldSession.id })?.sizeBytes, 100)
+
+        // File index + paths.
+        let index = try await client.screenshotFileIndex()
+        XCTAssertEqual(Set(index.map(\.path)), ["/tmp/old.heic", "/tmp/new.heic"])
+        let oldPaths = try await client.screenshotPathsForSession(oldSession.id)
+        XCTAssertEqual(oldPaths, ["/tmp/old.heic"])
+
+        // sessionsStartedBefore.
+        let older = try await client.sessionsStartedBefore(Date(timeIntervalSince1970: 1000), nil)
+        XCTAssertEqual(older.map(\.id), [oldSession.id])
+
+        // deleteScreenshots.
+        try await client.deleteScreenshots([oldShot.id])
+        let remaining = try await client.screenshotFileIndex()
+        XCTAssertEqual(remaining.map(\.path), ["/tmp/new.heic"])
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: Schema.elapseRecorder, configurations: [configuration])

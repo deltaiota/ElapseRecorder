@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import SFSafeSymbols
 import SwiftUI
 
 struct ViewerView: View {
@@ -6,6 +7,8 @@ struct ViewerView: View {
 
     var captureConfiguration = CaptureConfiguration()
     var actions = Actions()
+
+    @State private var isShowingStorageManagement = false
 
     var body: some View {
         NavigationSplitView {
@@ -28,6 +31,24 @@ struct ViewerView: View {
                 .navigationSplitViewColumnWidth(min: 300, ideal: 500)
         }
         .navigationTitle("Elapse Recorder")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    isShowingStorageManagement = true
+                } label: {
+                    Label("Manage Storage", systemSymbol: .externaldrive)
+                }
+                .help("Manage storage")
+            }
+        }
+        .sheet(isPresented: $isShowingStorageManagement) {
+            StorageManagementView(
+                store: store,
+                scopeBundleIdentifier: store.selectedBundleIdentifier,
+                scopeDisplayName: selectedApp?.displayName,
+                onClose: { isShowingStorageManagement = false }
+            )
+        }
     }
 
     /// The selected app, resolved from captured apps or synthesized from a whitelist entry

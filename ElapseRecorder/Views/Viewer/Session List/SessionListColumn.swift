@@ -12,6 +12,7 @@ struct SessionListColumn: View {
     var actions: ViewerView.Actions
 
     @State private var collapsedSessionDaySections: [SessionDaySection.ID] = []
+    @State private var sessionPendingDeletion: CaptureSessionSummary?
 
     private var isAppSelected: Bool {
         settingsContext != nil
@@ -73,6 +74,23 @@ struct SessionListColumn: View {
             }
         }
         .background(.windowBackground)
+        .confirmationDialog(
+            Text("Delete Session"),
+            isPresented: Binding(
+                get: { sessionPendingDeletion != nil },
+                set: { if !$0 { sessionPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: sessionPendingDeletion
+        ) { session in
+            Button("Delete", role: .destructive) {
+                store.send(.deleteSessionButtonTapped(session))
+                sessionPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { sessionPendingDeletion = nil }
+        } message: { _ in
+            Text("This permanently deletes the session and its screenshots.")
+        }
     }
 
     @ViewBuilder
@@ -82,11 +100,7 @@ struct SessionListColumn: View {
                 Text(session.startedAt, format: .dateTime.hour().minute())
 
                 CountSummary(
-                    items: [
-                        .init(label: sessionDurationText(session), systemSymbol: .clock, isMonospaced: true),
-                        .init(value: session.windowCount, systemSymbol: .macwindow),
-                        .init(value: session.screenshotCount, systemSymbol: .photo),
-                    ]
+                    items: sessionSummaryItems(session)
                 )
                 .foregroundStyle(.secondary)
                 .font(.caption)
@@ -106,7 +120,7 @@ struct SessionListColumn: View {
             label
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
-                        store.send(.deleteSessionButtonTapped(session))
+                        sessionPendingDeletion = session
                     } label: {
                         Label(TK.Action.delete, systemSymbol: .trash)
                     }
@@ -114,12 +128,30 @@ struct SessionListColumn: View {
                 }
                 .contextMenu {
                     Button(role: .destructive) {
-                        store.send(.deleteSessionButtonTapped(session))
+                        sessionPendingDeletion = session
                     } label: {
                         Label("Delete Session", systemSymbol: .trash)
                     }
                 }
         }
+    }
+
+    private func sessionSummaryItems(_ session: CaptureSessionSummary) -> [CountSummary.Item] {
+        var items: [CountSummary.Item] = [
+            .init(label: sessionDurationText(session), systemSymbol: .clock, isMonospaced: true),
+            .init(value: session.windowCount, systemSymbol: .macwindow),
+            .init(value: session.screenshotCount, systemSymbol: .photo),
+        ]
+        if session.sizeBytes > 0 {
+            items.append(
+                .init(
+                    text: session.sizeBytes.formatted(.byteCount(style: .file)),
+                    systemSymbol: .externaldrive,
+                    isMonospaced: true
+                )
+            )
+        }
+        return items
     }
 
     /// Sessions still being captured (no end time). The app keeps at most one open session

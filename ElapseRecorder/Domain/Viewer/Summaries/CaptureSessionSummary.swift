@@ -8,4 +8,5 @@ nonisolated struct CaptureSessionSummary: Equatable, Identifiable {
     var endedAt: Date?
     var windowCount: Int
     var screenshotCount: Int
+    var sizeBytes: Int = 0
 }

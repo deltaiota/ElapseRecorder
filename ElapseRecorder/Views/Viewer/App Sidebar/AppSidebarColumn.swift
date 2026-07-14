@@ -11,6 +11,7 @@ struct AppSidebarColumn: View {
     var actions: ViewerView.Actions
 
     @State private var isShowingApplicationSelection = false
+    @State private var appPendingDeletion: AppCaptureSummary?
 
     var body: some View {
         List(selection: $store.selectedBundleIdentifier.sending(\.appSelected)) {
@@ -53,6 +54,23 @@ struct AppSidebarColumn: View {
                 whitelistApplications: actions.whitelistApps
             )
         }
+        .confirmationDialog(
+            Text("Delete All Captures"),
+            isPresented: Binding(
+                get: { appPendingDeletion != nil },
+                set: { if !$0 { appPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: appPendingDeletion
+        ) { app in
+            Button("Delete", role: .destructive) {
+                actions.deleteAllCaptures(app)
+                appPendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { appPendingDeletion = nil }
+        } message: { app in
+            Text("This permanently deletes every session and screenshot captured for \(app.displayName).")
+        }
     }
 
     @ViewBuilder
@@ -85,7 +103,7 @@ struct AppSidebarColumn: View {
         .tag(context.app.bundleIdentifier)
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) {
-                actions.deleteAllCaptures(context.app)
+                appPendingDeletion = context.app
             } label: {
                 Label("Delete All Captures", systemSymbol: .trash)
             }
@@ -125,7 +143,7 @@ struct AppSidebarColumn: View {
             Divider()
 
             Button(role: .destructive) {
-                actions.deleteAllCaptures(context.app)
+                appPendingDeletion = context.app
             } label: {
                 Label("Delete All Captures", systemSymbol: .trash)
             }

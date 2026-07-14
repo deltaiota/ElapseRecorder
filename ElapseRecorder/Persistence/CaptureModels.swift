@@ -203,7 +203,8 @@ extension CaptureSessionModel {
             startedAt: startedAt,
             endedAt: endedAt,
             windowCount: windows.count,
-            screenshotCount: screenshots.count
+            screenshotCount: screenshots.count,
+            sizeBytes: screenshots.reduce(0) { $0 + $1.fileSizeBytes }
         )
     }
 }

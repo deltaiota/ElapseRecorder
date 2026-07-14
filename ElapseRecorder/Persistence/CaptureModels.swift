@@ -108,6 +108,11 @@ final class ScreenshotRecordModel {
     var pixelHeight: Int = 0
     /// Stored as the bit pattern of the 64-bit dHash (SwiftData has no UInt64 type).
     var perceptualHash: Int = 0
+    /// Absolute path of the compacted HEVC video this frame lives in. Empty = standalone file
+    /// at `filePath`. Defaulted so SwiftData can lightweight-migrate existing stores.
+    var videoPath: String = ""
+    /// Frame index within `videoPath` (-1 when standalone).
+    var videoFrameIndex: Int = -1
     var session: CaptureSessionModel?
     var window: MonitoredWindowModel?
 
@@ -119,6 +124,8 @@ final class ScreenshotRecordModel {
         pixelWidth: Int = 0,
         pixelHeight: Int = 0,
         perceptualHash: UInt64 = 0,
+        videoPath: String = "",
+        videoFrameIndex: Int = -1,
         session: CaptureSessionModel?,
         window: MonitoredWindowModel?
     ) {
@@ -129,6 +136,8 @@ final class ScreenshotRecordModel {
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.perceptualHash = Int(bitPattern: UInt(perceptualHash))
+        self.videoPath = videoPath
+        self.videoFrameIndex = videoFrameIndex
         self.session = session
         self.window = window
     }
@@ -258,7 +267,9 @@ extension ScreenshotRecordModel {
             fileSizeBytes: fileSizeBytes,
             pixelWidth: pixelWidth,
             pixelHeight: pixelHeight,
-            perceptualHash: UInt64(bitPattern: Int64(perceptualHash))
+            perceptualHash: UInt64(bitPattern: Int64(perceptualHash)),
+            videoURL: videoPath.isEmpty ? nil : URL(filePath: videoPath),
+            videoFrameIndex: videoPath.isEmpty ? nil : videoFrameIndex
         )
     }
 }

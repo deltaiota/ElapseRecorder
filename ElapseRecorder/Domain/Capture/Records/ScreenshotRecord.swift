@@ -14,4 +14,13 @@ nonisolated struct ScreenshotRecord: Equatable, Identifiable {
     /// 64-bit difference hash (dHash) of the frame, used to detect near-identical frames.
     /// Zero means "not computed".
     var perceptualHash: UInt64 = 0
+    /// When set, this frame lives inside a compacted HEVC video rather than at `fileURL`.
+    /// Pixels are decoded from `videoURL` at `videoFrameIndex`. `fileURL` may no longer exist.
+    var videoURL: URL? = nil
+    var videoFrameIndex: Int? = nil
+
+    /// True when this frame's pixels are stored in a compacted video rather than a standalone file.
+    var isCompacted: Bool {
+        videoURL != nil
+    }
 }

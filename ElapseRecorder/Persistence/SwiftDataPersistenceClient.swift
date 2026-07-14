@@ -88,7 +88,7 @@ final class SwiftDataPersistenceStore {
     func screenshotFileIndex() throws -> [ScreenshotFileReference] {
         let context = ModelContext(modelContainer)
         return try context.fetch(FetchDescriptor<ScreenshotRecordModel>())
-            .map { ScreenshotFileReference(id: $0.id, path: $0.filePath, sizeBytes: $0.fileSizeBytes) }
+            .map { ScreenshotFileReference(id: $0.id, path: $0.effectivePath, sizeBytes: $0.fileSizeBytes) }
     }
 
     func deleteScreenshots(_ ids: [UUID]) throws {
@@ -114,19 +114,21 @@ final class SwiftDataPersistenceStore {
             .map(\.summaryValue)
     }
 
-    /// Stored file paths for a session's screenshots. Deletion uses these (absolute) paths so it
-    /// stays correct even if the capture location changed after the frames were written.
+    /// Distinct on-disk paths for a session's screenshots. Deletion uses these (absolute) paths so
+    /// it stays correct even if the capture location changed. Compacted frames share one video
+    /// path, so the set is deduplicated to avoid redundant removals.
     func screenshotPaths(sessionID: UUID) throws -> [String] {
         let context = ModelContext(modelContainer)
         guard let session = try sessionModel(id: sessionID, context: context) else { return [] }
-        return session.screenshots.map(\.filePath)
+        return Array(Set(session.screenshots.map(\.effectivePath)))
     }
 
     func screenshotPaths(bundleIdentifier: String) throws -> [String] {
-        try allSessions()
+        let paths = try allSessions()
             .filter { $0.bundleIdentifier == bundleIdentifier }
             .flatMap(\.screenshots)
-            .map(\.filePath)
+            .map(\.effectivePath)
+        return Array(Set(paths))
     }
 
     /// Ended sessions sorted oldest-first (as summaries with size/count), for the retention

@@ -141,6 +141,13 @@ final class ScreenshotRecordModel {
         self.session = session
         self.window = window
     }
+
+    /// The on-disk file that actually holds this frame's pixels: the compacted video when
+    /// compacted, otherwise the standalone image file. Used by the integrity sweep and deletion
+    /// so compacted records are never mistaken for missing and their video is never orphaned.
+    var effectivePath: String {
+        videoPath.isEmpty ? filePath : videoPath
+    }
 }
 
 @Model

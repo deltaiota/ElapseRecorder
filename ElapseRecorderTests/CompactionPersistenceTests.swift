@@ -85,6 +85,16 @@ final class CompactionPersistenceTests: XCTestCase {
         // Apportioned sizes sum exactly to the video size.
         XCTAssertEqual(frames.reduce(0) { $0 + $1.fileSizeBytes }, 1005)
 
+        // Integrity sweep sees the video path (never the deleted originals), so compacted
+        // records are not mistaken for missing and the video is not treated as an orphan.
+        let fileIndex = try await client.screenshotFileIndex()
+        XCTAssertEqual(fileIndex.count, 10)
+        XCTAssertTrue(fileIndex.allSatisfy { $0.path == videoPath })
+
+        // Deletion collapses the shared video into a single path.
+        let deletionPaths = try await client.screenshotPathsForSession(sessionID)
+        XCTAssertEqual(deletionPaths, [videoPath])
+
         // A fully compacted session yields no further plan.
         let planAfter = try await client.compactionPlanForSession(sessionID)
         XCTAssertNil(planAfter)

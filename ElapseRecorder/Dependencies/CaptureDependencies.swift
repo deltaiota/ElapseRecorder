@@ -14,6 +14,10 @@ nonisolated extension CaptureImageFormat: Defaults.Serializable {}
 nonisolated extension Defaults.Keys {
     static let captureImageFormat = Key<CaptureImageFormat>("captureImageFormat", default: .heic)
     static let captureHEICQuality = Key<Double>("captureHEICQuality", default: 0.82)
+    /// Longest-edge pixel cap applied to captured frames (0 = native resolution). Retina windows
+    /// are captured at physical resolution, so capping keeps frames review-crisp while cutting
+    /// storage roughly by the square of the scale factor.
+    static let captureMaxDimension = Key<Int>("captureMaxDimension", default: 2560)
     static let thumbnailMaximumPixelSize = Key<Int>("thumbnailMaximumPixelSize", default: 1024)
     static let whitelistedAppConfigsData = Key<Data>("whitelistedAppConfigsData", default: Data())
     static let skipIdenticalFrames = Key<Bool>("skipIdenticalFrames", default: true)
@@ -343,8 +347,15 @@ extension ScreenCaptureClient: DependencyKey {
             let configuration = SCStreamConfiguration()
             let info = SCShareableContent.info(for: filter)
             let scale = CGFloat(info.pointPixelScale)
-            configuration.width = max(1, Int((info.contentRect.width * scale).rounded(.up)))
-            configuration.height = max(1, Int((info.contentRect.height * scale).rounded(.up)))
+            let nativeWidth = max(1, Int((info.contentRect.width * scale).rounded(.up)))
+            let nativeHeight = max(1, Int((info.contentRect.height * scale).rounded(.up)))
+            let size = CaptureResolution.cappedPixelSize(
+                width: nativeWidth,
+                height: nativeHeight,
+                maxDimension: Defaults[.captureMaxDimension]
+            )
+            configuration.width = size.width
+            configuration.height = size.height
             configuration.showsCursor = false
 
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)

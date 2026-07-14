@@ -97,10 +97,24 @@ extension ExportPanelClient: DependencyKey {
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
 
-        let accessory = NSHostingView(
-            rootView: ExportOptionsAccessory(model: model) { [weak panel] container in
-                panel?.allowedContentTypes = [container.contentType]
-            }
+        let accessory = NSHostingView(rootView: AnyView(EmptyView()))
+        accessory.rootView = AnyView(
+            ExportOptionsAccessory(
+                model: model,
+                onContainerChange: { [weak panel] container in
+                    panel?.allowedContentTypes = [container.contentType]
+                },
+                onContentSizeChange: { [weak accessory] size in
+                    // The save panel sizes itself from the accessory's frame, so grow/shrink the
+                    // hosting view as the SwiftUI content changes height (e.g. expanding the
+                    // Advanced disclosure or the trim fields) instead of clipping it.
+                    guard let accessory else { return }
+                    let newSize = NSSize(width: size.width, height: size.height)
+                    if accessory.frame.size != newSize {
+                        accessory.setFrameSize(newSize)
+                    }
+                }
+            )
         )
         accessory.setFrameSize(accessory.fittingSize)
         panel.accessoryView = accessory
@@ -194,15 +208,12 @@ private enum TimelapseEncoder {
         let outputFrameCount = request.outputFrameCount
 
         var emitted = 0
-        var lastReportedPercent = -1
-        /// Report at most ~101 times (whole-percent steps), plus the final frame. Yielding
-        /// progress for every one of a very long export's frames (10k+) would flood the
-        /// main-actor reducer with actions and make the UI unresponsive, so we coalesce to
-        /// visible increments.
+        // Report every frame for typical exports so the frame counter advances one-by-one, but
+        // cap very long exports (10k+) to ~500 updates so we never flood the main-actor reducer
+        // with actions and make the UI unresponsive.
+        let reportStride = max(1, outputFrameCount / 500)
         func report() {
-            let percent = Int(Double(emitted) / Double(outputFrameCount) * 100)
-            if percent != lastReportedPercent || emitted == outputFrameCount {
-                lastReportedPercent = percent
+            if emitted % reportStride == 0 || emitted == outputFrameCount {
                 progress(TimelapseExportProgress(emittedFrames: emitted, totalFrames: outputFrameCount))
             }
         }

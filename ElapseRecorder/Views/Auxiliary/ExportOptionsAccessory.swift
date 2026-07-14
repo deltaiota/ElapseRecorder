@@ -136,168 +136,29 @@ final class ExportAccessoryModel {
 struct ExportOptionsAccessory: View {
     @Bindable var model: ExportAccessoryModel
     var onContainerChange: (TimelapseVideoContainer) -> Void
+    var onContentSizeChange: (CGSize) -> Void = { _ in }
+
+    @State private var showsAdvanced = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow {
-                    Text("Format")
-                        .gridColumnAlignment(.trailing)
-                        .foregroundStyle(.secondary)
+                formatRow()
+                frameRateRow()
+                interpolationRow()
+            }
 
-                    HStack(spacing: 8) {
-                        Picker("Codec", selection: $model.codec) {
-                            ForEach(TimelapseVideoCodec.allCases) { codec in
-                                Text(codec.title).tag(codec)
-                            }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-
-                        Picker("Container", selection: $model.container) {
-                            ForEach(TimelapseVideoContainer.allCases) { container in
-                                Text(container.title)
-                                    .tag(container)
-                                    .selectionDisabled(!model.codec.allowedContainers.contains(container))
-                            }
-                        }
-                        .fixedSize()
-                        .pickerStyle(.radioGroup)
-                        .horizontalRadioGroupLayout()
-                        .labelsHidden()
-                    }
-                    .onChange(of: model.container) { _, newValue in
-                        onContainerChange(newValue)
-                    }
+            DisclosureGroup(isExpanded: $showsAdvanced) {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
+                    resolutionRow()
+                    timestampRow()
+                    framesRow()
                 }
-
-                GridRow {
-                    Text("Frame Rate")
-                        .gridColumnAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 8) {
-                        Picker("Frame Rate", selection: $model.fpsChoice) {
-                            ForEach(ExportAccessoryModel.presetFPS, id: \.self) { fps in
-                                Text("\(fps)").tag(ExportAccessoryModel.FPSChoice.preset(fps))
-                            }
-                            Divider()
-                            Text("Custom").tag(ExportAccessoryModel.FPSChoice.custom)
-                            Text("Target length").tag(ExportAccessoryModel.FPSChoice.targetDuration)
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-
-                        if model.fpsChoice == .custom {
-                            TextField("fps", value: $model.customFPS, format: .number)
-                                .frame(width: 56, height: 20)
-                                .multilineTextAlignment(.trailing)
-                                .textFieldStyle(.roundedBorder)
-                            Text("fps")
-                                .foregroundStyle(.secondary)
-                        } else if model.fpsChoice == .targetDuration {
-                            TextField("seconds", value: $model.targetDurationSeconds, format: .number)
-                                .frame(width: 56, height: 20)
-                                .multilineTextAlignment(.trailing)
-                                .textFieldStyle(.roundedBorder)
-                            Text("sec")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("fps")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                GridRow {
-                    Text("Interpolation")
-                        .gridColumnAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-
-                    HStack {
-                        Stepper(
-                            value: $model.interpolationFrames,
-                            in: 0 ... ExportAccessoryModel.maxInterpolationFrames
-                        ) {
-                            TextField(
-                                "frames",
-                                value: $model.interpolationFrames,
-                                format: .number
-                            )
-                            .frame(width: 44, height: 20)
-                            .multilineTextAlignment(.trailing)
-                            .textFieldStyle(.roundedBorder)
-                        }
-                        .fixedSize()
-
-                        Text(#tk("\(model.interpolationFrames) crossfade frames").replacing(/^\d+\s*/, with: ""))
-                            .foregroundStyle(.secondary)
-                    }
-                    .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")
-                }
-
-                GridRow {
-                    Text("Resolution")
-                        .gridColumnAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-
-                    Picker("Resolution", selection: $model.resolutionCap) {
-                        ForEach(ExportAccessoryModel.resolutionCaps, id: \.self) { cap in
-                            Text(resolutionLabel(cap)).tag(cap)
-                        }
-                    }
-                    .labelsHidden()
-                    .fixedSize()
-                    .help("Scale the video down so its longest side fits this many pixels.")
-                }
-
-                GridRow {
-                    Text("Timestamp")
-                        .gridColumnAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-
-                    Toggle(isOn: $model.showsTimestamp) {
-                        Text("Show capture time")
-                    }
-                    .help("Burn each frame's capture time into the corner of the video.")
-                }
-
-                GridRow {
-                    Text("Frames")
-                        .gridColumnAlignment(.trailing)
-                        .foregroundStyle(.secondary)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle(isOn: $model.skipSimilarFrames) {
-                            Text("Skip near-duplicate frames")
-                        }
-                        .help("Drop frames that barely changed from the previous kept frame. Originals are not deleted.")
-
-                        if model.frameCount > 1 {
-                            Toggle(isOn: $model.trimEnabled) {
-                                Text("Trim range")
-                            }
-
-                            if model.trimEnabled {
-                                HStack(spacing: 6) {
-                                    TextField("from", value: $model.trimStart, format: .number)
-                                        .frame(width: 60, height: 20)
-                                        .multilineTextAlignment(.trailing)
-                                        .textFieldStyle(.roundedBorder)
-                                    Text("to")
-                                        .foregroundStyle(.secondary)
-                                    TextField("to", value: $model.trimEnd, format: .number)
-                                        .frame(width: 60, height: 20)
-                                        .multilineTextAlignment(.trailing)
-                                        .textFieldStyle(.roundedBorder)
-                                    Text("of \(model.frameCount)")
-                                        .foregroundStyle(.secondary)
-                                }
-                                .help("Export only frames in this 0-based index range.")
-                            }
-                        }
-                    }
-                }
+                .padding(.top, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                Text("Advanced")
+                    .font(.callout)
             }
 
             Text(estimateText)
@@ -307,6 +168,189 @@ struct ExportOptionsAccessory: View {
         }
         .padding(16)
         .frame(width: 360)
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            onContentSizeChange(size)
+        }
+    }
+
+    @ViewBuilder
+    private func formatRow() -> some View {
+        GridRow {
+            Text("Format")
+                .gridColumnAlignment(.trailing)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Picker("Codec", selection: $model.codec) {
+                    ForEach(TimelapseVideoCodec.allCases) { codec in
+                        Text(codec.title).tag(codec)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+
+                Picker("Container", selection: $model.container) {
+                    ForEach(TimelapseVideoContainer.allCases) { container in
+                        Text(container.title)
+                            .tag(container)
+                            .selectionDisabled(!model.codec.allowedContainers.contains(container))
+                    }
+                }
+                .fixedSize()
+                .pickerStyle(.radioGroup)
+                .horizontalRadioGroupLayout()
+                .labelsHidden()
+            }
+            .onChange(of: model.container) { _, newValue in
+                onContainerChange(newValue)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func frameRateRow() -> some View {
+        GridRow {
+            Text("Frame Rate")
+                .gridColumnAlignment(.trailing)
+                .foregroundStyle(.secondary)
+
+            HStack(spacing: 8) {
+                Picker("Frame Rate", selection: $model.fpsChoice) {
+                    ForEach(ExportAccessoryModel.presetFPS, id: \.self) { fps in
+                        Text("\(fps)").tag(ExportAccessoryModel.FPSChoice.preset(fps))
+                    }
+                    Divider()
+                    Text("Custom").tag(ExportAccessoryModel.FPSChoice.custom)
+                    Text("Target length").tag(ExportAccessoryModel.FPSChoice.targetDuration)
+                }
+                .labelsHidden()
+                .fixedSize()
+
+                if model.fpsChoice == .custom {
+                    TextField("fps", value: $model.customFPS, format: .number)
+                        .frame(width: 56, height: 20)
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
+                    Text("fps")
+                        .foregroundStyle(.secondary)
+                } else if model.fpsChoice == .targetDuration {
+                    TextField("seconds", value: $model.targetDurationSeconds, format: .number)
+                        .frame(width: 56, height: 20)
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
+                    Text("sec")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("fps")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func interpolationRow() -> some View {
+        GridRow {
+            Text("Interpolation")
+                .gridColumnAlignment(.trailing)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Stepper(
+                    value: $model.interpolationFrames,
+                    in: 0 ... ExportAccessoryModel.maxInterpolationFrames
+                ) {
+                    TextField(
+                        "frames",
+                        value: $model.interpolationFrames,
+                        format: .number
+                    )
+                    .frame(width: 44, height: 20)
+                    .multilineTextAlignment(.trailing)
+                    .textFieldStyle(.roundedBorder)
+                }
+                .fixedSize()
+
+                Text(#tk("\(model.interpolationFrames) crossfade frames").replacing(/^\d+\s*/, with: ""))
+                    .foregroundStyle(.secondary)
+            }
+            .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")
+        }
+    }
+
+    @ViewBuilder
+    private func resolutionRow() -> some View {
+        GridRow {
+            Text("Resolution")
+                .gridColumnAlignment(.trailing)
+                .foregroundStyle(.secondary)
+
+            Picker("Resolution", selection: $model.resolutionCap) {
+                ForEach(ExportAccessoryModel.resolutionCaps, id: \.self) { cap in
+                    Text(resolutionLabel(cap)).tag(cap)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .help("Scale the video down so its longest side fits this many pixels.")
+        }
+    }
+
+    @ViewBuilder
+    private func timestampRow() -> some View {
+        GridRow {
+            Text("Timestamp")
+                .gridColumnAlignment(.trailing)
+                .foregroundStyle(.secondary)
+
+            Toggle(isOn: $model.showsTimestamp) {
+                Text("Show capture time")
+            }
+            .help("Burn each frame's capture time into the corner of the video.")
+        }
+    }
+
+    @ViewBuilder
+    private func framesRow() -> some View {
+        GridRow {
+            Text("Frames")
+                .gridColumnAlignment(.trailing)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle(isOn: $model.skipSimilarFrames) {
+                    Text("Skip near-duplicate frames")
+                }
+                .help("Drop frames that barely changed from the previous kept frame. Originals are not deleted.")
+
+                if model.frameCount > 1 {
+                    Toggle(isOn: $model.trimEnabled) {
+                        Text("Trim range")
+                    }
+
+                    if model.trimEnabled {
+                        HStack(spacing: 6) {
+                            TextField("from", value: $model.trimStart, format: .number)
+                                .frame(width: 60, height: 20)
+                                .multilineTextAlignment(.trailing)
+                                .textFieldStyle(.roundedBorder)
+                            Text("to")
+                                .foregroundStyle(.secondary)
+                            TextField("to", value: $model.trimEnd, format: .number)
+                                .frame(width: 60, height: 20)
+                                .multilineTextAlignment(.trailing)
+                                .textFieldStyle(.roundedBorder)
+                            Text("of \(model.frameCount)")
+                                .foregroundStyle(.secondary)
+                        }
+                        .help("Export only frames in this 0-based index range.")
+                    }
+                }
+            }
+        }
     }
 
     private func resolutionLabel(_ cap: Int) -> String {

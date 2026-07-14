@@ -4,25 +4,23 @@
     "" : {
 
     },
-    "%@ of %@ frames" : {
-      "extractionState" : "extracted_with_value",
+    "%lld" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ of %2$@ frames"
+            "value" : "%lld"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "%1$@ / %2$@ 帧"
+            "value" : "%lld"
           }
         }
       }
     },
     "%lld crossfade frames" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -57,7 +55,6 @@
       }
     },
     "%lld fps" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -69,22 +66,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld fps"
-          }
-        }
-      }
-    },
-    "%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld"
           }
         }
       }
@@ -136,23 +117,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "关于 Elapse Recorder"
-          }
-        }
-      }
-    },
-    "About %@ remaining" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "About %@ remaining"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "预计剩余 %@"
           }
         }
       }
@@ -1076,7 +1040,6 @@
       }
     },
     "DetailPaneView.window" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1156,19 +1119,19 @@
         }
       }
     },
-    "Estimating time remaining…" : {
+    "Estimating…" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Estimating time remaining…"
+            "value" : "Estimating…"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在估算剩余时间…"
+            "value" : "正在估算…"
           }
         }
       }
@@ -1347,6 +1310,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "帧"
+          }
+        }
+      }
+    },
+    "Frames" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frames"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "帧数"
           }
         }
       }
@@ -2276,6 +2256,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此会话尚无记录的窗口。"
+          }
+        }
+      }
+    },
+    "Time Remaining" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time Remaining"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "剩余时间"
           }
         }
       }

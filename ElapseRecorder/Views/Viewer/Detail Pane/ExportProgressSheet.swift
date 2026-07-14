@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// A standalone, non-dismissable sheet shown while a timelapse is being encoded. It renders a
-/// determinate progress bar with a percentage, exported/total frame counts, the chosen video
-/// settings, and an estimated time remaining. Because the encoding runs off the main actor,
-/// this sheet stays responsive and animates as progress is reported.
+/// determinate progress bar with a percentage and a form describing the export: exported/total
+/// frame counts, the chosen video settings, and an estimated time remaining. Because the
+/// encoding runs off the main actor, this sheet stays responsive and animates as progress is
+/// reported.
 struct ExportProgressSheet: View {
     let status: TimelapseExportStatus
     var onCancel: () -> Void
@@ -14,11 +15,7 @@ struct ExportProgressSheet: View {
 
             progressRow()
 
-            VStack(alignment: .leading, spacing: 4) {
-                detailRow(frameCountText)
-                detailRow(technicalSummary)
-                detailRow(remainingTimeText)
-            }
+            detailsForm()
 
             Button(role: .cancel) {
                 onCancel()
@@ -29,7 +26,7 @@ struct ExportProgressSheet: View {
             .keyboardShortcut(.cancelAction)
         }
         .padding(20)
-        .frame(width: 340)
+        .frame(width: 360)
         .interactiveDismissDisabled()
     }
 
@@ -60,40 +57,47 @@ struct ExportProgressSheet: View {
     }
 
     @ViewBuilder
-    private func detailRow(_ text: String) -> some View {
-        Text(text)
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    private func detailsForm() -> some View {
+        Form {
+            LabeledContent("Frames", value: framesValue)
+            LabeledContent("Format", value: formatValue)
+            LabeledContent("Frame Rate", value: frameRateValue)
+            if status.options.interpolationFrames > 0 {
+                LabeledContent("Interpolation", value: interpolationValue)
+            }
+            LabeledContent("Time Remaining", value: remainingTimeValue)
+        }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .scrollDisabled(true)
+        .padding(-20)
     }
 
-    private var frameCountText: String {
+    private var framesValue: String {
         let emitted = status.emittedFrames.formatted(.number)
         let total = status.totalFrames.formatted(.number)
-        return String(localized: "\(emitted) of \(total) frames")
+        return "\(emitted) / \(total)"
     }
 
-    private var technicalSummary: String {
-        let options = status.options
-        var parts = [
-            options.codec.title,
-            options.container.title,
-            String(localized: "\(options.framesPerSecond) fps"),
-        ]
-        if options.interpolationFrames > 0 {
-            parts.append(String(localized: "\(options.interpolationFrames) crossfade frames"))
-        }
-        return parts.joined(separator: " · ")
+    private var formatValue: String {
+        "\(status.options.codec.title) · \(status.options.container.title)"
     }
 
-    private var remainingTimeText: String {
+    private var frameRateValue: String {
+        String(localized: "\(status.options.framesPerSecond) fps")
+    }
+
+    private var interpolationValue: String {
+        String(localized: "\(status.options.interpolationFrames) crossfade frames")
+    }
+
+    private var remainingTimeValue: String {
         guard let remaining = status.estimatedTimeRemaining(asOf: .now) else {
-            return String(localized: "Estimating time remaining…")
+            return String(localized: "Estimating…")
         }
-        let formatted = remaining.formatted(
+        return remaining.formatted(
             .units(allowed: [.hours, .minutes, .seconds], width: .abbreviated, maximumUnitCount: 2)
         )
-        return String(localized: "About \(formatted) remaining")
     }
 }
 

@@ -6,7 +6,10 @@ import XCTest
 final class ViewerFeatureTests: XCTestCase {
     @MainActor
     func testExportTimelapseChoosesDestinationEncodesAndReveals() async {
-        let urls = [URL(filePath: "/tmp/a.heic"), URL(filePath: "/tmp/b.heic")]
+        let frames = [
+            ExportFrame(url: URL(filePath: "/tmp/a.heic"), pixelWidth: 800, pixelHeight: 600),
+            ExportFrame(url: URL(filePath: "/tmp/b.heic"), pixelWidth: 800, pixelHeight: 600),
+        ]
         let destination = URL(filePath: "/tmp/out.mp4")
         let revealed = LockIsolated<URL?>(nil)
         let startedAt = Date(timeIntervalSince1970: 1000)
@@ -23,7 +26,7 @@ final class ViewerFeatureTests: XCTestCase {
             }
             $0.timelapseExportClient.export = { request in
                 AsyncThrowingStream { continuation in
-                    XCTAssertEqual(request.imageURLs, urls)
+                    XCTAssertEqual(request.frames, frames)
                     XCTAssertEqual(request.destinationURL, destination)
                     XCTAssertEqual(request.codec, .hevc)
                     XCTAssertEqual(request.container, .mov)
@@ -38,7 +41,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.fileRevealClient.reveal = { url in revealed.setValue(url) }
         }
 
-        await store.send(.exportTimelapseRequested(urls: urls)) {
+        await store.send(.exportTimelapseRequested(frames: frames)) {
             $0.isExporting = true
         }
         await store.receive(\.exportStarted) {
@@ -71,7 +74,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.fileRevealClient.reveal = { _ in }
         }
 
-        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")])) {
+        await store.send(.exportTimelapseRequested(frames: [ExportFrame(url: URL(filePath: "/tmp/a.heic"))])) {
             $0.isExporting = true
         }
         await store.receive(\.exportCancelled) {
@@ -100,7 +103,10 @@ final class ViewerFeatureTests: XCTestCase {
             $0.fileRevealClient.reveal = { _ in }
         }
 
-        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic"), URL(filePath: "/tmp/b.heic")])) {
+        await store.send(.exportTimelapseRequested(frames: [
+            ExportFrame(url: URL(filePath: "/tmp/a.heic")),
+            ExportFrame(url: URL(filePath: "/tmp/b.heic")),
+        ])) {
             $0.isExporting = true
         }
         await store.receive(\.exportStarted) {

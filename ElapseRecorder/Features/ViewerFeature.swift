@@ -102,7 +102,7 @@ struct ViewerFeature: Reducer {
         case quickLookURLChanged(URL?)
         case refresh
         case revealScreenshotInFinder(ScreenshotRecord)
-        case exportTimelapseRequested(urls: [URL])
+        case exportTimelapseRequested(frames: [ExportFrame])
         case exportCancelButtonTapped
         case exportStarted(options: ExportOptions, totalFrames: Int)
         case exportProgressed(TimelapseExportProgress)
@@ -271,8 +271,8 @@ struct ViewerFeature: Reducer {
                     await fileReveal.reveal(record.fileURL)
                 }
 
-            case let .exportTimelapseRequested(urls):
-                guard !urls.isEmpty, !state.isExporting else { return .none }
+            case let .exportTimelapseRequested(frames):
+                guard !frames.isEmpty, !state.isExporting else { return .none }
                 state.isExporting = true
                 state.exportStatus = nil
 
@@ -280,7 +280,7 @@ struct ViewerFeature: Reducer {
                 let panel = exportPanel
                 let fileReveal = fileReveal
                 let suggestedName = state.exportSuggestedFileName
-                let frameCount = urls.count
+                let frameCount = frames.count
 
                 return .run { send in
                     guard let selection = await panel.present(suggestedName, frameCount) else {
@@ -290,7 +290,7 @@ struct ViewerFeature: Reducer {
 
                     do {
                         let request = TimelapseExportRequest(
-                            imageURLs: urls,
+                            frames: frames,
                             destinationURL: selection.destinationURL,
                             codec: selection.options.codec,
                             container: selection.options.container,

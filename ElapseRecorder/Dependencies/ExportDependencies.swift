@@ -3,6 +3,7 @@ import AppKit
 import ComposableArchitecture
 import CoreVideo
 import Foundation
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -149,9 +150,10 @@ private enum TimelapseEncoder {
         _ request: TimelapseExportRequest,
         progress: @Sendable (TimelapseExportProgress) -> Void
     ) async throws {
-        guard !request.imageURLs.isEmpty else { throw TimelapseExportError.noFrames }
+        let frames = request.frames
+        guard !frames.isEmpty else { throw TimelapseExportError.noFrames }
 
-        let canvas = try canvasSize(for: request.imageURLs)
+        let canvas = try canvasSize(for: frames)
         try? FileManager.default.removeItem(at: request.destinationURL)
 
         let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: request.container.avFileType)
@@ -187,10 +189,8 @@ private enum TimelapseEncoder {
         let fps = max(1, request.framesPerSecond)
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
         let interpolation = max(0, request.interpolationFrames)
-        let frameCount = request.imageURLs.count
-        // Each consecutive pair contributes 1 "hold" frame plus N crossfade frames, and the
-        // very last screenshot is held once at the end.
-        let outputFrameCount = frameCount == 1 ? 1 : frameCount + (frameCount - 1) * interpolation
+        let frameCount = frames.count
+        let outputFrameCount = request.outputFrameCount
 
         var emitted = 0
         var lastReportedPercent = -1
@@ -226,20 +226,44 @@ private enum TimelapseEncoder {
             await Task.yield()
         }
 
+        // Decode source images on background tasks so decoding (the main cost for HEIC) overlaps
+        // with drawing and VideoToolbox encoding. A bounded look-ahead keeps only a few decoded
+        // frames resident at once regardless of how long the export is.
+        let lookAhead = 3
+        var decodeTasks = [Task<SendableImage, Error>?](repeating: nil, count: frameCount)
+        func startDecode(_ index: Int) {
+            guard index < frameCount, decodeTasks[index] == nil else { return }
+            let url = frames[index].url
+            decodeTasks[index] = Task.detached(priority: .utility) {
+                try SendableImage(image: loadImage(at: url, fittingWithin: canvas))
+            }
+        }
+        defer { for task in decodeTasks {
+            task?.cancel()
+        } }
+
         do {
+            for index in 0 ..< min(lookAhead, frameCount) {
+                startDecode(index)
+            }
+
             if frameCount == 1 {
-                let image = try loadImage(at: request.imageURLs[0])
+                let image = try await decodeTasks[0]!.value.image
                 try await append { context in drawFrame(image, in: context, canvas: canvas) }
             } else {
-                var current = try loadImage(at: request.imageURLs[0])
+                var current = try await decodeTasks[0]!.value.image
                 for index in 0 ..< frameCount - 1 {
-                    let next = try loadImage(at: request.imageURLs[index + 1])
+                    // Keep the decode window full so source `index + lookAhead` decodes while
+                    // this pair's frames are drawn and encoded.
+                    startDecode(index + lookAhead)
 
                     // Hold the current screenshot, then dissolve toward the next one. Drawing
                     // `current` fully opaque and compositing `next` over it at alpha f yields a
                     // true crossfade (current·(1-f) + next·f), which stays fully opaque — unlike
                     // fading both, which dips translucent and shows the background mid-transition.
                     try await append { context in drawFrame(current, in: context, canvas: canvas) }
+
+                    let next = try await decodeTasks[index + 1]!.value.image
                     for step in stride(from: 1, through: interpolation, by: 1) {
                         let progressFraction = Double(step) / Double(interpolation + 1)
                         try await append { context in
@@ -247,6 +271,7 @@ private enum TimelapseEncoder {
                             drawFrame(next, in: context, canvas: canvas, alpha: progressFraction, clearBackground: false)
                         }
                     }
+                    decodeTasks[index] = nil
                     current = next
                 }
                 // Hold the final screenshot.
@@ -268,30 +293,60 @@ private enum TimelapseEncoder {
         }
     }
 
-    /// The smallest even-sized canvas that fits every frame (H.264/HEVC want even sides).
-    private static func canvasSize(for urls: [URL]) throws -> CGSize {
+    /// A decoded frame that can cross task boundaries. `CGImage` is immutable and safe to read
+    /// concurrently, so wrapping it as unchecked-Sendable is sound.
+    private struct SendableImage: @unchecked Sendable {
+        let image: CGImage
+    }
+
+    /// The smallest even-sized canvas that fits every frame (H.264/HEVC want even sides). Uses
+    /// each frame's stored pixel size when known, only opening the file's metadata as a fallback.
+    private static func canvasSize(for frames: [ExportFrame]) throws -> CGSize {
         var maxWidth = 0
         var maxHeight = 0
 
-        for url in urls {
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-                  let width = properties[kCGImagePropertyPixelWidth] as? Int,
-                  let height = properties[kCGImagePropertyPixelHeight] as? Int
-            else {
-                throw TimelapseExportError.unreadableImage(url)
+        for frame in frames {
+            let size: CGSize
+            if let known = frame.knownPixelSize {
+                size = known
+            } else {
+                size = try imagePixelSize(at: frame.url)
             }
-            maxWidth = max(maxWidth, width)
-            maxHeight = max(maxHeight, height)
+            maxWidth = max(maxWidth, Int(size.width))
+            maxHeight = max(maxHeight, Int(size.height))
         }
 
         return CGSize(width: max(2, maxWidth + maxWidth % 2), height: max(2, maxHeight + maxHeight % 2))
     }
 
-    private static func loadImage(at url: URL) throws -> CGImage {
+    private static func imagePixelSize(at url: URL) throws -> CGSize {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int
         else {
+            throw TimelapseExportError.unreadableImage(url)
+        }
+        return CGSize(width: width, height: height)
+    }
+
+    /// Decode a source image eagerly and no larger than the canvas needs. Using the thumbnail
+    /// API decodes directly at the target size (instead of a lazy full-resolution decode that
+    /// would happen on the encoding thread), which keeps the encode loop fed and memory bounded.
+    private static func loadImage(at url: URL, fittingWithin canvas: CGSize) throws -> CGImage {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            throw TimelapseExportError.unreadableImage(url)
+        }
+
+        let maxPixelSize = Int(max(canvas.width, canvas.height))
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw TimelapseExportError.unreadableImage(url)
         }
         return image

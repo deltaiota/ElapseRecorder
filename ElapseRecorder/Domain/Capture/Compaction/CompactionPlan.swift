@@ -1,5 +1,13 @@
 import Foundation
 
+/// Nominal timebase for compacted window videos. Real capture timing is irregular, so the video
+/// timeline is decoupled from wall-clock time: each screenshot is one frame at this rate and the
+/// database maps frame index -> real `capturedAt`.
+nonisolated enum CompactionVideo {
+    static let frameRate: Int32 = 30
+    static let fileExtension = "mov"
+}
+
 /// A single standalone frame that is a candidate for compaction into a window video.
 nonisolated struct CompactableFrame: Equatable, Identifiable {
     var id: UUID

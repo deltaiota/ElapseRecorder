@@ -9,15 +9,17 @@ final class ViewerFeatureTests: XCTestCase {
         let urls = [URL(filePath: "/tmp/a.heic"), URL(filePath: "/tmp/b.heic")]
         let destination = URL(filePath: "/tmp/out.mp4")
         let revealed = LockIsolated<URL?>(nil)
+        let startedAt = Date(timeIntervalSince1970: 1000)
+        let options = ExportOptions(codec: .hevc, container: .mov, framesPerSecond: 24, interpolationFrames: 3)
+        // 2 source frames + 3 crossfades between them = 5 output frames.
+        let totalFrames = 5
 
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
+            $0.date = .constant(startedAt)
             $0.exportPanelClient.present = { _, _ in
-                ExportSelection(
-                    destinationURL: destination,
-                    options: ExportOptions(codec: .hevc, container: .mov, framesPerSecond: 24, interpolationFrames: 3)
-                )
+                ExportSelection(destinationURL: destination, options: options)
             }
             $0.timelapseExportClient.export = { request in
                 AsyncThrowingStream { continuation in
@@ -27,8 +29,9 @@ final class ViewerFeatureTests: XCTestCase {
                     XCTAssertEqual(request.container, .mov)
                     XCTAssertEqual(request.framesPerSecond, 24)
                     XCTAssertEqual(request.interpolationFrames, 3)
-                    continuation.yield(0.5)
-                    continuation.yield(1.0)
+                    XCTAssertEqual(request.outputFrameCount, totalFrames)
+                    continuation.yield(TimelapseExportProgress(emittedFrames: 2, totalFrames: totalFrames))
+                    continuation.yield(TimelapseExportProgress(emittedFrames: 5, totalFrames: totalFrames))
                     continuation.finish()
                 }
             }
@@ -39,17 +42,22 @@ final class ViewerFeatureTests: XCTestCase {
             $0.isExporting = true
         }
         await store.receive(\.exportStarted) {
-            $0.exportProgress = 0
+            $0.exportStatus = TimelapseExportStatus(
+                options: options,
+                totalFrames: totalFrames,
+                emittedFrames: 0,
+                startedAt: startedAt
+            )
         }
         await store.receive(\.exportProgressed) {
-            $0.exportProgress = 0.5
+            $0.exportStatus?.emittedFrames = 2
         }
         await store.receive(\.exportProgressed) {
-            $0.exportProgress = 1.0
+            $0.exportStatus?.emittedFrames = 5
         }
         await store.receive(\.exportCompleted) {
             $0.isExporting = false
-            $0.exportProgress = nil
+            $0.exportStatus = nil
         }
         XCTAssertEqual(revealed.value, destination)
     }
@@ -73,36 +81,42 @@ final class ViewerFeatureTests: XCTestCase {
 
     @MainActor
     func testExportCancelButtonCancelsInFlightExport() async {
+        let startedAt = Date(timeIntervalSince1970: 2000)
+        let options = ExportOptions(codec: .h264, container: .mp4, framesPerSecond: 24, interpolationFrames: 0)
+
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
+            $0.date = .constant(startedAt)
             $0.exportPanelClient.present = { _, _ in
-                ExportSelection(
-                    destinationURL: URL(filePath: "/tmp/out.mp4"),
-                    options: ExportOptions(codec: .h264, container: .mp4, framesPerSecond: 24, interpolationFrames: 0)
-                )
+                ExportSelection(destinationURL: URL(filePath: "/tmp/out.mp4"), options: options)
             }
             $0.timelapseExportClient.export = { _ in
                 AsyncThrowingStream { continuation in
-                    continuation.yield(0.5)
+                    continuation.yield(TimelapseExportProgress(emittedFrames: 1, totalFrames: 2))
                     // Stay open so the export is still in flight when we cancel it.
                 }
             }
             $0.fileRevealClient.reveal = { _ in }
         }
 
-        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic")])) {
+        await store.send(.exportTimelapseRequested(urls: [URL(filePath: "/tmp/a.heic"), URL(filePath: "/tmp/b.heic")])) {
             $0.isExporting = true
         }
         await store.receive(\.exportStarted) {
-            $0.exportProgress = 0
+            $0.exportStatus = TimelapseExportStatus(
+                options: options,
+                totalFrames: 2,
+                emittedFrames: 0,
+                startedAt: startedAt
+            )
         }
         await store.receive(\.exportProgressed) {
-            $0.exportProgress = 0.5
+            $0.exportStatus?.emittedFrames = 1
         }
         await store.send(.exportCancelButtonTapped) {
             $0.isExporting = false
-            $0.exportProgress = nil
+            $0.exportStatus = nil
         }
     }
 

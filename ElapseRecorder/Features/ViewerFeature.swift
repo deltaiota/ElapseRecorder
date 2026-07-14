@@ -21,7 +21,7 @@ struct ViewerFeature: Reducer {
         var isExporting = false
         /// Non-nil only while frames are actually being encoded; drives the progress sheet.
         /// It stays nil during the AppKit save-panel phase so the two sheets never collide.
-        var exportProgress: Double?
+        var exportStatus: TimelapseExportStatus?
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
@@ -104,8 +104,8 @@ struct ViewerFeature: Reducer {
         case revealScreenshotInFinder(ScreenshotRecord)
         case exportTimelapseRequested(urls: [URL])
         case exportCancelButtonTapped
-        case exportStarted
-        case exportProgressed(Double)
+        case exportStarted(options: ExportOptions, totalFrames: Int)
+        case exportProgressed(TimelapseExportProgress)
         case exportCompleted(URL)
         case exportFailed(String)
         case exportCancelled
@@ -120,6 +120,7 @@ struct ViewerFeature: Reducer {
     @Dependency(\.persistenceClient) private var persistence
     @Dependency(\.timelapseExportClient) private var timelapseExport
     @Dependency(\.exportPanelClient) private var exportPanel
+    @Dependency(\.date) private var date
 
     private nonisolated enum CancelID: Hashable { case export }
 
@@ -273,7 +274,7 @@ struct ViewerFeature: Reducer {
             case let .exportTimelapseRequested(urls):
                 guard !urls.isEmpty, !state.isExporting else { return .none }
                 state.isExporting = true
-                state.exportProgress = nil
+                state.exportStatus = nil
 
                 let exporter = timelapseExport
                 let panel = exportPanel
@@ -296,7 +297,7 @@ struct ViewerFeature: Reducer {
                             framesPerSecond: selection.options.framesPerSecond,
                             interpolationFrames: selection.options.interpolationFrames
                         )
-                        await send(.exportStarted)
+                        await send(.exportStarted(options: selection.options, totalFrames: request.outputFrameCount))
                         for try await progress in exporter.export(request) {
                             await send(.exportProgressed(progress))
                         }
@@ -314,31 +315,36 @@ struct ViewerFeature: Reducer {
             case .exportCancelButtonTapped:
                 guard state.isExporting else { return .none }
                 state.isExporting = false
-                state.exportProgress = nil
+                state.exportStatus = nil
                 return .cancel(id: CancelID.export)
 
-            case .exportStarted:
-                state.exportProgress = 0
+            case let .exportStarted(options, totalFrames):
+                state.exportStatus = TimelapseExportStatus(
+                    options: options,
+                    totalFrames: totalFrames,
+                    emittedFrames: 0,
+                    startedAt: date.now
+                )
                 return .none
 
             case let .exportProgressed(progress):
-                state.exportProgress = progress
+                state.exportStatus?.emittedFrames = progress.emittedFrames
                 return .none
 
             case .exportCompleted:
                 state.isExporting = false
-                state.exportProgress = nil
+                state.exportStatus = nil
                 return .none
 
             case let .exportFailed(message):
                 state.isExporting = false
-                state.exportProgress = nil
+                state.exportStatus = nil
                 state.errorMessage = message
                 return .none
 
             case .exportCancelled:
                 state.isExporting = false
-                state.exportProgress = nil
+                state.exportStatus = nil
                 return .none
 
             case let .deleteSessionButtonTapped(session):

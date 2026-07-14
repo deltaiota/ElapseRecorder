@@ -42,18 +42,20 @@ struct DetailPaneView: View {
             in: currentScreenshotURLs
         )
         .sheet(isPresented: exportProgressSheetPresented) {
-            ExportProgressSheet(
-                progress: store.exportProgress ?? 0,
-                onCancel: { store.send(.exportCancelButtonTapped) }
-            )
+            if let status = store.exportStatus {
+                ExportProgressSheet(
+                    status: status,
+                    onCancel: { store.send(.exportCancelButtonTapped) }
+                )
+            }
         }
     }
 
-    /// Presented only while frames are actually being encoded (exportProgress != nil), so it
+    /// Presented only while frames are actually being encoded (exportStatus != nil), so it
     /// never overlaps the AppKit save panel shown during destination selection.
     private var exportProgressSheetPresented: Binding<Bool> {
         Binding(
-            get: { store.exportProgress != nil },
+            get: { store.exportStatus != nil },
             set: { _ in }
         )
     }

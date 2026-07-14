@@ -41,9 +41,9 @@ extension TimelapseVideoContainer {
 
 // MARK: - Clients
 
-/// Encodes screenshots into a timelapse video, reporting progress (0...1) as it goes.
+/// Encodes screenshots into a timelapse video, reporting frame progress as it goes.
 nonisolated struct TimelapseExportClient {
-    var export: @Sendable (_ request: TimelapseExportRequest) -> AsyncThrowingStream<Double, Error>
+    var export: @Sendable (_ request: TimelapseExportRequest) -> AsyncThrowingStream<TimelapseExportProgress, Error>
 }
 
 /// Presents the export save panel — with an accessory view for format and frame rate — and
@@ -147,7 +147,7 @@ extension DependencyValues {
 private enum TimelapseEncoder {
     static func encode(
         _ request: TimelapseExportRequest,
-        progress: @Sendable (Double) -> Void
+        progress: @Sendable (TimelapseExportProgress) -> Void
     ) async throws {
         guard !request.imageURLs.isEmpty else { throw TimelapseExportError.noFrames }
 
@@ -194,15 +194,15 @@ private enum TimelapseEncoder {
 
         var emitted = 0
         var lastReportedPercent = -1
-        /// Report at most ~101 times (whole-percent steps). Yielding progress for every one of
-        /// a very long export's frames (10k+) would flood the main-actor reducer with actions
-        /// and make the UI unresponsive, so we coalesce to visible increments.
+        /// Report at most ~101 times (whole-percent steps), plus the final frame. Yielding
+        /// progress for every one of a very long export's frames (10k+) would flood the
+        /// main-actor reducer with actions and make the UI unresponsive, so we coalesce to
+        /// visible increments.
         func report() {
-            let fraction = Double(emitted) / Double(outputFrameCount)
-            let percent = Int(fraction * 100)
-            if percent != lastReportedPercent {
+            let percent = Int(Double(emitted) / Double(outputFrameCount) * 100)
+            if percent != lastReportedPercent || emitted == outputFrameCount {
                 lastReportedPercent = percent
-                progress(fraction)
+                progress(TimelapseExportProgress(emittedFrames: emitted, totalFrames: outputFrameCount))
             }
         }
         func append(_ draw: (CGContext) -> Void) async throws {

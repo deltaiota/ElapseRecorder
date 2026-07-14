@@ -58,6 +58,13 @@ struct AppInfoView: View {
                         Text(app.screenshotCount, format: .number)
                             .monospaced()
                     }
+
+                    if app.sizeBytes > 0 {
+                        LabeledContent("Disk Space") {
+                            Text(app.sizeBytes.formatted(.byteCount(style: .file)))
+                                .monospaced()
+                        }
+                    }
                 }
 
                 Section {
@@ -82,7 +89,7 @@ struct AppInfoView: View {
 
 #Preview {
     AppInfoView(
-        app: AppCaptureSummary(bundleIdentifier: "com.apple.Safari", displayName: "Safari", sessionCount: 5, screenshotCount: 210, lastCapturedAt: .now),
+        app: AppCaptureSummary(bundleIdentifier: "com.apple.Safari", displayName: "Safari", sessionCount: 5, screenshotCount: 210, lastCapturedAt: .now, sizeBytes: 48_500_000),
         identity: InstalledAppIdentity(bundleIdentifier: "com.apple.Safari", recordedName: "Safari")
     )
     .padding()

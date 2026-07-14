@@ -1375,6 +1375,22 @@
         }
       }
     },
+    "Disk Space" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disk Space"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "磁盘占用"
+          }
+        }
+      }
+    },
     "Done" : {
       "localizations" : {
         "en" : {
@@ -1581,6 +1597,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "格式"
+          }
+        }
+      }
+    },
+    "crossfade frames" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "crossfade frames"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个交叉淡化帧"
           }
         }
       }

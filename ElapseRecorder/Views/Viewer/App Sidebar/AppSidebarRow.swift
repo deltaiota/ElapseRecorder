@@ -89,16 +89,6 @@ struct AppSidebarRow: View {
             .init(value: model.app.screenshotCount, systemSymbol: .photo),
         ]
 
-        if model.app.sizeBytes > 0 {
-            items.append(
-                .init(
-                    text: model.app.sizeBytes.formatted(.byteCount(style: .file)),
-                    systemSymbol: .externaldrive,
-                    isMonospaced: true
-                )
-            )
-        }
-
         if let captureInterval = model.captureInterval {
             items.append(
                 .init(

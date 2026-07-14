@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 // MARK: - Codec / container → AVFoundation mapping
 
 extension TimelapseVideoCodec {
-    var avCodec: AVVideoCodecType {
+    nonisolated var avCodec: AVVideoCodecType {
         switch self {
         case .h264:
             .h264
@@ -30,7 +30,7 @@ extension TimelapseVideoContainer {
         }
     }
 
-    var avFileType: AVFileType {
+    nonisolated var avFileType: AVFileType {
         switch self {
         case .mp4:
             .mp4
@@ -60,7 +60,7 @@ nonisolated struct ExportPanelClient {
 extension TimelapseExportClient: DependencyKey {
     static let liveValue = Self { request in
         AsyncThrowingStream { continuation in
-            let task = Task.detached(priority: .utility) {
+            let task = Task.detached(priority: .userInitiated) {
                 do {
                     try await TimelapseEncoder.encode(request) { progress in
                         continuation.yield(progress)
@@ -160,7 +160,7 @@ extension DependencyValues {
 
 /// Offline AVFoundation timelapse encoder. Frames are letterboxed onto a canvas sized to
 /// the largest frame, so windows that resize mid-session don't distort or crop.
-private enum TimelapseEncoder {
+private nonisolated enum TimelapseEncoder {
     static func encode(
         _ request: TimelapseExportRequest,
         progress: @Sendable (TimelapseExportProgress) -> Void
@@ -246,7 +246,7 @@ private enum TimelapseEncoder {
         func startDecode(_ index: Int) {
             guard index < frameCount, decodeTasks[index] == nil else { return }
             let url = frames[index].url
-            decodeTasks[index] = Task.detached(priority: .utility) {
+            decodeTasks[index] = Task.detached(priority: .userInitiated) {
                 try SendableImage(image: loadImage(at: url, fittingWithin: canvas))
             }
         }

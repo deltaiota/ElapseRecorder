@@ -274,7 +274,7 @@ struct ExportOptionsAccessory: View {
                 }
                 .fixedSize()
 
-                Text(#tk("\(model.interpolationFrames) crossfade frames").replacing(/^\d+\s*/, with: ""))
+                Text("crossfade frames")
                     .foregroundStyle(.secondary)
             }
             .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")

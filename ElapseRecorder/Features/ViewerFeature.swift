@@ -714,7 +714,13 @@ extension ViewerFeature.State {
             .displayName ?? "Capture"
 
         if let startedAt = selectedSession?.startedAt {
-            let stamp = startedAt.formatted(.dateTime.year().month().day().hour().minute())
+            let stamp = startedAt.formatted(
+                .verbatim(
+                    "\(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)).\(minute: .twoDigits)",
+                    timeZone: .current,
+                    calendar: .current
+                )
+            )
             return "\(appName) Timelapse \(stamp)"
         }
         return "\(appName) Timelapse"
@@ -752,7 +758,7 @@ extension ViewerFeature.State {
 
 /// Applies an export's trim range and optional near-duplicate filter to the ordered frames.
 /// Pure and file-scoped so the export effect's `@Sendable` closure can call it directly.
-private func applyExportSelection(_ options: ExportOptions, to frames: [ExportFrame]) -> [ExportFrame] {
+private nonisolated func applyExportSelection(_ options: ExportOptions, to frames: [ExportFrame]) -> [ExportFrame] {
     var result = frames
 
     if let range = options.trimRange {

@@ -48,10 +48,11 @@ nonisolated struct TimelapseExportClient {
 }
 
 /// Presents the export save panel — with an accessory view for format and frame rate — and
-/// returns the chosen destination plus options. `frameCount` is the number of screenshots
-/// being exported, used to estimate the resulting video length.
+/// returns the chosen destination plus options. `frameHashes` are the perceptual hashes of the
+/// frames being exported (order matters), used to estimate length and to power the trim and
+/// near-duplicate options live in the accessory.
 nonisolated struct ExportPanelClient {
-    var present: @Sendable (_ suggestedName: String, _ frameCount: Int) async -> ExportSelection?
+    var present: @Sendable (_ suggestedName: String, _ frameHashes: [UInt64]) async -> ExportSelection?
 }
 
 // MARK: - Live values
@@ -82,14 +83,14 @@ extension TimelapseExportClient: DependencyKey {
 }
 
 extension ExportPanelClient: DependencyKey {
-    static let liveValue = Self { suggestedName, frameCount in
-        await present(suggestedName: suggestedName, frameCount: frameCount)
+    static let liveValue = Self { suggestedName, frameHashes in
+        await present(suggestedName: suggestedName, frameHashes: frameHashes)
     }
 
     @MainActor
-    private static func present(suggestedName: String, frameCount: Int) async -> ExportSelection? {
+    private static func present(suggestedName: String, frameHashes: [UInt64]) async -> ExportSelection? {
         let panel = NSSavePanel()
-        let model = ExportAccessoryModel(frameCount: frameCount)
+        let model = ExportAccessoryModel(frameHashes: frameHashes)
 
         panel.allowedContentTypes = [model.container.contentType]
         panel.nameFieldStringValue = suggestedName

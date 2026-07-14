@@ -13,10 +13,15 @@ final class ExportAccessoryModel {
     var container: TimelapseVideoContainer
     var fpsChoice: FPSChoice
     var customFPS: Int
+    var targetDurationSeconds: Double
     var interpolationFrames: Int
     var resolutionCap: Int
     var showsTimestamp: Bool
-    let frameCount: Int
+    var trimEnabled: Bool
+    var trimStart: Int
+    var trimEnd: Int
+    var skipSimilarFrames: Bool
+    let frameHashes: [UInt64]
 
     static let presetFPS = [2, 4, 8, 12, 24, 30, 60, 120, 240]
     static let maxInterpolationFrames = 30
@@ -26,20 +31,30 @@ final class ExportAccessoryModel {
     enum FPSChoice: Hashable {
         case preset(Int)
         case custom
+        case targetDuration
     }
 
-    init(options: ExportOptions = .default, frameCount: Int = 0) {
+    init(options: ExportOptions = .default, frameHashes: [UInt64] = []) {
         codec = options.codec
         container = options.container
         customFPS = options.framesPerSecond
+        targetDurationSeconds = 30
         interpolationFrames = options.interpolationFrames
         resolutionCap = options.maxOutputDimension ?? 0
         showsTimestamp = options.timestampOverlay
-        self.frameCount = frameCount
+        self.frameHashes = frameHashes
+        trimEnabled = false
+        trimStart = 0
+        trimEnd = max(0, frameHashes.count - 1)
+        skipSimilarFrames = options.skipSimilarFrames
         fpsChoice = Self.presetFPS.contains(options.framesPerSecond)
             ? .preset(options.framesPerSecond)
             : .custom
         normalizeContainer()
+    }
+
+    var frameCount: Int {
+        frameHashes.count
     }
 
     /// Keep the container valid for the chosen codec (e.g. HEVC can't use MP4 here).
@@ -49,27 +64,56 @@ final class ExportAccessoryModel {
         }
     }
 
-    var resolvedFramesPerSecond: Int {
-        switch fpsChoice {
-        case let .preset(value):
-            value
-        case .custom:
-            min(240, max(1, customFPS))
+    /// The trim range clamped to valid bounds, or nil when trimming is off / covers everything.
+    var resolvedTrimRange: ClosedRange<Int>? {
+        guard trimEnabled, frameCount > 0 else { return nil }
+        let lower = min(max(0, trimStart), frameCount - 1)
+        let upper = min(max(lower, trimEnd), frameCount - 1)
+        guard lower > 0 || upper < frameCount - 1 else { return nil }
+        return lower ... upper
+    }
+
+    /// Source-frame hashes after applying the trim range.
+    private var trimmedHashes: [UInt64] {
+        guard frameCount > 0 else { return [] }
+        if let range = resolvedTrimRange {
+            return Array(frameHashes[range])
         }
+        return frameHashes
+    }
+
+    /// Number of source frames that survive trim + optional near-duplicate filtering.
+    var effectiveSourceCount: Int {
+        let hashes = trimmedHashes
+        return skipSimilarFrames ? ExportFrameFilter.keptIndices(hashes: hashes).count : hashes.count
     }
 
     var resolvedInterpolationFrames: Int {
         min(Self.maxInterpolationFrames, max(0, interpolationFrames))
     }
 
-    /// Total frames the export will emit: one per screenshot plus the inserted crossfades.
+    /// Total frames the export will emit: one per surviving screenshot plus the crossfades.
     var estimatedFrameCount: Int {
-        guard frameCount > 1 else { return max(0, frameCount) }
-        return frameCount + (frameCount - 1) * resolvedInterpolationFrames
+        let count = effectiveSourceCount
+        guard count > 1 else { return max(0, count) }
+        return count + (count - 1) * resolvedInterpolationFrames
+    }
+
+    var resolvedFramesPerSecond: Int {
+        switch fpsChoice {
+        case let .preset(value):
+            return value
+        case .custom:
+            return min(240, max(1, customFPS))
+        case .targetDuration:
+            let seconds = max(0.1, targetDurationSeconds)
+            return min(240, max(1, Int((Double(estimatedFrameCount) / seconds).rounded())))
+        }
     }
 
     var estimatedDuration: Duration {
-        .seconds(Double(estimatedFrameCount) / Double(resolvedFramesPerSecond))
+        guard resolvedFramesPerSecond > 0 else { return .zero }
+        return .seconds(Double(estimatedFrameCount) / Double(resolvedFramesPerSecond))
     }
 
     var options: ExportOptions {
@@ -79,7 +123,9 @@ final class ExportAccessoryModel {
             framesPerSecond: resolvedFramesPerSecond,
             interpolationFrames: resolvedInterpolationFrames,
             maxOutputDimension: resolutionCap == 0 ? nil : resolutionCap,
-            timestampOverlay: showsTimestamp
+            timestampOverlay: showsTimestamp,
+            trimRange: resolvedTrimRange,
+            skipSimilarFrames: skipSimilarFrames
         )
     }
 }
@@ -137,6 +183,7 @@ struct ExportOptionsAccessory: View {
                             }
                             Divider()
                             Text("Custom").tag(ExportAccessoryModel.FPSChoice.custom)
+                            Text("Target length").tag(ExportAccessoryModel.FPSChoice.targetDuration)
                         }
                         .labelsHidden()
                         .fixedSize()
@@ -146,10 +193,19 @@ struct ExportOptionsAccessory: View {
                                 .frame(width: 56, height: 20)
                                 .multilineTextAlignment(.trailing)
                                 .textFieldStyle(.roundedBorder)
+                            Text("fps")
+                                .foregroundStyle(.secondary)
+                        } else if model.fpsChoice == .targetDuration {
+                            TextField("seconds", value: $model.targetDurationSeconds, format: .number)
+                                .frame(width: 56, height: 20)
+                                .multilineTextAlignment(.trailing)
+                                .textFieldStyle(.roundedBorder)
+                            Text("sec")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text("fps")
+                                .foregroundStyle(.secondary)
                         }
-
-                        Text("fps")
-                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -205,6 +261,43 @@ struct ExportOptionsAccessory: View {
                     }
                     .help("Burn each frame's capture time into the corner of the video.")
                 }
+
+                GridRow {
+                    Text("Frames")
+                        .gridColumnAlignment(.trailing)
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(isOn: $model.skipSimilarFrames) {
+                            Text("Skip near-duplicate frames")
+                        }
+                        .help("Drop frames that barely changed from the previous kept frame. Originals are not deleted.")
+
+                        if model.frameCount > 1 {
+                            Toggle(isOn: $model.trimEnabled) {
+                                Text("Trim range")
+                            }
+
+                            if model.trimEnabled {
+                                HStack(spacing: 6) {
+                                    TextField("from", value: $model.trimStart, format: .number)
+                                        .frame(width: 60, height: 20)
+                                        .multilineTextAlignment(.trailing)
+                                        .textFieldStyle(.roundedBorder)
+                                    Text("to")
+                                        .foregroundStyle(.secondary)
+                                    TextField("to", value: $model.trimEnd, format: .number)
+                                        .frame(width: 60, height: 20)
+                                        .multilineTextAlignment(.trailing)
+                                        .textFieldStyle(.roundedBorder)
+                                    Text("of \(model.frameCount)")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .help("Export only frames in this 0-based index range.")
+                            }
+                        }
+                    }
+                }
             }
 
             Text(estimateText)
@@ -229,5 +322,8 @@ struct ExportOptionsAccessory: View {
 }
 
 #Preview {
-    ExportOptionsAccessory(model: ExportAccessoryModel(frameCount: 120), onContainerChange: { _ in })
+    ExportOptionsAccessory(
+        model: ExportAccessoryModel(frameHashes: Array(repeating: 0, count: 120)),
+        onContainerChange: { _ in }
+    )
 }

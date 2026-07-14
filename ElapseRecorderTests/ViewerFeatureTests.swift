@@ -272,6 +272,52 @@ final class ViewerFeatureTests: XCTestCase {
         await store.send(.enforceRetentionRequested)
     }
 
+    func testExportFrameFilterDropsSimilarKeepsUnknownHashes() {
+        // 1 vs 255 differ by 7 bits (> threshold 4) → kept; equal hashes dropped.
+        XCTAssertEqual(ExportFrameFilter.keptIndices(hashes: [1, 1, 255, 255, 1]), [0, 2, 4])
+        // Unknown hashes (0) are always kept so old libraries aren't thinned.
+        XCTAssertEqual(ExportFrameFilter.keptIndices(hashes: [0, 0, 0]), [0, 1, 2])
+        XCTAssertEqual(ExportFrameFilter.keptIndices(hashes: []), [])
+    }
+
+    @MainActor
+    func testExportAppliesTrimAndSkipSimilar() async {
+        let frames = (0 ..< 5).map { index in
+            ExportFrame(
+                url: URL(filePath: "/tmp/\(index).heic"),
+                pixelWidth: 100,
+                pixelHeight: 100,
+                perceptualHash: [1, 1, 255, 255, 1][index]
+            )
+        }
+        // Trim to indices 1...4 → [1,255,255,1]; then skip-similar keeps 1,255,1 → frames 1,2,4.
+        let options = ExportOptions(
+            codec: .h264, container: .mp4, framesPerSecond: 24, interpolationFrames: 0,
+            trimRange: 1 ... 4, skipSimilarFrames: true
+        )
+        let encodedFrames = LockIsolated<[ExportFrame]>([])
+
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.exportPanelClient.present = { _, _ in
+                ExportSelection(destinationURL: URL(filePath: "/tmp/out.mp4"), options: options)
+            }
+            $0.timelapseExportClient.export = { request in
+                encodedFrames.setValue(request.frames)
+                return AsyncThrowingStream { $0.finish() }
+            }
+            $0.fileRevealClient.reveal = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.exportTimelapseRequested(frames: frames))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(encodedFrames.value.map(\.url.lastPathComponent), ["1.heic", "2.heic", "4.heic"])
+    }
+
     func testRetentionPolicySelectsByAgeAndSize() {
         let now = Date(timeIntervalSince1970: 10000)
         func session(_ n: Int, started: TimeInterval, bytes: Int) -> CaptureSessionSummary {

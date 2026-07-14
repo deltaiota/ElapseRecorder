@@ -11,12 +11,21 @@ nonisolated struct ExportFrame: Equatable {
     var pixelHeight: Int
     /// When the screenshot was captured, used for the optional timestamp overlay.
     var capturedAt: Date
+    /// 64-bit difference hash, used by the optional export-time near-duplicate filter.
+    var perceptualHash: UInt64
 
-    init(url: URL, pixelWidth: Int = 0, pixelHeight: Int = 0, capturedAt: Date = Date(timeIntervalSince1970: 0)) {
+    init(
+        url: URL,
+        pixelWidth: Int = 0,
+        pixelHeight: Int = 0,
+        capturedAt: Date = Date(timeIntervalSince1970: 0),
+        perceptualHash: UInt64 = 0
+    ) {
         self.url = url
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
         self.capturedAt = capturedAt
+        self.perceptualHash = perceptualHash
     }
 
     var knownPixelSize: CGSize? {

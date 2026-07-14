@@ -210,7 +210,8 @@ struct DetailPaneView: View {
                 url: record.fileURL,
                 pixelWidth: record.pixelWidth,
                 pixelHeight: record.pixelHeight,
-                capturedAt: record.capturedAt
+                capturedAt: record.capturedAt,
+                perceptualHash: record.perceptualHash
             )
         }
     }

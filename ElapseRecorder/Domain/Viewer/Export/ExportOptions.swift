@@ -11,6 +11,10 @@ nonisolated struct ExportOptions: Equatable {
     var maxOutputDimension: Int?
     /// Burn each frame's capture time into the video.
     var timestampOverlay: Bool
+    /// Restrict the export to this inclusive range of source-frame indices; `nil` uses all.
+    var trimRange: ClosedRange<Int>?
+    /// Drop frames that are near-identical to the previous kept frame (non-destructive).
+    var skipSimilarFrames: Bool
 
     init(
         codec: TimelapseVideoCodec,
@@ -18,7 +22,9 @@ nonisolated struct ExportOptions: Equatable {
         framesPerSecond: Int,
         interpolationFrames: Int,
         maxOutputDimension: Int? = nil,
-        timestampOverlay: Bool = false
+        timestampOverlay: Bool = false,
+        trimRange: ClosedRange<Int>? = nil,
+        skipSimilarFrames: Bool = false
     ) {
         self.codec = codec
         self.container = container
@@ -26,6 +32,8 @@ nonisolated struct ExportOptions: Equatable {
         self.interpolationFrames = interpolationFrames
         self.maxOutputDimension = maxOutputDimension
         self.timestampOverlay = timestampOverlay
+        self.trimRange = trimRange
+        self.skipSimilarFrames = skipSimilarFrames
     }
 
     static let `default` = ExportOptions(

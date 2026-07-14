@@ -293,17 +293,25 @@ struct ViewerFeature: Reducer {
                 let panel = exportPanel
                 let fileReveal = fileReveal
                 let suggestedName = state.exportSuggestedFileName
-                let frameCount = frames.count
+                let frameHashes = frames.map(\.perceptualHash)
 
                 return .run { send in
-                    guard let selection = await panel.present(suggestedName, frameCount) else {
+                    guard let selection = await panel.present(suggestedName, frameHashes) else {
+                        await send(.exportCancelled)
+                        return
+                    }
+
+                    // Apply the chosen trim range and optional near-duplicate filter to the
+                    // frame set before encoding, mirroring what the accessory previewed.
+                    let selectedFrames = applyExportSelection(selection.options, to: frames)
+                    guard !selectedFrames.isEmpty else {
                         await send(.exportCancelled)
                         return
                     }
 
                     do {
                         let request = TimelapseExportRequest(
-                            frames: frames,
+                            frames: selectedFrames,
                             destinationURL: selection.destinationURL,
                             codec: selection.options.codec,
                             container: selection.options.container,
@@ -740,4 +748,23 @@ extension ViewerFeature.State {
         }
         return nil
     }
+}
+
+/// Applies an export's trim range and optional near-duplicate filter to the ordered frames.
+/// Pure and file-scoped so the export effect's `@Sendable` closure can call it directly.
+private func applyExportSelection(_ options: ExportOptions, to frames: [ExportFrame]) -> [ExportFrame] {
+    var result = frames
+
+    if let range = options.trimRange {
+        let lower = max(0, range.lowerBound)
+        let upper = min(frames.count - 1, range.upperBound)
+        result = lower <= upper ? Array(frames[lower ... upper]) : []
+    }
+
+    if options.skipSimilarFrames {
+        let keep = ExportFrameFilter.keptIndices(hashes: result.map(\.perceptualHash))
+        result = keep.map { result[$0] }
+    }
+
+    return result
 }

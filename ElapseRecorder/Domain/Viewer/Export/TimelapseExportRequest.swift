@@ -8,6 +8,8 @@ nonisolated struct TimelapseExportRequest: Equatable {
     var container: TimelapseVideoContainer
     var framesPerSecond: Int
     var interpolationFrames: Int
+    var maxOutputDimension: Int?
+    var timestampOverlay: Bool
 
     /// Total frames the encoder will emit: one per screenshot plus the inserted crossfade
     /// frames between each consecutive pair. Single source of truth shared by the encoder and

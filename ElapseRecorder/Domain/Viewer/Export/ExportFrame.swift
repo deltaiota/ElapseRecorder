@@ -9,11 +9,14 @@ nonisolated struct ExportFrame: Equatable {
     var url: URL
     var pixelWidth: Int
     var pixelHeight: Int
+    /// When the screenshot was captured, used for the optional timestamp overlay.
+    var capturedAt: Date
 
-    init(url: URL, pixelWidth: Int = 0, pixelHeight: Int = 0) {
+    init(url: URL, pixelWidth: Int = 0, pixelHeight: Int = 0, capturedAt: Date = Date(timeIntervalSince1970: 0)) {
         self.url = url
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
+        self.capturedAt = capturedAt
     }
 
     var knownPixelSize: CGSize? {

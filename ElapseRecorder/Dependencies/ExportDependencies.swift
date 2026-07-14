@@ -153,7 +153,7 @@ private enum TimelapseEncoder {
         let frames = request.frames
         guard !frames.isEmpty else { throw TimelapseExportError.noFrames }
 
-        let canvas = try canvasSize(for: frames)
+        let canvas = try canvasSize(for: frames, maxDimension: request.maxOutputDimension)
         try? FileManager.default.removeItem(at: request.destinationURL)
 
         let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: request.container.avFileType)
@@ -242,6 +242,15 @@ private enum TimelapseEncoder {
             task?.cancel()
         } }
 
+        // Optional timestamp overlay: format each source frame's capture time once and burn it
+        // into that frame's output (its hold plus the crossfade frames leading to the next one).
+        let overlayFormat: Date.FormatStyle? = request.timestampOverlay
+            ? Date.FormatStyle(date: .abbreviated, time: .standard)
+            : nil
+        func overlayText(_ index: Int) -> String? {
+            overlayFormat.map { frames[index].capturedAt.formatted($0) }
+        }
+
         do {
             for index in 0 ..< min(lookAhead, frameCount) {
                 startDecode(index)
@@ -249,7 +258,11 @@ private enum TimelapseEncoder {
 
             if frameCount == 1 {
                 let image = try await decodeTasks[0]!.value.image
-                try await append { context in drawFrame(image, in: context, canvas: canvas) }
+                let text = overlayText(0)
+                try await append { context in
+                    drawFrame(image, in: context, canvas: canvas)
+                    if let text { drawTimestamp(text, in: context, canvas: canvas) }
+                }
             } else {
                 var current = try await decodeTasks[0]!.value.image
                 for index in 0 ..< frameCount - 1 {
@@ -257,11 +270,16 @@ private enum TimelapseEncoder {
                     // this pair's frames are drawn and encoded.
                     startDecode(index + lookAhead)
 
+                    let text = overlayText(index)
+
                     // Hold the current screenshot, then dissolve toward the next one. Drawing
                     // `current` fully opaque and compositing `next` over it at alpha f yields a
                     // true crossfade (current·(1-f) + next·f), which stays fully opaque — unlike
                     // fading both, which dips translucent and shows the background mid-transition.
-                    try await append { context in drawFrame(current, in: context, canvas: canvas) }
+                    try await append { context in
+                        drawFrame(current, in: context, canvas: canvas)
+                        if let text { drawTimestamp(text, in: context, canvas: canvas) }
+                    }
 
                     let next = try await decodeTasks[index + 1]!.value.image
                     for step in stride(from: 1, through: interpolation, by: 1) {
@@ -269,13 +287,18 @@ private enum TimelapseEncoder {
                         try await append { context in
                             drawFrame(current, in: context, canvas: canvas)
                             drawFrame(next, in: context, canvas: canvas, alpha: progressFraction, clearBackground: false)
+                            if let text { drawTimestamp(text, in: context, canvas: canvas) }
                         }
                     }
                     decodeTasks[index] = nil
                     current = next
                 }
                 // Hold the final screenshot.
-                try await append { context in drawFrame(current, in: context, canvas: canvas) }
+                let lastText = overlayText(frameCount - 1)
+                try await append { context in
+                    drawFrame(current, in: context, canvas: canvas)
+                    if let lastText { drawTimestamp(lastText, in: context, canvas: canvas) }
+                }
             }
 
             input.markAsFinished()
@@ -301,7 +324,8 @@ private enum TimelapseEncoder {
 
     /// The smallest even-sized canvas that fits every frame (H.264/HEVC want even sides). Uses
     /// each frame's stored pixel size when known, only opening the file's metadata as a fallback.
-    private static func canvasSize(for frames: [ExportFrame]) throws -> CGSize {
+    /// When `maxDimension` is set, the canvas is scaled down so its longest side fits the cap.
+    private static func canvasSize(for frames: [ExportFrame], maxDimension: Int?) throws -> CGSize {
         var maxWidth = 0
         var maxHeight = 0
 
@@ -314,6 +338,15 @@ private enum TimelapseEncoder {
             }
             maxWidth = max(maxWidth, Int(size.width))
             maxHeight = max(maxHeight, Int(size.height))
+        }
+
+        if let cap = maxDimension, cap > 0 {
+            let longest = max(maxWidth, maxHeight)
+            if longest > cap {
+                let scale = Double(cap) / Double(longest)
+                maxWidth = Int((Double(maxWidth) * scale).rounded())
+                maxHeight = Int((Double(maxHeight) * scale).rounded())
+            }
         }
 
         return CGSize(width: max(2, maxWidth + maxWidth % 2), height: max(2, maxHeight + maxHeight % 2))
@@ -404,6 +437,44 @@ private enum TimelapseEncoder {
         context.saveGState()
         context.setAlpha(alpha)
         context.draw(image, in: CGRect(origin: origin, size: drawSize))
+        context.restoreGState()
+    }
+
+    /// Burn a timestamp into the bottom-left corner with a translucent pill behind it for
+    /// legibility. Uses Core Text so it's safe to draw on the background encode task.
+    private static func drawTimestamp(_ text: String, in context: CGContext, canvas: CGSize) {
+        let fontSize = max(12, canvas.height * 0.028)
+        let padding = fontSize * 0.6
+        let inset = fontSize * 0.45
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(kCTFontAttributeName as String): CTFontCreateWithName(
+                "HelveticaNeue-Medium" as CFString, fontSize, nil
+            ),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): CGColor(
+                red: 1, green: 1, blue: 1, alpha: 1
+            ),
+        ]
+        let line = CTLineCreateWithAttributedString(
+            NSAttributedString(string: text, attributes: attributes) as CFAttributedString
+        )
+
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
+        let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+
+        let pillHeight = ascent + descent + inset * 2
+        let pillWidth = textWidth + inset * 2
+        let pillRect = CGRect(x: padding, y: padding, width: pillWidth, height: pillHeight)
+
+        context.saveGState()
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0.45))
+        context.addPath(CGPath(roundedRect: pillRect, cornerWidth: inset, cornerHeight: inset, transform: nil))
+        context.fillPath()
+
+        context.textPosition = CGPoint(x: padding + inset, y: padding + inset + descent)
+        CTLineDraw(line, context)
         context.restoreGState()
     }
 }

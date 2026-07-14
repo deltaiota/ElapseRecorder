@@ -308,7 +308,9 @@ struct ViewerFeature: Reducer {
                             codec: selection.options.codec,
                             container: selection.options.container,
                             framesPerSecond: selection.options.framesPerSecond,
-                            interpolationFrames: selection.options.interpolationFrames
+                            interpolationFrames: selection.options.interpolationFrames,
+                            maxOutputDimension: selection.options.maxOutputDimension,
+                            timestampOverlay: selection.options.timestampOverlay
                         )
                         await send(.exportStarted(options: selection.options, totalFrames: request.outputFrameCount))
                         for try await progress in exporter.export(request) {

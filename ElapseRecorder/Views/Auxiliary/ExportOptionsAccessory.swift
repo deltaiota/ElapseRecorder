@@ -14,10 +14,14 @@ final class ExportAccessoryModel {
     var fpsChoice: FPSChoice
     var customFPS: Int
     var interpolationFrames: Int
+    var resolutionCap: Int
+    var showsTimestamp: Bool
     let frameCount: Int
 
     static let presetFPS = [2, 4, 8, 12, 24, 30, 60, 120, 240]
     static let maxInterpolationFrames = 30
+    /// Longest-side pixel caps offered in the UI. 0 means "full resolution".
+    static let resolutionCaps = [0, 2160, 1440, 1080, 720]
 
     enum FPSChoice: Hashable {
         case preset(Int)
@@ -29,6 +33,8 @@ final class ExportAccessoryModel {
         container = options.container
         customFPS = options.framesPerSecond
         interpolationFrames = options.interpolationFrames
+        resolutionCap = options.maxOutputDimension ?? 0
+        showsTimestamp = options.timestampOverlay
         self.frameCount = frameCount
         fpsChoice = Self.presetFPS.contains(options.framesPerSecond)
             ? .preset(options.framesPerSecond)
@@ -71,7 +77,9 @@ final class ExportAccessoryModel {
             codec: codec,
             container: container,
             framesPerSecond: resolvedFramesPerSecond,
-            interpolationFrames: resolvedInterpolationFrames
+            interpolationFrames: resolvedInterpolationFrames,
+            maxOutputDimension: resolutionCap == 0 ? nil : resolutionCap,
+            timestampOverlay: showsTimestamp
         )
     }
 }
@@ -171,6 +179,32 @@ struct ExportOptionsAccessory: View {
                     }
                     .help("Insert this many crossfaded frames between each screenshot for a smoother dissolve.")
                 }
+
+                GridRow {
+                    Text("Resolution")
+                        .gridColumnAlignment(.trailing)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Resolution", selection: $model.resolutionCap) {
+                        ForEach(ExportAccessoryModel.resolutionCaps, id: \.self) { cap in
+                            Text(resolutionLabel(cap)).tag(cap)
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Scale the video down so its longest side fits this many pixels.")
+                }
+
+                GridRow {
+                    Text("Timestamp")
+                        .gridColumnAlignment(.trailing)
+                        .foregroundStyle(.secondary)
+
+                    Toggle(isOn: $model.showsTimestamp) {
+                        Text("Show capture time")
+                    }
+                    .help("Burn each frame's capture time into the corner of the video.")
+                }
             }
 
             Text(estimateText)
@@ -180,6 +214,10 @@ struct ExportOptionsAccessory: View {
         }
         .padding(16)
         .frame(width: 360)
+    }
+
+    private func resolutionLabel(_ cap: Int) -> String {
+        cap == 0 ? String(localized: "Full") : String(localized: "\(cap)p")
     }
 
     private var estimateText: String {

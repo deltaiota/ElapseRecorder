@@ -209,7 +209,8 @@ struct DetailPaneView: View {
             return ExportFrame(
                 url: record.fileURL,
                 pixelWidth: record.pixelWidth,
-                pixelHeight: record.pixelHeight
+                pixelHeight: record.pixelHeight,
+                capturedAt: record.capturedAt
             )
         }
     }

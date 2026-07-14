@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import CoreGraphics
 @testable import ElapseRecorder
 import Foundation
 import XCTest
@@ -63,6 +64,120 @@ final class ViewerFeatureTests: XCTestCase {
             $0.exportStatus = nil
         }
         XCTAssertEqual(revealed.value, destination)
+    }
+
+    @MainActor
+    func testCompactStorageEncodesVerifiesRepointsAndDeletesOriginals() async {
+        let sessionID = UUID()
+        let windowID = UUID()
+        let frames = (0 ..< 4).map { index in
+            CompactableFrame(
+                id: UUID(),
+                sourceURL: URL(filePath: "/tmp/w/\(index).heic"),
+                pixelWidth: 100,
+                pixelHeight: 100,
+                capturedAt: Date(timeIntervalSince1970: Double(index))
+            )
+        }
+        let plan = SessionCompactionPlan(
+            sessionID: sessionID,
+            windows: [
+                WindowCompactionPlan(
+                    windowID: windowID,
+                    displayNumber: 1,
+                    outputURL: URL(filePath: "/tmp/w/window-1.mov"),
+                    canvasWidth: 100,
+                    canvasHeight: 100,
+                    frames: frames
+                ),
+            ]
+        )
+        let summary = CaptureSessionSummary(
+            id: sessionID,
+            bundleIdentifier: "com.example.App",
+            displayName: "App",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: Date(timeIntervalSince1970: 100),
+            windowCount: 1,
+            screenshotCount: 4
+        )
+
+        let appliedVideoPath = LockIsolated<String?>(nil)
+        let appliedRecordIDs = LockIsolated<[UUID]>([])
+        let removedURLs = LockIsolated<[URL]>([])
+        let verifiedIndex = LockIsolated<Int?>(nil)
+
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.endedSessionsOldestFirst = { [summary] }
+            $0.persistenceClient.compactionPlanForSession = { $0 == sessionID ? plan : nil }
+            $0.persistenceClient.apps = { [] }
+            $0.frameVideoCompactorClient.compact = { _, _ in 1000 }
+            $0.videoFrameExtractorClient.image = { _, index in
+                verifiedIndex.setValue(index)
+                return Self.makeImage()
+            }
+            $0.persistenceClient.applyCompaction = { window, videoPath, ids, _ in
+                XCTAssertEqual(window, windowID)
+                appliedVideoPath.setValue(videoPath)
+                appliedRecordIDs.setValue(ids)
+            }
+            $0.fileStorageClient.removeFiles = { urls in
+                removedURLs.setValue(urls)
+                return 4000
+            }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.compactStorageButtonTapped) {
+            $0.isCompacting = true
+        }
+        await store.receive(\.compactionFinished) {
+            $0.isCompacting = false
+            $0.compactionResult = StorageCompactionResult(
+                compactedWindowCount: 1,
+                framesCompacted: 4,
+                bytesBefore: 4000,
+                bytesAfter: 1000
+            )
+        }
+
+        XCTAssertEqual(appliedVideoPath.value, "/tmp/w/window-1.mov")
+        XCTAssertEqual(appliedRecordIDs.value, frames.map(\.id))
+        XCTAssertEqual(removedURLs.value, frames.map(\.sourceURL))
+        XCTAssertEqual(verifiedIndex.value, 3) // last frame verified
+    }
+
+    @MainActor
+    func testCompactStorageWithNothingToCompactReportsEmpty() async {
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.persistenceClient.endedSessionsOldestFirst = { [] }
+            $0.fileStorageClient.removeFiles = { _ in 0 }
+        }
+
+        await store.send(.compactStorageButtonTapped) {
+            $0.isCompacting = true
+        }
+        await store.receive(\.compactionFinished) {
+            $0.isCompacting = false
+            $0.compactionResult = .empty
+        }
+    }
+
+    private static func makeImage() -> CGImage {
+        let context = CGContext(
+            data: nil,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        return context.makeImage()!
     }
 
     @MainActor

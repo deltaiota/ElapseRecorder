@@ -19,6 +19,7 @@ struct StorageManagementView: View {
     @Default(.retentionMaxSizeMegabytes) private var retentionSizeMegabytes
     @Default(.retentionMaxCountEnabled) private var retentionCountEnabled
     @Default(.retentionMaxScreenshotCount) private var retentionMaxCount
+    @Default(.compactionQuality) private var compactionQuality
     @State private var bulkCutoff = Date()
     @State private var bulkScopeIsSelectedApp = false
     @State private var isConfirmingBulkDelete = false
@@ -27,6 +28,7 @@ struct StorageManagementView: View {
         VStack(spacing: 0) {
             Form {
                 storageSection()
+                compactionSection()
                 retentionSection()
                 maintenanceSection()
                 bulkDeleteSection()
@@ -43,7 +45,7 @@ struct StorageManagementView: View {
             }
             .padding(12)
         }
-        .frame(width: 460, height: 620)
+        .frame(width: 460, height: 680)
     }
 
     // MARK: - Storage summary
@@ -130,6 +132,66 @@ struct StorageManagementView: View {
     }
 
     // MARK: - Integrity sweep
+
+    // MARK: - Compaction
+
+    @ViewBuilder
+    private func compactionSection() -> some View {
+        Section {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Compact Closed Sessions")
+                    Text("Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer()
+
+                if store.isCompacting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Compact") {
+                        store.send(.compactStorageButtonTapped)
+                    }
+                }
+            }
+
+            LabeledContent("Video Quality") {
+                HStack(spacing: 8) {
+                    Slider(value: $compactionQuality, in: 0.4 ... 0.9)
+                        .frame(width: 150)
+                    Text(compactionQuality.formatted(.percent.precision(.fractionLength(0))))
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+            }
+
+            if let result = store.compactionResult {
+                Text(compactionResultText(result))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Compaction")
+        } footer: {
+            Text("Only finished sessions are compacted; the session currently being recorded is left untouched.")
+        }
+    }
+
+    private func compactionResultText(_ result: StorageCompactionResult) -> String {
+        if result.isEmpty {
+            return String(localized: "Nothing to compact.")
+        }
+        let saved = result.bytesSaved.formatted(.byteCount(style: .file))
+        return String(
+            localized: "Compacted \(result.framesCompacted) frames into \(result.compactedWindowCount) videos · saved \(saved)."
+        )
+    }
+
+    // MARK: - Maintenance
 
     @ViewBuilder
     private func maintenanceSection() -> some View {

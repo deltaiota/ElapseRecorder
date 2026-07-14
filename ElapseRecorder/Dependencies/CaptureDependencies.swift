@@ -31,6 +31,9 @@ nonisolated extension Defaults.Keys {
     static let retentionMaxSizeMegabytes = Key<Int>("retentionMaxSizeMegabytes", default: 2048)
     static let retentionMaxCountEnabled = Key<Bool>("retentionMaxCountEnabled", default: false)
     static let retentionMaxScreenshotCount = Key<Int>("retentionMaxScreenshotCount", default: 10000)
+    /// Quality (0...1) for HEVC video compaction of closed sessions. 0.65 is near-lossless for
+    /// screen-content review while achieving ~11x compression versus standalone HEIC frames.
+    static let compactionQuality = Key<Double>("compactionQuality", default: 0.65)
 }
 
 nonisolated struct DateClient {

@@ -1119,6 +1119,54 @@
         }
       }
     },
+    "Compact Closed Sessions" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compact Closed Sessions"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压缩已结束的会话"
+          }
+        }
+      }
+    },
+    "Compacted %lld frames into %lld videos · saved %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compacted %lld frames into %lld videos · saved %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已将 %lld 帧压缩为 %lld 个视频 · 节省 %@。"
+          }
+        }
+      }
+    },
+    "Compaction" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compaction"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压缩"
+          }
+        }
+      }
+    },
     "Container" : {
       "localizations" : {
         "en" : {
@@ -1597,6 +1645,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "格式"
+          }
+        }
+      }
+    },
+    "Nothing to compact." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to compact."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可压缩的内容。"
+          }
+        }
+      }
+    },
+    "Only finished sessions are compacted; the session currently being recorded is left untouched." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only finished sessions are compacted; the session currently being recorded is left untouched."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅压缩已完成的会话；正在录制的当前会话不受影响。"
+          }
+        }
+      }
+    },
+    "Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将已完成会话的截图替换为每个窗口一个近乎无损的 HEVC 视频，通常可缩小约 10 倍。帧仍可浏览和导出。"
+          }
+        }
+      }
+    },
+    "Video Quality" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video Quality"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频质量"
           }
         }
       }

@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import Defaults
 import Foundation
 
 struct ViewerFeature: Reducer {
@@ -28,6 +29,10 @@ struct ViewerFeature: Reducer {
         var storageIntegrityResult: StorageIntegrityResult?
         /// True while the retention pruner is running, to guard against overlapping runs.
         var isEnforcingRetention = false
+        /// True while a compaction pass is running, to guard re-entry and drive a spinner.
+        var isCompacting = false
+        /// The outcome of the most recent compaction pass, shown in the storage management UI.
+        var compactionResult: StorageCompactionResult?
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
@@ -125,6 +130,8 @@ struct ViewerFeature: Reducer {
         case bulkDeleteFinished(deletedSessionCount: Int)
         case enforceRetentionRequested
         case retentionEnforced(deletedSessionCount: Int)
+        case compactStorageButtonTapped
+        case compactionFinished(StorageCompactionResult)
         case loadingFailed(String)
     }
 
@@ -135,6 +142,7 @@ struct ViewerFeature: Reducer {
     @Dependency(\.timelapseExportClient) private var timelapseExport
     @Dependency(\.exportPanelClient) private var exportPanel
     @Dependency(\.videoFrameExtractorClient) private var videoFrameExtractor
+    @Dependency(\.frameVideoCompactorClient) private var frameVideoCompactor
     @Dependency(\.date) private var date
 
     private nonisolated enum CancelID: Hashable { case export }
@@ -437,11 +445,23 @@ struct ViewerFeature: Reducer {
                 state.isEnforcingRetention = false
                 return deletedCount > 0 ? .send(.refresh) : .none
 
+            case .compactStorageButtonTapped:
+                guard !state.isCompacting, !state.isRunningStorageMaintenance else { return .none }
+                state.isCompacting = true
+                state.compactionResult = nil
+                return compactClosedSessions()
+
+            case let .compactionFinished(result):
+                state.isCompacting = false
+                state.compactionResult = result
+                return result.isEmpty ? .none : .send(.refresh)
+
             case let .loadingFailed(message):
                 state.errorMessage = message
                 state.isLoading = false
                 state.isRunningStorageMaintenance = false
                 state.isEnforcingRetention = false
+                state.isCompacting = false
                 return .none
             }
         }
@@ -571,6 +591,61 @@ struct ViewerFeature: Reducer {
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
+        }
+    }
+
+    /// Compacts every closed session's standalone frames into HEVC window videos, repointing the
+    /// database and deleting the originals only after each video is written and verified. Failures
+    /// on one window are isolated (its partial video is removed) so the pass is safe to retry.
+    private func compactClosedSessions() -> Effect<Action> {
+        let persistence = persistence
+        let compactor = frameVideoCompactor
+        let extractor = videoFrameExtractor
+        let fileStorage = fileStorage
+        let quality = Defaults[.compactionQuality]
+
+        return .run { send in
+            var result = StorageCompactionResult.empty
+            do {
+                let sessions = try await persistence.endedSessionsOldestFirst()
+                for session in sessions {
+                    let plan: SessionCompactionPlan?
+                    do {
+                        plan = try await persistence.compactionPlanForSession(session.id)
+                    } catch {
+                        continue
+                    }
+                    guard let plan else { continue }
+
+                    for window in plan.windows {
+                        do {
+                            let videoBytes = try await compactor.compact(window, quality)
+                            // Verify the last frame is decodable at its index before we trust the
+                            // video enough to delete the originals.
+                            _ = try await extractor.image(window.outputURL, max(0, window.frames.count - 1))
+                            try await persistence.applyCompaction(
+                                window.windowID,
+                                window.outputURL.path(percentEncoded: false),
+                                window.frames.map(\.id),
+                                videoBytes
+                            )
+                            let reclaimed = try await fileStorage.removeFiles(window.frames.map(\.sourceURL))
+                            result.compactedWindowCount += 1
+                            result.framesCompacted += window.frames.count
+                            result.bytesBefore += reclaimed
+                            result.bytesAfter += videoBytes
+                        } catch {
+                            // Leave this window uncompacted and remove any partial video so it is
+                            // not left behind as an orphan.
+                            _ = try? await fileStorage.removeFiles([window.outputURL])
+                        }
+                    }
+                }
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+                return
+            }
+            await send(.compactionFinished(result))
         }
     }
 

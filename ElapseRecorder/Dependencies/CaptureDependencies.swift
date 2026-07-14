@@ -103,6 +103,8 @@ nonisolated struct PersistenceClient {
     var screenshotPathsForSession: @Sendable (_ sessionID: UUID) async throws -> [String]
     var screenshotPathsForApp: @Sendable (_ bundleIdentifier: String) async throws -> [String]
     var endedSessionsOldestFirst: @Sendable () async throws -> [CaptureSessionSummary]
+    var compactionPlanForSession: @Sendable (_ sessionID: UUID) async throws -> SessionCompactionPlan?
+    var applyCompaction: @Sendable (_ windowID: UUID, _ videoPath: String, _ orderedRecordIDs: [UUID], _ totalVideoBytes: Int) async throws -> Void
     var upsertWindow: @Sendable (_ window: MonitoredWindow) async throws -> Void
     var recordScreenshot: @Sendable (_ record: ScreenshotRecord) async throws -> Void
     var recordCaptureUnavailable: @Sendable (_ record: CaptureUnavailableRecord) async throws -> Void
@@ -841,6 +843,13 @@ nonisolated extension PersistenceClient {
         endedSessionsOldestFirst: {
             reportIssue("PersistenceClient.endedSessionsOldestFirst is unimplemented")
             return []
+        },
+        compactionPlanForSession: { _ in
+            reportIssue("PersistenceClient.compactionPlanForSession is unimplemented")
+            return nil
+        },
+        applyCompaction: { _, _, _, _ in
+            reportIssue("PersistenceClient.applyCompaction is unimplemented")
         },
         upsertWindow: { _ in reportIssue("PersistenceClient.upsertWindow is unimplemented") },
         recordScreenshot: { _ in reportIssue("PersistenceClient.recordScreenshot is unimplemented") },

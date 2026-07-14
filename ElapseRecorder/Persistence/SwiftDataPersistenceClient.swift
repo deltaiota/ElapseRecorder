@@ -138,6 +138,80 @@ final class SwiftDataPersistenceStore {
             .map(\.summaryValue)
     }
 
+    /// Builds a compaction plan for a CLOSED session: for each window, its standalone (not yet
+    /// compacted) frames ordered by capture time, with the output video path derived from the
+    /// session directory. Returns nil for open, empty, or missing sessions — a live session is
+    /// never compacted.
+    func compactionPlan(sessionID: UUID) throws -> SessionCompactionPlan? {
+        let context = ModelContext(modelContainer)
+        guard let session = try sessionModel(id: sessionID, context: context),
+              session.endedAt != nil, !session.isEmpty
+        else {
+            return nil
+        }
+
+        var sessionDirectory: URL?
+        let windows: [CompactionPlanner.WindowInput] = session.windows.compactMap { window in
+            let standalone = window.screenshots.filter { $0.videoPath.isEmpty }
+            guard !standalone.isEmpty else { return nil }
+
+            let frames = standalone.map { record -> CompactableFrame in
+                let url = URL(filePath: record.filePath)
+                if sessionDirectory == nil {
+                    // .../{bundle}/{session}/window-{n}/{ts}.heic -> .../{bundle}/{session}
+                    sessionDirectory = url.deletingLastPathComponent().deletingLastPathComponent()
+                }
+                return CompactableFrame(
+                    id: record.id,
+                    sourceURL: url,
+                    pixelWidth: record.pixelWidth,
+                    pixelHeight: record.pixelHeight,
+                    capturedAt: record.capturedAt
+                )
+            }
+
+            return CompactionPlanner.WindowInput(
+                windowID: window.id,
+                displayNumber: window.displayNumber,
+                frames: frames
+            )
+        }
+
+        guard let directory = sessionDirectory else { return nil }
+        let plan = CompactionPlanner.plan(sessionID: sessionID, sessionDirectory: directory, windows: windows)
+        return plan.isEmpty ? nil : plan
+    }
+
+    /// Repoints a window's frames to a compacted video and apportions the video's byte size
+    /// across them so storage aggregates stay accurate. Called only after the video has been
+    /// written and verified; the caller deletes the standalone files afterward.
+    func applyCompaction(
+        windowID: UUID,
+        videoPath: String,
+        orderedRecordIDs: [UUID],
+        totalVideoBytes: Int
+    ) throws {
+        let context = ModelContext(modelContainer)
+        guard let window = try windowModel(id: windowID, context: context) else {
+            throw CaptureEngineError.sessionNotFound(windowID)
+        }
+
+        let recordsByID = Dictionary(window.screenshots.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let count = max(1, orderedRecordIDs.count)
+        let base = totalVideoBytes / count
+        let remainder = totalVideoBytes % count
+
+        for (index, id) in orderedRecordIDs.enumerated() {
+            guard let record = recordsByID[id] else { continue }
+            record.videoPath = videoPath
+            record.videoFrameIndex = index
+            // Spread the remainder over the first frames so the apportioned sizes sum exactly.
+            record.fileSizeBytes = base + (index < remainder ? 1 : 0)
+        }
+
+        try context.save()
+    }
+
     func upsertWindow(_ window: MonitoredWindow) throws {
         let context = ModelContext(modelContainer)
         guard let session = try sessionModel(id: window.sessionID, context: context) else {
@@ -527,6 +601,17 @@ extension PersistenceClient {
             endedSessionsOldestFirst: {
                 try await store.endedSessionsOldestFirst()
             },
+            compactionPlanForSession: { sessionID in
+                try await store.compactionPlan(sessionID: sessionID)
+            },
+            applyCompaction: { windowID, videoPath, orderedRecordIDs, totalVideoBytes in
+                try await store.applyCompaction(
+                    windowID: windowID,
+                    videoPath: videoPath,
+                    orderedRecordIDs: orderedRecordIDs,
+                    totalVideoBytes: totalVideoBytes
+                )
+            },
             upsertWindow: { window in
                 try await store.upsertWindow(window)
             },
@@ -581,6 +666,8 @@ extension PersistenceClient {
         screenshotPathsForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         screenshotPathsForApp: { _ in throw CaptureEngineError.persistenceUnavailable },
         endedSessionsOldestFirst: { throw CaptureEngineError.persistenceUnavailable },
+        compactionPlanForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
+        applyCompaction: { _, _, _, _ in throw CaptureEngineError.persistenceUnavailable },
         upsertWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordScreenshot: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordCaptureUnavailable: { _ in throw CaptureEngineError.persistenceUnavailable },

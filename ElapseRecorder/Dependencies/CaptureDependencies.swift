@@ -16,6 +16,9 @@ nonisolated extension Defaults.Keys {
     static let captureHEICQuality = Key<Double>("captureHEICQuality", default: 0.82)
     static let thumbnailMaximumPixelSize = Key<Int>("thumbnailMaximumPixelSize", default: 1024)
     static let whitelistedAppConfigsData = Key<Data>("whitelistedAppConfigsData", default: Data())
+    static let skipIdenticalFrames = Key<Bool>("skipIdenticalFrames", default: true)
+    static let identicalFrameHammingThreshold = Key<Int>("identicalFrameHammingThreshold", default: 4)
+    static let identicalFrameHeartbeatSeconds = Key<Int>("identicalFrameHeartbeatSeconds", default: 300)
 }
 
 nonisolated struct DateClient {
@@ -29,6 +32,12 @@ nonisolated struct IDGeneratorClient {
 nonisolated struct CapturePreferencesClient {
     var encodingOptions: @Sendable () -> CaptureEncodingOptions
     var thumbnailMaximumPixelSize: @Sendable () -> Int
+    var deduplicationOptions: @Sendable () -> FrameDeduplicationOptions
+}
+
+/// Computes a 64-bit difference hash (dHash) of a captured frame for near-duplicate detection.
+nonisolated struct PerceptualHashClient {
+    var hash: @Sendable (_ image: CapturedImage) -> UInt64
 }
 
 nonisolated struct WhitelistConfigurationClient {
@@ -160,8 +169,63 @@ extension CapturePreferencesClient: DependencyKey {
         },
         thumbnailMaximumPixelSize: {
             Defaults[.thumbnailMaximumPixelSize]
+        },
+        deduplicationOptions: {
+            FrameDeduplicationOptions(
+                isEnabled: Defaults[.skipIdenticalFrames],
+                hammingThreshold: Defaults[.identicalFrameHammingThreshold],
+                heartbeat: .seconds(Defaults[.identicalFrameHeartbeatSeconds])
+            )
         }
     )
+}
+
+extension PerceptualHashClient: DependencyKey {
+    static let liveValue = Self { image in
+        differenceHash(image.cgImage)
+    }
+
+    /// The hash is a pure, deterministic function of the image, so tests can use the real
+    /// implementation. Tests that need controlled Hamming distances override `hash` directly.
+    static let testValue = liveValue
+
+    /// dHash: downscale to 9x8 grayscale and, for each row, emit a bit per adjacent-pixel
+    /// comparison (left brighter than right), yielding 8×8 = 64 bits. Robust to small changes
+    /// and cheap to compute.
+    private static func differenceHash(_ image: CGImage) -> UInt64 {
+        let width = 9
+        let height = 8
+        var pixels = [UInt8](repeating: 0, count: width * height)
+
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else {
+            return 0
+        }
+
+        context.interpolationQuality = .low
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+        var hash: UInt64 = 0
+        var bit: UInt64 = 0
+        for row in 0 ..< height {
+            for column in 0 ..< (width - 1) {
+                let left = pixels[row * width + column]
+                let right = pixels[row * width + column + 1]
+                if left > right {
+                    hash |= (1 << bit)
+                }
+                bit += 1
+            }
+        }
+        return hash
+    }
 }
 
 extension WhitelistConfigurationClient: DependencyKey {
@@ -536,6 +600,11 @@ extension DependencyValues {
     var capturePreferencesClient: CapturePreferencesClient {
         get { self[CapturePreferencesClient.self] }
         set { self[CapturePreferencesClient.self] = newValue }
+    }
+
+    var perceptualHashClient: PerceptualHashClient {
+        get { self[PerceptualHashClient.self] }
+        set { self[PerceptualHashClient.self] = newValue }
     }
 
     var whitelistConfigurationClient: WhitelistConfigurationClient {

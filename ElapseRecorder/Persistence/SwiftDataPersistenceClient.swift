@@ -146,6 +146,9 @@ final class SwiftDataPersistenceStore {
                 capturedAt: record.capturedAt,
                 filePath: record.fileURL.path(percentEncoded: false),
                 fileSizeBytes: record.fileSizeBytes,
+                pixelWidth: record.pixelWidth,
+                pixelHeight: record.pixelHeight,
+                perceptualHash: record.perceptualHash,
                 session: session,
                 window: window
             )

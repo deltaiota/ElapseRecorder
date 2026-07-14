@@ -1120,7 +1120,6 @@
       }
     },
     "Estimating…" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1315,7 +1314,6 @@
       }
     },
     "Frames" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2261,7 +2259,6 @@
       }
     },
     "Time Remaining" : {
-      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {

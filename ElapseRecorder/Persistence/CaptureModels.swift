@@ -102,6 +102,12 @@ final class ScreenshotRecordModel {
     var capturedAt: Date
     var filePath: String
     var fileSizeBytes: Int
+    // Defaulted so SwiftData can lightweight-migrate existing stores. Zero = unknown/not
+    // computed for records written before these fields existed.
+    var pixelWidth: Int = 0
+    var pixelHeight: Int = 0
+    /// Stored as the bit pattern of the 64-bit dHash (SwiftData has no UInt64 type).
+    var perceptualHash: Int = 0
     var session: CaptureSessionModel?
     var window: MonitoredWindowModel?
 
@@ -110,6 +116,9 @@ final class ScreenshotRecordModel {
         capturedAt: Date,
         filePath: String,
         fileSizeBytes: Int,
+        pixelWidth: Int = 0,
+        pixelHeight: Int = 0,
+        perceptualHash: UInt64 = 0,
         session: CaptureSessionModel?,
         window: MonitoredWindowModel?
     ) {
@@ -117,6 +126,9 @@ final class ScreenshotRecordModel {
         self.capturedAt = capturedAt
         self.filePath = filePath
         self.fileSizeBytes = fileSizeBytes
+        self.pixelWidth = pixelWidth
+        self.pixelHeight = pixelHeight
+        self.perceptualHash = Int(bitPattern: UInt(perceptualHash))
         self.session = session
         self.window = window
     }
@@ -242,7 +254,10 @@ extension ScreenshotRecordModel {
             sessionID: sessionID,
             capturedAt: capturedAt,
             fileURL: URL(filePath: filePath),
-            fileSizeBytes: fileSizeBytes
+            fileSizeBytes: fileSizeBytes,
+            pixelWidth: pixelWidth,
+            pixelHeight: pixelHeight,
+            perceptualHash: UInt64(bitPattern: Int64(perceptualHash))
         )
     }
 }

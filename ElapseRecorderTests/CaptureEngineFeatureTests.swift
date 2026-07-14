@@ -1502,6 +1502,201 @@ final class CaptureEngineFeatureTests: XCTestCase {
         XCTAssertEqual(closedSessions.value.first?.1, endedAt)
     }
 
+    // MARK: - Frame deduplication (Phase 1)
+
+    @MainActor
+    func testIdenticalConsecutiveFrameIsSkipped() async {
+        let recorded = LockIsolated<[ScreenshotRecord]>([])
+        // Both cycles produce the same hash → the second frame is a near-duplicate.
+        let hashes = LockIsolated<[UInt64]>([0b0111, 0b0111])
+
+        let store = makeDedupStore(
+            recorded: recorded,
+            hashes: hashes,
+            options: FrameDeduplicationOptions(isEnabled: true, hammingThreshold: 4, heartbeat: .seconds(300))
+        )
+
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorded.value.count, 1, "second identical frame should be skipped")
+    }
+
+    @MainActor
+    func testChangedFrameIsKept() async {
+        let recorded = LockIsolated<[ScreenshotRecord]>([])
+        // Distance between the two hashes is 64 (well past the threshold) → keep both.
+        let hashes = LockIsolated<[UInt64]>([0, .max])
+
+        let store = makeDedupStore(
+            recorded: recorded,
+            hashes: hashes,
+            options: FrameDeduplicationOptions(isEnabled: true, hammingThreshold: 4, heartbeat: .seconds(300))
+        )
+
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorded.value.count, 2, "a materially different frame should be kept")
+    }
+
+    @MainActor
+    func testHeartbeatKeepsIdenticalFrameAfterTimeout() async {
+        let recorded = LockIsolated<[ScreenshotRecord]>([])
+        let hashes = LockIsolated<[UInt64]>([0b0111, 0b0111])
+        let now = LockIsolated(Date(timeIntervalSince1970: 10))
+
+        let store = makeDedupStore(
+            recorded: recorded,
+            hashes: hashes,
+            options: FrameDeduplicationOptions(isEnabled: true, hammingThreshold: 4, heartbeat: .seconds(300)),
+            now: now
+        )
+
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+        // Advance past the heartbeat so the identical frame is kept anyway.
+        now.setValue(Date(timeIntervalSince1970: 10 + 400))
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorded.value.count, 2, "identical frame past the heartbeat should be kept")
+    }
+
+    @MainActor
+    func testDeduplicationDisabledKeepsEveryFrame() async {
+        let recorded = LockIsolated<[ScreenshotRecord]>([])
+        let hashes = LockIsolated<[UInt64]>([0b0111, 0b0111])
+
+        let store = makeDedupStore(
+            recorded: recorded,
+            hashes: hashes,
+            options: FrameDeduplicationOptions(isEnabled: false, hammingThreshold: 4, heartbeat: .seconds(300))
+        )
+
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(recorded.value.count, 2, "with dedup off, identical frames are still kept")
+    }
+
+    @MainActor
+    func testRecordedScreenshotCarriesDimensionsAndHash() async {
+        let recorded = LockIsolated<[ScreenshotRecord]>([])
+        let hashes = LockIsolated<[UInt64]>([0x00AB_CDEF_1234_5678])
+
+        let store = makeDedupStore(
+            recorded: recorded,
+            hashes: hashes,
+            options: FrameDeduplicationOptions(isEnabled: false, hammingThreshold: 4, heartbeat: .seconds(300))
+        )
+
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.skipReceivedActions()
+
+        let record = recorded.value.first
+        XCTAssertEqual(record?.perceptualHash, 0x00AB_CDEF_1234_5678)
+        XCTAssertEqual(record?.pixelWidth, 6)
+        XCTAssertEqual(record?.pixelHeight, 4)
+    }
+
+    private static let dedupWindow = CapturableWindow(
+        systemWindowID: 501,
+        title: "Canvas",
+        frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+        layer: 0,
+        isOnScreen: true
+    )
+
+    /// Builds a TestStore wired for frame-deduplication tests: one active session for
+    /// "com.example.Dedup", controlled hash values, and side-effect capture of recorded frames.
+    @MainActor
+    private func makeDedupStore(
+        recorded: LockIsolated<[ScreenshotRecord]>,
+        hashes: LockIsolated<[UInt64]>,
+        options: FrameDeduplicationOptions,
+        now: LockIsolated<Date> = LockIsolated(Date(timeIntervalSince1970: 10))
+    ) -> TestStore<CaptureEngineFeature.State, CaptureEngineFeature.Action> {
+        let app = RunningApplication(
+            bundleIdentifier: "com.example.Dedup",
+            displayName: "Dedup",
+            processIdentifier: 77
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            captureInterval: 60,
+            isEnabled: true
+        )
+        let session = CaptureSession(
+            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!,
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: app.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+
+        var state = CaptureEngineFeature.State()
+        state.whitelist = [config.bundleIdentifier: config]
+        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+            application: app,
+            config: config,
+            session: session
+        )
+
+        let counter = LockIsolated(0)
+
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.dateClient.now = { now.value }
+            $0.idGeneratorClient.uuid = {
+                counter.withValue { value in
+                    value += 1
+                    return UUID(uuidString: "00000000-0000-0000-0000-\(String(format: "%012d", value))")!
+                }
+            }
+            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
+            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
+            $0.capturePreferencesClient.deduplicationOptions = { options }
+            $0.perceptualHashClient.hash = { _ in
+                hashes.withValue { $0.isEmpty ? 0 : $0.removeFirst() }
+            }
+            $0.screenCaptureClient.capture = { _ in Self.makeSolidImage(width: 6, height: 4) }
+            $0.imageEncodingClient.encode = { _, _ in Data([0x1]) }
+            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/frame.heic") }
+            $0.fileStorageClient.write = { data, _ in data.count }
+            $0.persistenceClient.upsertWindow = { _ in }
+            $0.persistenceClient.recordScreenshot = { record in
+                recorded.withValue { $0.append(record) }
+            }
+            $0.loggingClient.log = { _, _, _ in }
+        }
+        store.exhaustivity = .off
+        return store
+    }
+
+    private static func makeSolidImage(width: Int, height: Int) -> CapturedImage {
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return CapturedImage(cgImage: context.makeImage()!)
+    }
+
     private final class UUIDSequence: @unchecked Sendable {
         private let lock = NSLock()
         private var values: [UUID]

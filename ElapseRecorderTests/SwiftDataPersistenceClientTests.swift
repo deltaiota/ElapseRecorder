@@ -429,6 +429,51 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         XCTAssertEqual(lane.segments.map(\.screenshotCount), [2, 2])
     }
 
+    @MainActor
+    func testScreenshotDimensionsAndPerceptualHashRoundTrip() async throws {
+        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+
+        let session = try CaptureSession(
+            id: uuid("00000000-0000-0000-0000-000000000801"),
+            bundleIdentifier: "com.example.HashApp",
+            displayName: "Hash App",
+            processIdentifier: 301,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        try await client.openSession(session)
+
+        let window = try MonitoredWindow(
+            id: uuid("00000000-0000-0000-0000-000000000802"),
+            sessionID: session.id,
+            systemWindowID: 900,
+            displayNumber: 1,
+            label: "Canvas",
+            firstSeenAt: Date(timeIntervalSince1970: 110),
+            lastSeenAt: Date(timeIntervalSince1970: 110)
+        )
+        try await client.upsertWindow(window)
+
+        // A hash with the high bit set exercises the UInt64<->Int bit-pattern conversion.
+        let hash: UInt64 = 0x8000_0000_0000_00FF
+        let screenshot = try ScreenshotRecord(
+            id: uuid("00000000-0000-0000-0000-000000000803"),
+            windowID: window.id,
+            sessionID: session.id,
+            capturedAt: Date(timeIntervalSince1970: 120),
+            fileURL: URL(filePath: "/tmp/hash.heic"),
+            fileSizeBytes: 42,
+            pixelWidth: 1920,
+            pixelHeight: 1080,
+            perceptualHash: hash
+        )
+        try await client.recordScreenshot(screenshot)
+
+        let stored = try await client.screenshotsForWindow(window.id).first
+        XCTAssertEqual(stored?.pixelWidth, 1920)
+        XCTAssertEqual(stored?.pixelHeight, 1080)
+        XCTAssertEqual(stored?.perceptualHash, hash)
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: Schema.elapseRecorder, configurations: [configuration])

@@ -26,6 +26,8 @@ struct ViewerFeature: Reducer {
         var isRunningStorageMaintenance = false
         /// The outcome of the most recent integrity sweep, shown in the storage management UI.
         var storageIntegrityResult: StorageIntegrityResult?
+        /// True while the retention pruner is running, to guard against overlapping runs.
+        var isEnforcingRetention = false
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
@@ -120,12 +122,15 @@ struct ViewerFeature: Reducer {
         case integritySweepFinished(StorageIntegrityResult)
         case bulkDeleteRequested(before: Date, bundleIdentifier: String?)
         case bulkDeleteFinished(deletedSessionCount: Int)
+        case enforceRetentionRequested
+        case retentionEnforced(deletedSessionCount: Int)
         case loadingFailed(String)
     }
 
     @Dependency(\.fileRevealClient) private var fileReveal
     @Dependency(\.fileStorageClient) private var fileStorage
     @Dependency(\.persistenceClient) private var persistence
+    @Dependency(\.capturePreferencesClient) private var preferences
     @Dependency(\.timelapseExportClient) private var timelapseExport
     @Dependency(\.exportPanelClient) private var exportPanel
     @Dependency(\.date) private var date
@@ -137,7 +142,7 @@ struct ViewerFeature: Reducer {
             switch action {
             case .task:
                 state.isLoading = true
-                return loadApps()
+                return .merge(loadApps(), .send(.enforceRetentionRequested))
 
             case .refresh:
                 return refresh(state)
@@ -394,10 +399,21 @@ struct ViewerFeature: Reducer {
                 state.isRunningStorageMaintenance = false
                 return .send(.refresh)
 
+            case .enforceRetentionRequested:
+                let policy = preferences.retentionPolicy()
+                guard policy.hasAnyLimit, !state.isEnforcingRetention else { return .none }
+                state.isEnforcingRetention = true
+                return enforceRetention(policy)
+
+            case let .retentionEnforced(deletedCount):
+                state.isEnforcingRetention = false
+                return deletedCount > 0 ? .send(.refresh) : .none
+
             case let .loadingFailed(message):
                 state.errorMessage = message
                 state.isLoading = false
                 state.isRunningStorageMaintenance = false
+                state.isEnforcingRetention = false
                 return .none
             }
         }
@@ -554,6 +570,30 @@ struct ViewerFeature: Reducer {
                     removedFileCount: orphanFiles.count,
                     reclaimedBytes: reclaimed
                 )))
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+            }
+        }
+    }
+
+    private func enforceRetention(_ policy: RetentionPolicy) -> Effect<Action> {
+        let fileStorage = fileStorage
+        let persistence = persistence
+        let now = date.now
+        return .run { send in
+            do {
+                let sessions = try await persistence.endedSessionsOldestFirst()
+                let ids = policy.sessionIDsToPrune(endedSessionsOldestFirst: sessions, now: now)
+                let byID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+                for id in ids {
+                    guard let session = byID[id] else { continue }
+                    let paths = try await persistence.screenshotPathsForSession(id)
+                    _ = try? await fileStorage.removeFiles(paths.map { URL(filePath: $0) })
+                    try? await fileStorage.deleteSessionCaptures(session.bundleIdentifier, id)
+                    try await persistence.deleteSession(id)
+                }
+                await send(.retentionEnforced(deletedSessionCount: ids.count))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }

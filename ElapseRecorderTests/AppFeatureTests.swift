@@ -380,6 +380,7 @@ final class AppFeatureTests: XCTestCase {
 
         await store.send(.captureEngine(.sessionClosed("com.example.App")))
         await store.receive(.viewer(.refresh))
+        await store.receive(.viewer(.enforceRetentionRequested))
         await store.receive(.viewer(.appsLoaded([])))
     }
 }

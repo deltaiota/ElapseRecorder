@@ -20,6 +20,12 @@ nonisolated extension Defaults.Keys {
     static let identicalFrameHammingThreshold = Key<Int>("identicalFrameHammingThreshold", default: 4)
     static let identicalFrameHeartbeatSeconds = Key<Int>("identicalFrameHeartbeatSeconds", default: 300)
     static let customCaptureRootPath = Key<String>("customCaptureRootPath", default: "")
+    static let retentionMaxAgeEnabled = Key<Bool>("retentionMaxAgeEnabled", default: false)
+    static let retentionMaxAgeDays = Key<Int>("retentionMaxAgeDays", default: 30)
+    static let retentionMaxSizeEnabled = Key<Bool>("retentionMaxSizeEnabled", default: false)
+    static let retentionMaxSizeMegabytes = Key<Int>("retentionMaxSizeMegabytes", default: 2048)
+    static let retentionMaxCountEnabled = Key<Bool>("retentionMaxCountEnabled", default: false)
+    static let retentionMaxScreenshotCount = Key<Int>("retentionMaxScreenshotCount", default: 10000)
 }
 
 nonisolated struct DateClient {
@@ -34,6 +40,7 @@ nonisolated struct CapturePreferencesClient {
     var encodingOptions: @Sendable () -> CaptureEncodingOptions
     var thumbnailMaximumPixelSize: @Sendable () -> Int
     var deduplicationOptions: @Sendable () -> FrameDeduplicationOptions
+    var retentionPolicy: @Sendable () -> RetentionPolicy
 }
 
 /// Computes a 64-bit difference hash (dHash) of a captured frame for near-duplicate detection.
@@ -91,6 +98,7 @@ nonisolated struct PersistenceClient {
     var sessionsStartedBefore: @Sendable (_ cutoff: Date, _ bundleIdentifier: String?) async throws -> [CaptureSessionSummary]
     var screenshotPathsForSession: @Sendable (_ sessionID: UUID) async throws -> [String]
     var screenshotPathsForApp: @Sendable (_ bundleIdentifier: String) async throws -> [String]
+    var endedSessionsOldestFirst: @Sendable () async throws -> [CaptureSessionSummary]
     var upsertWindow: @Sendable (_ window: MonitoredWindow) async throws -> Void
     var recordScreenshot: @Sendable (_ record: ScreenshotRecord) async throws -> Void
     var recordCaptureUnavailable: @Sendable (_ record: CaptureUnavailableRecord) async throws -> Void
@@ -189,7 +197,28 @@ extension CapturePreferencesClient: DependencyKey {
                 hammingThreshold: Defaults[.identicalFrameHammingThreshold],
                 heartbeat: .seconds(Defaults[.identicalFrameHeartbeatSeconds])
             )
+        },
+        retentionPolicy: {
+            RetentionPolicy(
+                maxAge: Defaults[.retentionMaxAgeEnabled]
+                    ? TimeInterval(max(1, Defaults[.retentionMaxAgeDays])) * 86400
+                    : nil,
+                maxTotalBytes: Defaults[.retentionMaxSizeEnabled]
+                    ? max(1, Defaults[.retentionMaxSizeMegabytes]) * 1_000_000
+                    : nil,
+                maxScreenshotCount: Defaults[.retentionMaxCountEnabled]
+                    ? max(1, Defaults[.retentionMaxScreenshotCount])
+                    : nil
+            )
         }
+    )
+
+    /// Test defaults: no retention limits so pruning is a no-op unless a test opts in.
+    static let testValue = Self(
+        encodingOptions: { .defaultValue },
+        thumbnailMaximumPixelSize: { 1024 },
+        deduplicationOptions: { .defaultValue },
+        retentionPolicy: { .none }
     )
 }
 
@@ -796,6 +825,10 @@ nonisolated extension PersistenceClient {
         },
         screenshotPathsForApp: { _ in
             reportIssue("PersistenceClient.screenshotPathsForApp is unimplemented")
+            return []
+        },
+        endedSessionsOldestFirst: {
+            reportIssue("PersistenceClient.endedSessionsOldestFirst is unimplemented")
             return []
         },
         upsertWindow: { _ in reportIssue("PersistenceClient.upsertWindow is unimplemented") },

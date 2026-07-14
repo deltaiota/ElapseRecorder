@@ -129,6 +129,15 @@ final class SwiftDataPersistenceStore {
             .map(\.filePath)
     }
 
+    /// Ended sessions sorted oldest-first (as summaries with size/count), for the retention
+    /// pruner. Open sessions are excluded so an in-progress recording is never pruned.
+    func endedSessionsOldestFirst() throws -> [CaptureSessionSummary] {
+        try allSessions()
+            .filter { $0.endedAt != nil }
+            .sorted { $0.startedAt < $1.startedAt }
+            .map(\.summaryValue)
+    }
+
     func upsertWindow(_ window: MonitoredWindow) throws {
         let context = ModelContext(modelContainer)
         guard let session = try sessionModel(id: window.sessionID, context: context) else {
@@ -515,6 +524,9 @@ extension PersistenceClient {
             screenshotPathsForApp: { bundleIdentifier in
                 try await store.screenshotPaths(bundleIdentifier: bundleIdentifier)
             },
+            endedSessionsOldestFirst: {
+                try await store.endedSessionsOldestFirst()
+            },
             upsertWindow: { window in
                 try await store.upsertWindow(window)
             },
@@ -568,6 +580,7 @@ extension PersistenceClient {
         sessionsStartedBefore: { _, _ in throw CaptureEngineError.persistenceUnavailable },
         screenshotPathsForSession: { _ in throw CaptureEngineError.persistenceUnavailable },
         screenshotPathsForApp: { _ in throw CaptureEngineError.persistenceUnavailable },
+        endedSessionsOldestFirst: { throw CaptureEngineError.persistenceUnavailable },
         upsertWindow: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordScreenshot: { _ in throw CaptureEngineError.persistenceUnavailable },
         recordCaptureUnavailable: { _ in throw CaptureEngineError.persistenceUnavailable },

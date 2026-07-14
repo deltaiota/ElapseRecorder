@@ -13,6 +13,12 @@ struct StorageManagementView: View {
     var onClose: () -> Void = {}
 
     @Default(.customCaptureRootPath) private var customCaptureRootPath
+    @Default(.retentionMaxAgeEnabled) private var retentionAgeEnabled
+    @Default(.retentionMaxAgeDays) private var retentionAgeDays
+    @Default(.retentionMaxSizeEnabled) private var retentionSizeEnabled
+    @Default(.retentionMaxSizeMegabytes) private var retentionSizeMegabytes
+    @Default(.retentionMaxCountEnabled) private var retentionCountEnabled
+    @Default(.retentionMaxScreenshotCount) private var retentionMaxCount
     @State private var bulkCutoff = Date()
     @State private var bulkScopeIsSelectedApp = false
     @State private var isConfirmingBulkDelete = false
@@ -21,6 +27,7 @@ struct StorageManagementView: View {
         VStack(spacing: 0) {
             Form {
                 storageSection()
+                retentionSection()
                 maintenanceSection()
                 bulkDeleteSection()
                 captureLocationSection()
@@ -36,7 +43,7 @@ struct StorageManagementView: View {
             }
             .padding(12)
         }
-        .frame(width: 460, height: 560)
+        .frame(width: 460, height: 620)
     }
 
     // MARK: - Storage summary
@@ -56,6 +63,70 @@ struct StorageManagementView: View {
 
     private var totalScreenshots: Int {
         store.apps.reduce(0) { $0 + $1.screenshotCount }
+    }
+
+    // MARK: - Retention
+
+    @ViewBuilder
+    private func retentionSection() -> some View {
+        Section {
+            Toggle(isOn: $retentionAgeEnabled) {
+                Text("Delete captures older than")
+            }
+            if retentionAgeEnabled {
+                Stepper(value: $retentionAgeDays, in: 1 ... 3650) {
+                    Text("\(retentionAgeDays) days")
+                        .monospacedDigit()
+                }
+            }
+
+            Toggle(isOn: $retentionSizeEnabled) {
+                Text("Limit total size")
+            }
+            if retentionSizeEnabled {
+                HStack {
+                    TextField("Size", value: $retentionSizeMegabytes, format: .number)
+                        .frame(width: 90)
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
+                    Text("MB")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Toggle(isOn: $retentionCountEnabled) {
+                Text("Limit screenshot count")
+            }
+            if retentionCountEnabled {
+                HStack {
+                    TextField("Count", value: $retentionMaxCount, format: .number)
+                        .frame(width: 90)
+                        .multilineTextAlignment(.trailing)
+                        .textFieldStyle(.roundedBorder)
+                    Text("screenshots")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                if store.isEnforcingRetention {
+                    ProgressView().controlSize(.small)
+                }
+                Spacer()
+                Button("Apply Now") {
+                    store.send(.enforceRetentionRequested)
+                }
+                .disabled(!isAnyRetentionLimitEnabled || store.isEnforcingRetention)
+            }
+        } header: {
+            Text("Retention")
+        } footer: {
+            Text("Oldest ended sessions are removed first to satisfy these limits. Recording sessions are never deleted. Runs automatically after each session ends.")
+        }
+    }
+
+    private var isAnyRetentionLimitEnabled: Bool {
+        retentionAgeEnabled || retentionSizeEnabled || retentionCountEnabled
     }
 
     // MARK: - Integrity sweep

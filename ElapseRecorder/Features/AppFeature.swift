@@ -75,10 +75,15 @@ struct AppFeature: Reducer {
                     }
                 )
 
+            case .captureEngine(.sessionClosed):
+                return .merge(
+                    .send(.viewer(.refresh)),
+                    .send(.viewer(.enforceRetentionRequested))
+                )
+
             case .captureEngine(.screenshotRecorded),
                  .captureEngine(.captureUnavailableRecorded),
-                 .captureEngine(.sessionOpened),
-                 .captureEngine(.sessionClosed):
+                 .captureEngine(.sessionOpened):
                 return .send(.viewer(.refresh))
 
             case .captureEngine, .viewer:

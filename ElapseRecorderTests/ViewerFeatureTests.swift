@@ -218,6 +218,95 @@ final class ViewerFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testRetentionPrunesOldestByCountLimitOnly() async {
+        // Three ended sessions, 5 screenshots each = 15 total; cap at 8 → delete the two oldest.
+        let sessions = (0 ..< 3).map { index in
+            CaptureSessionSummary(
+                id: UUID(uuidString: "00000000-0000-0000-0000-00000000C\(index)0\(index)")!,
+                bundleIdentifier: "com.example.App",
+                displayName: "App",
+                startedAt: Date(timeIntervalSince1970: TimeInterval(100 + index * 100)),
+                endedAt: Date(timeIntervalSince1970: TimeInterval(150 + index * 100)),
+                windowCount: 1,
+                screenshotCount: 5,
+                sizeBytes: 50
+            )
+        }
+        let deleted = LockIsolated<[UUID]>([])
+
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 10000))
+            $0.capturePreferencesClient.retentionPolicy = {
+                RetentionPolicy(maxAge: nil, maxTotalBytes: nil, maxScreenshotCount: 8)
+            }
+            $0.persistenceClient.endedSessionsOldestFirst = { sessions }
+            $0.persistenceClient.screenshotPathsForSession = { _ in [] }
+            $0.persistenceClient.deleteSession = { id in deleted.withValue { $0.append(id) } }
+            $0.persistenceClient.apps = { [] }
+            $0.fileStorageClient.deleteSessionCaptures = { _, _ in }
+            $0.fileStorageClient.removeFiles = { _ in 0 }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.enforceRetentionRequested) {
+            $0.isEnforcingRetention = true
+        }
+        await store.skipReceivedActions()
+
+        // Deleting the two oldest leaves 5 <= 8.
+        XCTAssertEqual(deleted.value, [sessions[0].id, sessions[1].id])
+        XCTAssertFalse(store.state.isEnforcingRetention)
+    }
+
+    @MainActor
+    func testRetentionNoOpWhenPolicyDisabled() async {
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.capturePreferencesClient.retentionPolicy = { .none }
+        }
+
+        // With no active limits the request is ignored: no state change, no effects.
+        await store.send(.enforceRetentionRequested)
+    }
+
+    func testRetentionPolicySelectsByAgeAndSize() {
+        let now = Date(timeIntervalSince1970: 10000)
+        func session(_ n: Int, started: TimeInterval, bytes: Int) -> CaptureSessionSummary {
+            CaptureSessionSummary(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000D\(n)")!,
+                bundleIdentifier: "b", displayName: "b",
+                startedAt: Date(timeIntervalSince1970: started), endedAt: Date(timeIntervalSince1970: started + 1),
+                windowCount: 1, screenshotCount: 1, sizeBytes: bytes
+            )
+        }
+        let sessions = [
+            session(0, started: 1000, bytes: 100), // oldest
+            session(1, started: 5000, bytes: 100),
+            session(2, started: 9000, bytes: 100), // newest
+        ]
+
+        // Age: keep only sessions newer than now-2000s (i.e. started > 8000) → prune 0 and 1.
+        let ageOnly = RetentionPolicy(maxAge: 2000, maxTotalBytes: nil, maxScreenshotCount: nil)
+        XCTAssertEqual(
+            ageOnly.sessionIDsToPrune(endedSessionsOldestFirst: sessions, now: now),
+            [sessions[0].id, sessions[1].id]
+        )
+
+        // Size: 300 total, cap 150 → delete oldest until <=150 (drop 0 then 1 → 100 left).
+        let sizeOnly = RetentionPolicy(maxAge: nil, maxTotalBytes: 150, maxScreenshotCount: nil)
+        XCTAssertEqual(
+            sizeOnly.sessionIDsToPrune(endedSessionsOldestFirst: sessions, now: now),
+            [sessions[0].id, sessions[1].id]
+        )
+
+        // No limits → nothing pruned.
+        XCTAssertEqual(RetentionPolicy.none.sessionIDsToPrune(endedSessionsOldestFirst: sessions, now: now), [])
+    }
+
+    @MainActor
     func testSelectingSessionLoadsWindowsAndTimelineGraph() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000601"))
         let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000602"))

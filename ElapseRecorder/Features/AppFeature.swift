@@ -78,6 +78,7 @@ struct AppFeature: Reducer {
             case .captureEngine(.sessionClosed):
                 return .merge(
                     .send(.viewer(.refresh)),
+                    .send(.viewer(.autoCompactOnSessionCloseRequested)),
                     .send(.viewer(.enforceRetentionRequested))
                 )
 

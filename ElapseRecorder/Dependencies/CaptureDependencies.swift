@@ -34,6 +34,10 @@ nonisolated extension Defaults.Keys {
     /// Quality (0...1) for HEVC video compaction of closed sessions. 0.65 is near-lossless for
     /// screen-content review while achieving ~11x compression versus standalone HEIC frames.
     static let compactionQuality = Key<Double>("compactionQuality", default: 0.65)
+    /// When true, a session's frames are automatically compacted into HEVC videos as soon as the
+    /// session ends (the live session is never touched). Reuses the same verified pipeline as the
+    /// manual "Compact" button.
+    static let autoCompactOnSessionClose = Key<Bool>("autoCompactOnSessionClose", default: false)
 }
 
 nonisolated struct DateClient {
@@ -49,6 +53,7 @@ nonisolated struct CapturePreferencesClient {
     var thumbnailMaximumPixelSize: @Sendable () -> Int
     var deduplicationOptions: @Sendable () -> FrameDeduplicationOptions
     var retentionPolicy: @Sendable () -> RetentionPolicy
+    var autoCompactOnSessionClose: @Sendable () -> Bool
 }
 
 /// Computes a 64-bit difference hash (dHash) of a captured frame for near-duplicate detection.
@@ -220,6 +225,9 @@ extension CapturePreferencesClient: DependencyKey {
                     ? max(1, Defaults[.retentionMaxScreenshotCount])
                     : nil
             )
+        },
+        autoCompactOnSessionClose: {
+            Defaults[.autoCompactOnSessionClose]
         }
     )
 
@@ -228,7 +236,8 @@ extension CapturePreferencesClient: DependencyKey {
         encodingOptions: { .defaultValue },
         thumbnailMaximumPixelSize: { 1024 },
         deduplicationOptions: { .defaultValue },
-        retentionPolicy: { .none }
+        retentionPolicy: { .none },
+        autoCompactOnSessionClose: { false }
     )
 }
 

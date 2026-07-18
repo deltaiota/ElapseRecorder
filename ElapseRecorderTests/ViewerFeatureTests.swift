@@ -181,6 +181,37 @@ final class ViewerFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testAutoCompactOnSessionCloseSkippedWhenToggleDisabled() async {
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.capturePreferencesClient.autoCompactOnSessionClose = { false }
+        }
+
+        // Toggle off: the automatic request is a no-op (no encoding, no state change).
+        await store.send(.autoCompactOnSessionCloseRequested)
+    }
+
+    @MainActor
+    func testAutoCompactOnSessionCloseRunsWhenToggleEnabled() async {
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.capturePreferencesClient.autoCompactOnSessionClose = { true }
+            $0.persistenceClient.endedSessionsOldestFirst = { [] }
+            $0.fileStorageClient.removeFiles = { _ in 0 }
+        }
+
+        await store.send(.autoCompactOnSessionCloseRequested) {
+            $0.isCompacting = true
+        }
+        await store.receive(\.compactionFinished) {
+            $0.isCompacting = false
+            $0.compactionResult = .empty
+        }
+    }
+
+    @MainActor
     func testExportTimelapseCancelledWhenNoDestinationChosen() async {
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()

@@ -14,6 +14,8 @@ struct MenuBarView: View {
     @Environment(\.openWindow) private var openWindow
     @State private var selectedImageFormat = Defaults[.captureImageFormat]
     @State private var selectedHEICQuality = Defaults[.captureHEICQuality]
+    @State private var autoCompactOnClose = Defaults[.autoCompactOnSessionClose]
+    @State private var selectedCompactionQuality = Defaults[.compactionQuality]
 
     var body: some View {
         frontmostAppSection()
@@ -28,6 +30,7 @@ struct MenuBarView: View {
             .keyboardShortcut("l")
 
             screenshotQualityMenu()
+            compactionMenu()
         }
 
         Section(totalScreenshotCountTitle) {
@@ -49,6 +52,8 @@ struct MenuBarView: View {
             .onAppear {
                 selectedImageFormat = Defaults[.captureImageFormat]
                 selectedHEICQuality = Defaults[.captureHEICQuality]
+                autoCompactOnClose = Defaults[.autoCompactOnSessionClose]
+                selectedCompactionQuality = Defaults[.compactionQuality]
                 applyScreenshotQualityPreset(selectedScreenshotQualityPreset)
             }
         }
@@ -125,6 +130,35 @@ struct MenuBarView: View {
             applyScreenshotQualityPreset(preset)
         } label: {
             if selectedScreenshotQualityPreset == preset {
+                Text(verbatim: "✓ ") + Text(preset.title)
+            } else {
+                Text(preset.title)
+            }
+            Text(preset.subtitle)
+        }
+    }
+
+    @ViewBuilder
+    private func compactionMenu() -> some View {
+        Menu {
+            Toggle("Auto-Compact on Session Close", isOn: autoCompactBinding)
+
+            Section("Compaction Quality") {
+                ForEach(Self.compactionQualityPresets) { preset in
+                    compactionQualityButton(preset)
+                }
+            }
+        } label: {
+            Label("Video Compaction", systemSymbol: .archivebox)
+        }
+    }
+
+    @ViewBuilder
+    private func compactionQualityButton(_ preset: CompactionQualityPreset) -> some View {
+        Button {
+            applyCompactionQuality(preset.quality)
+        } label: {
+            if abs(selectedCompactionQuality - preset.quality) < 0.001 {
                 Text(verbatim: "✓ ") + Text(preset.title)
             } else {
                 Text(preset.title)
@@ -255,12 +289,34 @@ struct MenuBarView: View {
         Defaults[.captureHEICQuality] = preset.heicQuality
     }
 
+    private var autoCompactBinding: Binding<Bool> {
+        Binding(
+            get: { autoCompactOnClose },
+            set: {
+                autoCompactOnClose = $0
+                Defaults[.autoCompactOnSessionClose] = $0
+            }
+        )
+    }
+
+    private func applyCompactionQuality(_ quality: Double) {
+        selectedCompactionQuality = quality
+        Defaults[.compactionQuality] = quality
+    }
+
     private struct ScreenshotQualityPreset: Equatable, Identifiable {
         var id: String
         var title: LocalizedStringKey
         var subtitle: LocalizedStringKey
         var format: CaptureImageFormat
         var heicQuality: Double
+    }
+
+    private struct CompactionQualityPreset: Equatable, Identifiable {
+        var id: String
+        var title: LocalizedStringKey
+        var subtitle: LocalizedStringKey
+        var quality: Double
     }
 
     private struct FrontmostAppContext {
@@ -302,5 +358,26 @@ struct MenuBarView: View {
             heicQuality: 0.95
         ),
         pngScreenshotQualityPreset,
+    ]
+
+    private static let compactionQualityPresets = [
+        CompactionQualityPreset(
+            id: "smaller",
+            title: "Smaller",
+            subtitle: "Around 20× smaller, slight detail loss",
+            quality: 0.5
+        ),
+        CompactionQualityPreset(
+            id: "balanced",
+            title: "Balanced",
+            subtitle: "Around 11× smaller, near-lossless",
+            quality: 0.65
+        ),
+        CompactionQualityPreset(
+            id: "higher",
+            title: "Higher Quality",
+            subtitle: "Larger videos, crisper frames",
+            quality: 0.8
+        ),
     ]
 }

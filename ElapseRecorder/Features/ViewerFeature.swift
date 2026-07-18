@@ -131,6 +131,7 @@ struct ViewerFeature: Reducer {
         case enforceRetentionRequested
         case retentionEnforced(deletedSessionCount: Int)
         case compactStorageButtonTapped
+        case autoCompactOnSessionCloseRequested
         case compactionFinished(StorageCompactionResult)
         case loadingFailed(String)
     }
@@ -447,6 +448,18 @@ struct ViewerFeature: Reducer {
 
             case .compactStorageButtonTapped:
                 guard !state.isCompacting, !state.isRunningStorageMaintenance else { return .none }
+                state.isCompacting = true
+                state.compactionResult = nil
+                return compactClosedSessions()
+
+            case .autoCompactOnSessionCloseRequested:
+                // Automatic path: only runs when the user enabled the toggle. Reuses the exact
+                // manual pipeline; already-compacted sessions are skipped cheaply.
+                guard preferences.autoCompactOnSessionClose(),
+                      !state.isCompacting, !state.isRunningStorageMaintenance
+                else {
+                    return .none
+                }
                 state.isCompacting = true
                 state.compactionResult = nil
                 return compactClosedSessions()

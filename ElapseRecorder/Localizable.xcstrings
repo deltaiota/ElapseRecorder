@@ -749,6 +749,38 @@
         }
       }
     },
+    "Around 11× smaller, near-lossless" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Around 11× smaller, near-lossless"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约缩小 11 倍，近乎无损"
+          }
+        }
+      }
+    },
+    "Around 20× smaller, slight detail loss" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Around 20× smaller, slight detail loss"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "约缩小 20 倍，略有细节损失"
+          }
+        }
+      }
+    },
     "Auto" : {
       "localizations" : {
         "en" : {
@@ -777,6 +809,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自动捕获"
+          }
+        }
+      }
+    },
+    "Auto-Compact on Session Close" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-Compact on Session Close"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "会话结束时自动压缩"
           }
         }
       }
@@ -1163,6 +1211,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "压缩"
+          }
+        }
+      }
+    },
+    "Compaction Quality" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compaction Quality"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "压缩质量"
           }
         }
       }
@@ -1649,6 +1713,38 @@
         }
       }
     },
+    "Higher Quality" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higher Quality"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更高质量"
+          }
+        }
+      }
+    },
+    "Larger videos, crisper frames" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Larger videos, crisper frames"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频更大，画面更清晰"
+          }
+        }
+      }
+    },
     "Nothing to compact." : {
       "localizations" : {
         "en" : {
@@ -1693,6 +1789,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将已完成会话的截图替换为每个窗口一个近乎无损的 HEVC 视频，通常可缩小约 10 倍。帧仍可浏览和导出。"
+          }
+        }
+      }
+    },
+    "Smaller" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smaller"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更小"
+          }
+        }
+      }
+    },
+    "Video Compaction" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video Compaction"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频压缩"
           }
         }
       }

@@ -106,7 +106,7 @@ struct SessionListColumn: View {
                 .font(.caption)
             }
         } icon: {
-            Image(systemSymbol: isRecording ? .recordCircle : .clock)
+            Image(systemSymbol: sessionSymbol(session, isRecording: isRecording))
                 .foregroundStyle(isRecording ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
                 .symbolEffect(.pulse, options: .repeating, isActive: isRecording)
         }
@@ -134,6 +134,13 @@ struct SessionListColumn: View {
                     }
                 }
         }
+    }
+
+    /// Ended sessions get distinct icons so the list conveys whether a session has been
+    /// compacted into video (archived) or is still individual images.
+    private func sessionSymbol(_ session: CaptureSessionSummary, isRecording: Bool) -> SFSymbol {
+        if isRecording { return .recordCircle }
+        return session.isCompacted ? .archivebox : .photoOnRectangle
     }
 
     private func sessionSummaryItems(_ session: CaptureSessionSummary) -> [CountSummary.Item] {

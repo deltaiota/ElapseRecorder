@@ -220,7 +220,8 @@ extension CaptureSessionModel {
             endedAt: endedAt,
             windowCount: windows.count,
             screenshotCount: screenshots.count,
-            sizeBytes: screenshots.reduce(0) { $0 + $1.fileSizeBytes }
+            sizeBytes: screenshots.reduce(0) { $0 + $1.fileSizeBytes },
+            compactedScreenshotCount: screenshots.reduce(0) { $0 + ($1.videoPath.isEmpty ? 0 : 1) }
         )
     }
 }

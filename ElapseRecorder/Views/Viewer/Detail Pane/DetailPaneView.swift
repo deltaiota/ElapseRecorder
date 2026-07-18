@@ -39,7 +39,7 @@ struct DetailPaneView: View {
         .background(.background)
         .quickLookPreview(
             $store.quickLookURL.sending(\.quickLookURLChanged),
-            in: currentScreenshotURLs
+            in: quickLookItems
         )
         .sheet(isPresented: exportProgressSheetPresented) {
             if let status = store.exportStatus {
@@ -193,6 +193,15 @@ struct DetailPaneView: View {
             if case let .screenshot(record) = entry, case let .file(url) = record.frameSource { return url }
             return nil
         }
+    }
+
+    /// The Quick Look navigable set. The framework requires the current selection to be a member
+    /// of this array; a compacted frame is previewed from an extracted temp file that isn't in
+    /// the on-disk gallery, so fall back to previewing just that file (guards against an
+    /// out-of-range crash when the selection isn't among the gallery URLs).
+    private var quickLookItems: [URL] {
+        guard let current = store.quickLookURL else { return currentScreenshotURLs }
+        return currentScreenshotURLs.contains(current) ? currentScreenshotURLs : [current]
     }
 
     /// What a timelapse export covers: the multi-selection if the user picked several

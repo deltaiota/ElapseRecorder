@@ -8,6 +8,16 @@ nonisolated enum CompactionVideo {
     static let fileExtension = "mov"
 }
 
+/// Progress of a compaction pass, in frames, for driving a determinate progress bar.
+nonisolated struct CompactionProgress: Equatable {
+    var processedFrames: Int
+    var totalFrames: Int
+
+    var fractionCompleted: Double {
+        totalFrames > 0 ? min(1, Double(processedFrames) / Double(totalFrames)) : 0
+    }
+}
+
 /// A single standalone frame that is a candidate for compaction into a window video.
 nonisolated struct CompactableFrame: Equatable, Identifiable {
     var id: UUID

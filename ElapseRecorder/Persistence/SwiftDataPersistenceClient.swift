@@ -324,13 +324,23 @@ final class SwiftDataPersistenceStore {
                 let latest = screenshots.map(\.capturedAt).max()
                 let latestSession = sessions.max { $0.startedAt < $1.startedAt }
 
+                // Total recorded time = sum of each session's span. Open sessions (no end yet)
+                // fall back to their last screenshot time, avoiding a non-deterministic "now".
+                let totalActiveDuration = sessions.reduce(0.0) { total, session in
+                    let sessionEnd = session.endedAt
+                        ?? session.screenshots.map(\.capturedAt).max()
+                        ?? session.startedAt
+                    return total + max(0, sessionEnd.timeIntervalSince(session.startedAt))
+                }
+
                 return AppCaptureSummary(
                     bundleIdentifier: latestSession?.bundleIdentifier ?? "",
                     displayName: latestSession?.displayName ?? "",
                     sessionCount: sessions.count,
                     screenshotCount: screenshots.count,
                     lastCapturedAt: latest,
-                    sizeBytes: screenshots.reduce(0) { $0 + $1.fileSizeBytes }
+                    sizeBytes: screenshots.reduce(0) { $0 + $1.fileSizeBytes },
+                    totalActiveDuration: totalActiveDuration
                 )
             }
             .sorted { lhs, rhs in

@@ -29,8 +29,10 @@ struct ViewerFeature: Reducer {
         var storageIntegrityResult: StorageIntegrityResult?
         /// True while the retention pruner is running, to guard against overlapping runs.
         var isEnforcingRetention = false
-        /// True while a compaction pass is running, to guard re-entry and drive a spinner.
+        /// True while a compaction pass is running, to guard re-entry and drive the progress bar.
         var isCompacting = false
+        /// Live progress of the running compaction pass (nil until the first frame is encoded).
+        var compactionProgress: CompactionProgress?
         /// The outcome of the most recent compaction pass, shown in the storage management UI.
         var compactionResult: StorageCompactionResult?
         var isShowingFlatGallery = false
@@ -132,6 +134,7 @@ struct ViewerFeature: Reducer {
         case retentionEnforced(deletedSessionCount: Int)
         case compactStorageButtonTapped
         case autoCompactOnSessionCloseRequested
+        case compactionProgressed(CompactionProgress)
         case compactionFinished(StorageCompactionResult)
         case loadingFailed(String)
     }
@@ -449,6 +452,7 @@ struct ViewerFeature: Reducer {
             case .compactStorageButtonTapped:
                 guard !state.isCompacting, !state.isRunningStorageMaintenance else { return .none }
                 state.isCompacting = true
+                state.compactionProgress = nil
                 state.compactionResult = nil
                 return compactClosedSessions()
 
@@ -461,11 +465,17 @@ struct ViewerFeature: Reducer {
                     return .none
                 }
                 state.isCompacting = true
+                state.compactionProgress = nil
                 state.compactionResult = nil
                 return compactClosedSessions()
 
+            case let .compactionProgressed(progress):
+                state.compactionProgress = progress
+                return .none
+
             case let .compactionFinished(result):
                 state.isCompacting = false
+                state.compactionProgress = nil
                 state.compactionResult = result
                 return result.isEmpty ? .none : .send(.refresh)
 
@@ -610,6 +620,7 @@ struct ViewerFeature: Reducer {
     /// Compacts every closed session's standalone frames into HEVC window videos, repointing the
     /// database and deleting the originals only after each video is written and verified. Failures
     /// on one window are isolated (its partial video is removed) so the pass is safe to retry.
+    /// Reports frame-level progress so the UI can show a determinate bar.
     private func compactClosedSessions() -> Effect<Action> {
         let persistence = persistence
         let compactor = frameVideoCompactor
@@ -618,47 +629,79 @@ struct ViewerFeature: Reducer {
         let quality = Defaults[.compactionQuality]
 
         return .run { send in
-            var result = StorageCompactionResult.empty
+            // First pass: collect every window that needs compacting so we know the total frame
+            // count up front (the denominator for the progress bar).
+            var windows: [WindowCompactionPlan] = []
             do {
                 let sessions = try await persistence.endedSessionsOldestFirst()
                 for session in sessions {
-                    let plan: SessionCompactionPlan?
-                    do {
-                        plan = try await persistence.compactionPlanForSession(session.id)
-                    } catch {
+                    guard let plan = try? await persistence.compactionPlanForSession(session.id) else {
                         continue
                     }
-                    guard let plan else { continue }
-
-                    for window in plan.windows {
-                        do {
-                            let videoBytes = try await compactor.compact(window, quality)
-                            // Verify the last frame is decodable at its index before we trust the
-                            // video enough to delete the originals.
-                            _ = try await extractor.image(window.outputURL, max(0, window.frames.count - 1))
-                            try await persistence.applyCompaction(
-                                window.windowID,
-                                window.outputURL.path(percentEncoded: false),
-                                window.frames.map(\.id),
-                                videoBytes
-                            )
-                            let reclaimed = try await fileStorage.removeFiles(window.frames.map(\.sourceURL))
-                            result.compactedWindowCount += 1
-                            result.framesCompacted += window.frames.count
-                            result.bytesBefore += reclaimed
-                            result.bytesAfter += videoBytes
-                        } catch {
-                            // Leave this window uncompacted and remove any partial video so it is
-                            // not left behind as an orphan.
-                            _ = try? await fileStorage.removeFiles([window.outputURL])
-                        }
-                    }
+                    windows.append(contentsOf: plan.windows)
                 }
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
                 return
             }
-            await send(.compactionFinished(result))
+
+            let totalFrames = windows.reduce(0) { $0 + $1.frames.count }
+            guard totalFrames > 0 else {
+                await send(.compactionFinished(.empty))
+                return
+            }
+            // Throttle progress so a long pass emits at most ~a few hundred updates.
+            let reportStride = max(1, totalFrames / 300)
+
+            // The encode work runs on a child task and pushes frame counts into a stream; the
+            // effect consumes the stream and forwards determinate progress to the reducer.
+            let (progressStream, progressContinuation) = AsyncStream<Int>.makeStream()
+
+            let worker = Task { () -> StorageCompactionResult in
+                var result = StorageCompactionResult.empty
+                var processedFrames = 0
+                for window in windows {
+                    let base = processedFrames
+                    let lastReported = LockIsolated(base)
+                    do {
+                        let videoBytes = try await compactor.compact(window, quality) { framesInWindow in
+                            let done = base + framesInWindow
+                            if done - lastReported.value >= reportStride {
+                                lastReported.setValue(done)
+                                progressContinuation.yield(done)
+                            }
+                        }
+                        // Verify the last frame is decodable at its index before we trust the
+                        // video enough to delete the originals.
+                        _ = try await extractor.image(window.outputURL, max(0, window.frames.count - 1))
+                        try await persistence.applyCompaction(
+                            window.windowID,
+                            window.outputURL.path(percentEncoded: false),
+                            window.frames.map(\.id),
+                            videoBytes
+                        )
+                        let reclaimed = try await fileStorage.removeFiles(window.frames.map(\.sourceURL))
+                        result.compactedWindowCount += 1
+                        result.framesCompacted += window.frames.count
+                        result.bytesBefore += reclaimed
+                        result.bytesAfter += videoBytes
+                    } catch {
+                        // Leave this window uncompacted and remove any partial video so it is not
+                        // left behind as an orphan.
+                        _ = try? await fileStorage.removeFiles([window.outputURL])
+                    }
+                    processedFrames = base + window.frames.count
+                    progressContinuation.yield(processedFrames)
+                }
+                progressContinuation.finish()
+                return result
+            }
+
+            await send(.compactionProgressed(CompactionProgress(processedFrames: 0, totalFrames: totalFrames)))
+            for await done in progressStream {
+                await send(.compactionProgressed(CompactionProgress(processedFrames: done, totalFrames: totalFrames)))
+            }
+            await send(.compactionFinished(worker.value))
         }
     }
 

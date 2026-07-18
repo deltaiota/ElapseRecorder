@@ -9,9 +9,14 @@ import UniformTypeIdentifiers
 // MARK: - Clients
 
 /// Encodes a window's standalone frames into a single HEVC video (color-managed, near-lossless
-/// at the configured quality). Returns the resulting file size in bytes.
+/// at the configured quality). Reports the running count of frames encoded in this window via
+/// `onFrameEncoded` (1-based) and returns the resulting file size in bytes.
 nonisolated struct FrameVideoCompactorClient {
-    var compact: @Sendable (_ plan: WindowCompactionPlan, _ quality: Double) async throws -> Int
+    var compact: @Sendable (
+        _ plan: WindowCompactionPlan,
+        _ quality: Double,
+        _ onFrameEncoded: @Sendable (Int) -> Void
+    ) async throws -> Int
 }
 
 /// Decodes a single frame image out of a compacted window video.
@@ -32,15 +37,19 @@ enum CompactionError: Error, Equatable {
 // MARK: - Live encoder
 
 extension FrameVideoCompactorClient: DependencyKey {
-    static let liveValue = Self { plan, quality in
-        try await CompactionEncoder.encode(plan: plan, quality: quality)
+    static let liveValue = Self { plan, quality, onFrameEncoded in
+        try await CompactionEncoder.encode(plan: plan, quality: quality, onFrameEncoded: onFrameEncoded)
     }
 
     static let testValue = liveValue
 }
 
 private nonisolated enum CompactionEncoder {
-    static func encode(plan: WindowCompactionPlan, quality: Double) async throws -> Int {
+    static func encode(
+        plan: WindowCompactionPlan,
+        quality: Double,
+        onFrameEncoded: @Sendable (Int) -> Void
+    ) async throws -> Int {
         let frames = plan.frames
         guard !frames.isEmpty else { throw CompactionError.noFrames }
 
@@ -136,6 +145,7 @@ private nonisolated enum CompactionEncoder {
                 buffer,
                 withPresentationTime: CMTime(value: CMTimeValue(index), timescale: CompactionVideo.frameRate)
             )
+            onFrameEncoded(index + 1)
         }
 
         input.markAsFinished()

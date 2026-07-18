@@ -21,7 +21,8 @@ struct StorageManagementView: View {
     @Default(.retentionMaxScreenshotCount) private var retentionMaxCount
     @Default(.compactionQuality) private var compactionQuality
     @State private var bulkCutoff = Date()
-    @State private var bulkScopeIsSelectedApp = false
+    @State private var bulkScopeBundleIdentifier: String?
+    @State private var didInitBulkScope = false
     @State private var isConfirmingBulkDelete = false
 
     var body: some View {
@@ -42,10 +43,19 @@ struct StorageManagementView: View {
                 Spacer()
                 Button("Done", action: onClose)
                     .keyboardShortcut(.defaultAction)
+                    .disabled(store.isCompacting)
             }
             .padding(12)
         }
         .frame(width: 460, height: 680)
+        // Keep the sheet open while a compaction pass runs so its progress bar can finish.
+        .interactiveDismissDisabled(store.isCompacting)
+        .onAppear {
+            if !didInitBulkScope {
+                bulkScopeBundleIdentifier = scopeBundleIdentifier
+                didInitBulkScope = true
+            }
+        }
     }
 
     // MARK: - Storage summary
@@ -138,23 +148,27 @@ struct StorageManagementView: View {
     @ViewBuilder
     private func compactionSection() -> some View {
         Section {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Compact Closed Sessions")
-                    Text("Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Compact Closed Sessions")
+                        Text("Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    if !store.isCompacting {
+                        Button("Compact Now") {
+                            store.send(.compactStorageButtonTapped)
+                        }
+                    }
                 }
 
-                Spacer()
-
                 if store.isCompacting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button("Compact") {
-                        store.send(.compactStorageButtonTapped)
-                    }
+                    compactionProgressView()
                 }
             }
 
@@ -162,6 +176,7 @@ struct StorageManagementView: View {
                 HStack(spacing: 8) {
                     Slider(value: $compactionQuality, in: 0.4 ... 0.9)
                         .frame(width: 150)
+                        .disabled(store.isCompacting)
                     Text(compactionQuality.formatted(.percent.precision(.fractionLength(0))))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
@@ -178,6 +193,28 @@ struct StorageManagementView: View {
             Text("Compaction")
         } footer: {
             Text("Only finished sessions are compacted; the session currently being recorded is left untouched.")
+        }
+    }
+
+    @ViewBuilder
+    private func compactionProgressView() -> some View {
+        if let progress = store.compactionProgress, progress.totalFrames > 0 {
+            ProgressView(
+                value: Double(progress.processedFrames),
+                total: Double(progress.totalFrames)
+            ) {
+                Text("Compacting…")
+            } currentValueLabel: {
+                Text("\(progress.processedFrames) / \(progress.totalFrames)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            .progressViewStyle(.linear)
+        } else {
+            ProgressView {
+                Text("Preparing…")
+            }
+            .progressViewStyle(.linear)
         }
     }
 
@@ -247,13 +284,13 @@ struct StorageManagementView: View {
                 displayedComponents: [.date]
             )
 
-            if scopeBundleIdentifier != nil {
-                Picker("Scope", selection: $bulkScopeIsSelectedApp) {
-                    Text("All Apps").tag(false)
-                    Text(scopeDisplayName ?? String(localized: "Selected App")).tag(true)
+            if !store.apps.isEmpty {
+                Picker("Scope", selection: $bulkScopeBundleIdentifier) {
+                    Text("All Apps").tag(String?.none)
+                    ForEach(store.apps) { app in
+                        Text(app.displayName).tag(String?.some(app.bundleIdentifier))
+                    }
                 }
-                .pickerStyle(.radioGroup)
-                .horizontalRadioGroupLayout()
             }
 
             Button(role: .destructive) {
@@ -270,7 +307,7 @@ struct StorageManagementView: View {
                 Button("Delete", role: .destructive) {
                     store.send(.bulkDeleteRequested(
                         before: startOfDay(bulkCutoff),
-                        bundleIdentifier: bulkScopeIsSelectedApp ? scopeBundleIdentifier : nil
+                        bundleIdentifier: bulkScopeBundleIdentifier
                     ))
                 }
                 Button("Cancel", role: .cancel) {}

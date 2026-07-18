@@ -113,7 +113,7 @@ final class ViewerFeatureTests: XCTestCase {
             $0.persistenceClient.endedSessionsOldestFirst = { [summary] }
             $0.persistenceClient.compactionPlanForSession = { $0 == sessionID ? plan : nil }
             $0.persistenceClient.apps = { [] }
-            $0.frameVideoCompactorClient.compact = { _, _ in 1000 }
+            $0.frameVideoCompactorClient.compact = { _, _, _ in 1000 }
             $0.videoFrameExtractorClient.image = { _, index in
                 verifiedIndex.setValue(index)
                 return Self.makeImage()

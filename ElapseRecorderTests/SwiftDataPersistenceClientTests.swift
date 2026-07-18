@@ -558,6 +558,52 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         XCTAssertEqual(remaining.map(\.path), ["/tmp/new.heic"])
     }
 
+    @MainActor
+    func testAppSummaryTotalActiveDurationSumsSessionSpans() async throws {
+        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let bundleID = "com.example.ArtApp"
+
+        // Ended session: explicit 140s span (100...240).
+        let endedID = try uuid("00000000-0000-0000-0000-0000000000E1")
+        try await client.openSession(CaptureSession(
+            id: endedID, bundleIdentifier: bundleID, displayName: "Art App",
+            processIdentifier: 1, startedAt: Date(timeIntervalSince1970: 100)
+        ))
+        let endedWindow = try uuid("00000000-0000-0000-0000-0000000000E2")
+        try await client.upsertWindow(MonitoredWindow(
+            id: endedWindow, sessionID: endedID, systemWindowID: 1, displayNumber: 1,
+            label: nil, firstSeenAt: Date(timeIntervalSince1970: 100), lastSeenAt: Date(timeIntervalSince1970: 240)
+        ))
+        try await client.recordScreenshot(ScreenshotRecord(
+            id: UUID(), windowID: endedWindow, sessionID: endedID,
+            capturedAt: Date(timeIntervalSince1970: 150),
+            fileURL: URL(filePath: "/tmp/e1.heic"), fileSizeBytes: 10
+        ))
+        try await client.closeSession(endedID, Date(timeIntervalSince1970: 240))
+
+        // Open session: no end, last screenshot at 520 -> 20s span from start 500.
+        let openID = try uuid("00000000-0000-0000-0000-0000000000F1")
+        try await client.openSession(CaptureSession(
+            id: openID, bundleIdentifier: bundleID, displayName: "Art App",
+            processIdentifier: 2, startedAt: Date(timeIntervalSince1970: 500)
+        ))
+        let openWindow = try uuid("00000000-0000-0000-0000-0000000000F2")
+        try await client.upsertWindow(MonitoredWindow(
+            id: openWindow, sessionID: openID, systemWindowID: 2, displayNumber: 1,
+            label: nil, firstSeenAt: Date(timeIntervalSince1970: 500), lastSeenAt: Date(timeIntervalSince1970: 520)
+        ))
+        try await client.recordScreenshot(ScreenshotRecord(
+            id: UUID(), windowID: openWindow, sessionID: openID,
+            capturedAt: Date(timeIntervalSince1970: 520),
+            fileURL: URL(filePath: "/tmp/o1.heic"), fileSizeBytes: 10
+        ))
+
+        let apps = try await client.apps()
+        let app = try XCTUnwrap(apps.first { $0.bundleIdentifier == bundleID })
+        // 140 (ended span) + 20 (open session up to last screenshot) = 160.
+        XCTAssertEqual(app.totalActiveDuration, 160, accuracy: 0.001)
+    }
+
     private func inMemoryContainer() throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: Schema.elapseRecorder, configurations: [configuration])

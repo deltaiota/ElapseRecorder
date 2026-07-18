@@ -89,11 +89,13 @@ struct AppSidebarRow: View {
             .init(value: model.app.screenshotCount, systemSymbol: .photo),
         ]
 
-        if let captureInterval = model.captureInterval {
+        // Total recorded time across the app's sessions. Hidden when the app has no sessions
+        // yet, so an untouched whitelisted app doesn't show a misleading duration.
+        if model.app.totalActiveDuration >= 1 {
             items.append(
                 .init(
-                    text: captureIntervalLabel(captureInterval),
-                    systemSymbol: .timer,
+                    text: durationLabel(model.app.totalActiveDuration),
+                    systemSymbol: .clock,
                     isMonospaced: true
                 )
             )
@@ -102,7 +104,7 @@ struct AppSidebarRow: View {
         return items
     }
 
-    private func captureIntervalLabel(_ interval: TimeInterval) -> String {
+    private func durationLabel(_ interval: TimeInterval) -> String {
         let totalSeconds = max(1, Int(interval.rounded()))
         let hours = totalSeconds / 3600
         let minutes = totalSeconds % 3600 / 60
@@ -163,7 +165,6 @@ struct AppSidebarRow: View {
     struct Model {
         let app: AppCaptureSummary
         let captureState: CaptureState
-        let captureInterval: TimeInterval?
 
         init(
             app: AppCaptureSummary,
@@ -173,7 +174,6 @@ struct AppSidebarRow: View {
             unavailableReason: CaptureUnavailableReason? = nil
         ) {
             self.app = app
-            captureInterval = whitelistConfig?.captureInterval
             captureIndicator = if let unavailableReason {
                 .unavailable(unavailableReason)
             } else if isCapturing {

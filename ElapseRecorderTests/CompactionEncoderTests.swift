@@ -1,4 +1,5 @@
 import AVFoundation
+import ComposableArchitecture
 @testable import ElapseRecorder
 import ImageIO
 import UniformTypeIdentifiers
@@ -76,9 +77,14 @@ final class CompactionEncoderTests: XCTestCase {
             frames: frames
         )
 
-        let size = try await FrameVideoCompactorClient.liveValue.compact(plan, 0.65)
+        let reportedCounts = LockIsolated<[Int]>([])
+        let size = try await FrameVideoCompactorClient.liveValue.compact(plan, 0.65) { framesEncoded in
+            reportedCounts.withValue { $0.append(framesEncoded) }
+        }
         XCTAssertGreaterThan(size, 0)
         XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+        // Progress is reported once per frame, 1-based and monotonically increasing.
+        XCTAssertEqual(reportedCounts.value, Array(1 ... 10))
 
         // The compacted video should be smaller than the sum of its source frames.
         let sourceTotal = try frames.reduce(0) {
@@ -107,7 +113,7 @@ final class CompactionEncoderTests: XCTestCase {
             frames: frames
         )
 
-        let size = try await FrameVideoCompactorClient.liveValue.compact(plan, 0.6)
+        let size = try await FrameVideoCompactorClient.liveValue.compact(plan, 0.6) { _ in }
         XCTAssertGreaterThan(size, 0)
         let image = try await VideoFrameExtractorClient.liveValue.image(output, 3)
         XCTAssertEqual(image.width, width)

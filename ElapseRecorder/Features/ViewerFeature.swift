@@ -146,6 +146,8 @@ struct ViewerFeature: Reducer {
     @Dependency(\.timelapseExportClient) private var timelapseExport
     @Dependency(\.exportPanelClient) private var exportPanel
     @Dependency(\.videoFrameExtractorClient) private var videoFrameExtractor
+    @Dependency(\.thumbnailClient) private var thumbnail
+    @Dependency(\.perceptualHashClient) private var perceptualHash
     @Dependency(\.frameVideoCompactorClient) private var frameVideoCompactor
     @Dependency(\.date) private var date
 
@@ -322,6 +324,8 @@ struct ViewerFeature: Reducer {
                 let exporter = timelapseExport
                 let panel = exportPanel
                 let fileReveal = fileReveal
+                let thumbnail = thumbnail
+                let perceptualHash = perceptualHash
                 let suggestedName = state.exportSuggestedFileName
                 let frameHashes = frames.map(\.perceptualHash)
 
@@ -331,15 +335,18 @@ struct ViewerFeature: Reducer {
                         return
                     }
 
-                    // Apply the chosen trim range and optional near-duplicate filter to the
-                    // frame set before encoding, mirroring what the accessory previewed.
-                    let selectedFrames = applyExportSelection(selection.options, to: frames)
-                    guard !selectedFrames.isEmpty else {
-                        await send(.exportCancelled)
-                        return
-                    }
-
                     do {
+                        // Apply the chosen trim range and optional near-duplicate filter to the
+                        // frame set before encoding, mirroring what the accessory previewed. Older
+                        // records have no stored hash, so resolve those from their actual pixels.
+                        let selectedFrames = try await applyExportSelection(selection.options, to: frames) { frame in
+                            let image = try await thumbnail.thumbnail(frame.frameSource, 64)
+                            return perceptualHash.hash(CapturedImage(cgImage: image))
+                        }
+                        guard !selectedFrames.isEmpty else {
+                            await send(.exportCancelled)
+                            return
+                        }
                         let request = TimelapseExportRequest(
                             frames: selectedFrames,
                             destinationURL: selection.destinationURL,
@@ -906,8 +913,12 @@ extension ViewerFeature.State {
 }
 
 /// Applies an export's trim range and optional near-duplicate filter to the ordered frames.
-/// Pure and file-scoped so the export effect's `@Sendable` closure can call it directly.
-private nonisolated func applyExportSelection(_ options: ExportOptions, to frames: [ExportFrame]) -> [ExportFrame] {
+/// Missing legacy hashes are resolved from source pixels only when filtering is enabled.
+private nonisolated func applyExportSelection(
+    _ options: ExportOptions,
+    to frames: [ExportFrame],
+    resolveMissingHash: @Sendable (ExportFrame) async throws -> UInt64
+) async throws -> [ExportFrame] {
     var result = frames
 
     if let range = options.trimRange {
@@ -917,7 +928,17 @@ private nonisolated func applyExportSelection(_ options: ExportOptions, to frame
     }
 
     if options.skipSimilarFrames {
-        let keep = ExportFrameFilter.keptIndices(hashes: result.map(\.perceptualHash))
+        var hashes: [UInt64?] = []
+        hashes.reserveCapacity(result.count)
+        for frame in result {
+            if frame.perceptualHash == 0 {
+                // A freshly computed zero is a valid dHash, unlike zero in legacy persistence.
+                try hashes.append(await resolveMissingHash(frame))
+            } else {
+                hashes.append(frame.perceptualHash)
+            }
+        }
+        let keep = ExportFrameFilter.keptIndices(hashes: hashes)
         result = keep.map { result[$0] }
     }
 

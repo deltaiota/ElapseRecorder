@@ -119,4 +119,50 @@ final class CompactionEncoderTests: XCTestCase {
         XCTAssertEqual(image.width, width)
         XCTAssertEqual(image.height, height)
     }
+
+    func testExportDerivesCanvasFromCompactedVideoWhenStoredDimensionsUnknown() async throws {
+        let width = 200, height = 120
+        let sourceFrames = try (0 ..< 8).map { try writeFrame(index: $0, width: width, height: height) }
+        let compactedVideo = directory.appending(path: "window-legacy.mov")
+        let plan = WindowCompactionPlan(
+            windowID: UUID(),
+            displayNumber: 3,
+            outputURL: compactedVideo,
+            canvasWidth: 0,
+            canvasHeight: 0,
+            frames: sourceFrames
+        )
+        _ = try await FrameVideoCompactorClient.liveValue.compact(plan, 0.65) { _ in }
+
+        for frame in sourceFrames {
+            try FileManager.default.removeItem(at: frame.sourceURL)
+        }
+        let exportFrames = sourceFrames.enumerated().map { index, frame in
+            ExportFrame(
+                url: frame.sourceURL,
+                pixelWidth: 0,
+                pixelHeight: 0,
+                capturedAt: frame.capturedAt,
+                videoURL: compactedVideo,
+                videoFrameIndex: index
+            )
+        }
+        let exportURL = directory.appending(path: "legacy-export.mov")
+        let request = TimelapseExportRequest(
+            frames: exportFrames,
+            destinationURL: exportURL,
+            codec: .hevc,
+            container: .mov,
+            framesPerSecond: 12,
+            interpolationFrames: 0,
+            maxOutputDimension: nil,
+            timestampOverlay: false
+        )
+
+        for try await _ in TimelapseExportClient.liveValue.export(request) {}
+
+        let exportedFrame = try await VideoFrameExtractorClient.liveValue.image(exportURL, 0)
+        XCTAssertEqual(exportedFrame.width, width)
+        XCTAssertEqual(exportedFrame.height, height)
+    }
 }

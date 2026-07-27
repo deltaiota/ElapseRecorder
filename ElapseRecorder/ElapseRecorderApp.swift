@@ -29,7 +29,7 @@ struct ElapseRecorderApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("Elapse Recorder", id: Self.libraryWindowID) {
+        Window("Elapse Recorder", id: Self.libraryWindowID) {
             ContentView(store: store)
         }
         .modelContainer(sharedModelContainer)

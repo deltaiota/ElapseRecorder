@@ -464,6 +464,51 @@ final class ViewerFeatureTests: XCTestCase {
         XCTAssertEqual(encodedFrames.value.map(\.url.lastPathComponent), ["1.heic", "2.heic", "4.heic"])
     }
 
+    @MainActor
+    func testExportResolvesLegacyCompactedHashesBeforeSkippingSimilarFrames() async {
+        let videoURL = URL(filePath: "/tmp/compacted.mov")
+        let frames = (0 ..< 5).map { (index: Int) in
+            ExportFrame(
+                url: URL(filePath: "/tmp/deleted-\(index).heic"),
+                pixelWidth: 100,
+                pixelHeight: 100,
+                perceptualHash: 0,
+                videoURL: videoURL,
+                videoFrameIndex: index
+            )
+        }
+        let options = ExportOptions(
+            codec: .h264, container: .mp4, framesPerSecond: 24, interpolationFrames: 0,
+            skipSimilarFrames: true
+        )
+        let hashes = LockIsolated<[UInt64]>([1, 1, 255, 255, 1])
+        let encodedFrames = LockIsolated<[ExportFrame]>([])
+
+        let store = TestStore(initialState: ViewerFeature.State()) {
+            ViewerFeature()
+        } withDependencies: {
+            $0.date = .constant(Date(timeIntervalSince1970: 0))
+            $0.exportPanelClient.present = { _, _ in
+                ExportSelection(destinationURL: URL(filePath: "/tmp/out.mp4"), options: options)
+            }
+            $0.thumbnailClient.thumbnail = { _, _ in Self.makeImage() }
+            $0.perceptualHashClient.hash = { _ in
+                hashes.withValue { $0.removeFirst() }
+            }
+            $0.timelapseExportClient.export = { request in
+                encodedFrames.setValue(request.frames)
+                return AsyncThrowingStream { $0.finish() }
+            }
+            $0.fileRevealClient.reveal = { _ in }
+        }
+        store.exhaustivity = .off
+
+        await store.send(.exportTimelapseRequested(frames: frames))
+        await store.skipReceivedActions()
+
+        XCTAssertEqual(encodedFrames.value.map(\.videoFrameIndex), [0, 2, 4])
+    }
+
     func testRetentionPolicySelectsByAgeAndSize() {
         let now = Date(timeIntervalSince1970: 10000)
         func session(_ n: Int, started: TimeInterval, bytes: Int) -> CaptureSessionSummary {

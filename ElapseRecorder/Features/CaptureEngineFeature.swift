@@ -24,14 +24,6 @@ struct CaptureEngineFeature: Reducer {
             var captureUnavailableReason: CaptureUnavailableReason?
             var unavailableRecordID: UUID?
             var unavailableStartedAt: Date?
-            /// The last frame actually written per window (keyed by window UUID). Used to skip
-            /// near-identical consecutive frames; the timestamp anchors the dedup heartbeat.
-            var lastKeptFrames: [UUID: KeptFrame] = [:]
-
-            struct KeptFrame: Equatable {
-                var perceptualHash: UInt64
-                var capturedAt: Date
-            }
         }
     }
 
@@ -380,8 +372,7 @@ struct CaptureEngineFeature: Reducer {
                 return capture(
                     monitoredWindows,
                     in: active.session,
-                    bundleIdentifier: bundleIdentifier,
-                    lastKeptFrames: active.lastKeptFrames
+                    bundleIdentifier: bundleIdentifier
                 )
 
             case let .windowsFailed(bundleIdentifier, message):
@@ -396,10 +387,6 @@ struct CaptureEngineFeature: Reducer {
             case let .screenshotRecorded(record):
                 for (bundleIdentifier, active) in state.activeSessions where active.session.id == record.sessionID {
                     state.activeSessions[bundleIdentifier]?.captureUnavailableReason = nil
-                    state.activeSessions[bundleIdentifier]?.lastKeptFrames[record.windowID] = .init(
-                        perceptualHash: record.perceptualHash,
-                        capturedAt: record.capturedAt
-                    )
                 }
                 logger.log(
                     .debug,
@@ -583,8 +570,7 @@ struct CaptureEngineFeature: Reducer {
     private func capture(
         _ windows: [MonitoredWindow],
         in session: CaptureSession,
-        bundleIdentifier: String,
-        lastKeptFrames: [UUID: State.ActiveSession.KeptFrame]
+        bundleIdentifier: String
     ) -> Effect<Action> {
         let date = date
         let encoder = encoder
@@ -596,8 +582,6 @@ struct CaptureEngineFeature: Reducer {
         let storage = storage
 
         return .run { send in
-            let dedup = preferences.deduplicationOptions()
-
             for window in windows {
                 do {
                     try await persistence.upsertWindow(window)
@@ -606,16 +590,6 @@ struct CaptureEngineFeature: Reducer {
                     let capturedAt = date.now()
                     let image = try await screenCapture.capture(window.systemWindowID)
                     let hash = perceptualHash.hash(image)
-
-                    // Skip writing a frame that's near-identical to the last kept one for this
-                    // window (within the heartbeat window), to save storage on static content.
-                    if let previous = lastKeptFrames[window.id] {
-                        let distance = PerceptualHash.distance(hash, previous.perceptualHash)
-                        let elapsed = Duration.seconds(capturedAt.timeIntervalSince(previous.capturedAt))
-                        if dedup.shouldSkip(distance: distance, elapsed: elapsed) {
-                            continue
-                        }
-                    }
 
                     let data = try await encoder.encode(image, options)
                     let url = try storage.screenshotURL(session, window, capturedAt, options.format)

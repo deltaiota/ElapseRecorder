@@ -1502,102 +1502,29 @@ final class CaptureEngineFeatureTests: XCTestCase {
         XCTAssertEqual(closedSessions.value.first?.1, endedAt)
     }
 
-    // MARK: - Frame deduplication (Phase 1)
+    // MARK: - Frame persistence
 
     @MainActor
-    func testIdenticalConsecutiveFrameIsSkipped() async {
-        let recorded = LockIsolated<[ScreenshotRecord]>([])
-        // Both cycles produce the same hash → the second frame is a near-duplicate.
-        let hashes = LockIsolated<[UInt64]>([0b0111, 0b0111])
-
-        let store = makeDedupStore(
-            recorded: recorded,
-            hashes: hashes,
-            options: FrameDeduplicationOptions(isEnabled: true, hammingThreshold: 4, heartbeat: .seconds(300))
-        )
-
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
-        await store.skipReceivedActions()
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
-        await store.skipReceivedActions()
-
-        XCTAssertEqual(recorded.value.count, 1, "second identical frame should be skipped")
-    }
-
-    @MainActor
-    func testChangedFrameIsKept() async {
-        let recorded = LockIsolated<[ScreenshotRecord]>([])
-        // Distance between the two hashes is 64 (well past the threshold) → keep both.
-        let hashes = LockIsolated<[UInt64]>([0, .max])
-
-        let store = makeDedupStore(
-            recorded: recorded,
-            hashes: hashes,
-            options: FrameDeduplicationOptions(isEnabled: true, hammingThreshold: 4, heartbeat: .seconds(300))
-        )
-
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
-        await store.skipReceivedActions()
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
-        await store.skipReceivedActions()
-
-        XCTAssertEqual(recorded.value.count, 2, "a materially different frame should be kept")
-    }
-
-    @MainActor
-    func testHeartbeatKeepsIdenticalFrameAfterTimeout() async {
+    func testIdenticalConsecutiveFramesAreRecordedAtEachCaptureCycle() async {
         let recorded = LockIsolated<[ScreenshotRecord]>([])
         let hashes = LockIsolated<[UInt64]>([0b0111, 0b0111])
-        let now = LockIsolated(Date(timeIntervalSince1970: 10))
+        let store = makeCaptureStore(recorded: recorded, hashes: hashes)
 
-        let store = makeDedupStore(
-            recorded: recorded,
-            hashes: hashes,
-            options: FrameDeduplicationOptions(isEnabled: true, hammingThreshold: 4, heartbeat: .seconds(300)),
-            now: now
-        )
-
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.captureWindow]))
         await store.skipReceivedActions()
-        // Advance past the heartbeat so the identical frame is kept anyway.
-        now.setValue(Date(timeIntervalSince1970: 10 + 400))
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.captureWindow]))
         await store.skipReceivedActions()
 
-        XCTAssertEqual(recorded.value.count, 2, "identical frame past the heartbeat should be kept")
-    }
-
-    @MainActor
-    func testDeduplicationDisabledKeepsEveryFrame() async {
-        let recorded = LockIsolated<[ScreenshotRecord]>([])
-        let hashes = LockIsolated<[UInt64]>([0b0111, 0b0111])
-
-        let store = makeDedupStore(
-            recorded: recorded,
-            hashes: hashes,
-            options: FrameDeduplicationOptions(isEnabled: false, hammingThreshold: 4, heartbeat: .seconds(300))
-        )
-
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
-        await store.skipReceivedActions()
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
-        await store.skipReceivedActions()
-
-        XCTAssertEqual(recorded.value.count, 2, "with dedup off, identical frames are still kept")
+        XCTAssertEqual(recorded.value.count, 2, "each successful capture cycle should persist a frame")
     }
 
     @MainActor
     func testRecordedScreenshotCarriesDimensionsAndHash() async {
         let recorded = LockIsolated<[ScreenshotRecord]>([])
         let hashes = LockIsolated<[UInt64]>([0x00AB_CDEF_1234_5678])
+        let store = makeCaptureStore(recorded: recorded, hashes: hashes)
 
-        let store = makeDedupStore(
-            recorded: recorded,
-            hashes: hashes,
-            options: FrameDeduplicationOptions(isEnabled: false, hammingThreshold: 4, heartbeat: .seconds(300))
-        )
-
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.dedupWindow]))
+        await store.send(.windowsLoaded("com.example.Dedup", [Self.captureWindow]))
         await store.skipReceivedActions()
 
         let record = recorded.value.first
@@ -1606,7 +1533,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
         XCTAssertEqual(record?.pixelHeight, 4)
     }
 
-    private static let dedupWindow = CapturableWindow(
+    private static let captureWindow = CapturableWindow(
         systemWindowID: 501,
         title: "Canvas",
         frame: CGRect(x: 0, y: 0, width: 800, height: 600),
@@ -1614,13 +1541,12 @@ final class CaptureEngineFeatureTests: XCTestCase {
         isOnScreen: true
     )
 
-    /// Builds a TestStore wired for frame-deduplication tests: one active session for
-    /// "com.example.Dedup", controlled hash values, and side-effect capture of recorded frames.
+    /// Builds a TestStore wired for frame-persistence tests: one active session, controlled
+    /// hash values, and side-effect capture of every recorded frame.
     @MainActor
-    private func makeDedupStore(
+    private func makeCaptureStore(
         recorded: LockIsolated<[ScreenshotRecord]>,
         hashes: LockIsolated<[UInt64]>,
-        options: FrameDeduplicationOptions,
         now: LockIsolated<Date> = LockIsolated(Date(timeIntervalSince1970: 10))
     ) -> TestStore<CaptureEngineFeature.State, CaptureEngineFeature.Action> {
         let app = RunningApplication(
@@ -1664,7 +1590,6 @@ final class CaptureEngineFeatureTests: XCTestCase {
             }
             $0.capturePreferencesClient.encodingOptions = { .defaultValue }
             $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
-            $0.capturePreferencesClient.deduplicationOptions = { options }
             $0.perceptualHashClient.hash = { _ in
                 hashes.withValue { $0.isEmpty ? 0 : $0.removeFirst() }
             }

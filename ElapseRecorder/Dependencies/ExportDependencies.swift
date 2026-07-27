@@ -168,7 +168,7 @@ private nonisolated enum TimelapseEncoder {
         let frames = request.frames
         guard !frames.isEmpty else { throw TimelapseExportError.noFrames }
 
-        let canvas = try canvasSize(for: frames, maxDimension: request.maxOutputDimension)
+        let canvas = try await canvasSize(for: frames, maxDimension: request.maxOutputDimension)
         try? FileManager.default.removeItem(at: request.destinationURL)
 
         let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: request.container.avFileType)
@@ -335,22 +335,30 @@ private nonisolated enum TimelapseEncoder {
     }
 
     /// The smallest even-sized canvas that fits every frame (H.264/HEVC want even sides). Uses
-    /// each frame's stored pixel size when known, only opening the file's metadata as a fallback.
+    /// each frame's stored pixel size when known, reading image or video metadata as a fallback.
     /// When `maxDimension` is set, the canvas is scaled down so its longest side fits the cap.
-    private static func canvasSize(for frames: [ExportFrame], maxDimension: Int?) throws -> CGSize {
+    private static func canvasSize(for frames: [ExportFrame], maxDimension: Int?) async throws -> CGSize {
         var maxWidth = 0
         var maxHeight = 0
+        var videoSizes: [URL: CGSize] = [:]
 
         for frame in frames {
             let size: CGSize
             if let known = frame.knownPixelSize {
                 size = known
-            } else if case let .file(url) = frame.frameSource {
-                size = try imagePixelSize(at: url)
             } else {
-                // Video-backed frame without stored dimensions (practically never happens, since
-                // compaction post-dates dimension tracking): rely on sibling frames for the canvas.
-                continue
+                switch frame.frameSource {
+                case let .file(url):
+                    size = try imagePixelSize(at: url)
+                case let .videoFrame(video, _):
+                    if let cached = videoSizes[video] {
+                        size = cached
+                    } else {
+                        let resolved = try await videoPixelSize(at: video)
+                        videoSizes[video] = resolved
+                        size = resolved
+                    }
+                }
             }
             maxWidth = max(maxWidth, Int(size.width))
             maxHeight = max(maxHeight, Int(size.height))
@@ -377,6 +385,28 @@ private nonisolated enum TimelapseEncoder {
             throw TimelapseExportError.unreadableImage(url)
         }
         return CGSize(width: width, height: height)
+    }
+
+    private static func videoPixelSize(at url: URL) async throws -> CGSize {
+        do {
+            let asset = AVURLAsset(url: url)
+            guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+                throw TimelapseExportError.unreadableImage(url)
+            }
+            let naturalSize = try await track.load(.naturalSize)
+            let preferredTransform = try await track.load(.preferredTransform)
+            let presentationSize = CGRect(origin: .zero, size: naturalSize)
+                .applying(preferredTransform)
+                .standardized.size
+            guard presentationSize.width > 0, presentationSize.height > 0 else {
+                throw TimelapseExportError.unreadableImage(url)
+            }
+            return presentationSize
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw TimelapseExportError.unreadableImage(url)
+        }
     }
 
     /// Decode a source image eagerly and no larger than the canvas needs. Using the thumbnail

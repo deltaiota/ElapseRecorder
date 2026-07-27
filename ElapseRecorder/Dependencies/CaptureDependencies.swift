@@ -21,9 +21,6 @@ nonisolated extension Defaults.Keys {
     static let captureMaxDimension = Key<Int>("captureMaxDimension", default: 2560)
     static let thumbnailMaximumPixelSize = Key<Int>("thumbnailMaximumPixelSize", default: 1024)
     static let whitelistedAppConfigsData = Key<Data>("whitelistedAppConfigsData", default: Data())
-    static let skipIdenticalFrames = Key<Bool>("skipIdenticalFrames", default: true)
-    static let identicalFrameHammingThreshold = Key<Int>("identicalFrameHammingThreshold", default: 4)
-    static let identicalFrameHeartbeatSeconds = Key<Int>("identicalFrameHeartbeatSeconds", default: 300)
     static let customCaptureRootPath = Key<String>("customCaptureRootPath", default: "")
     static let retentionMaxAgeEnabled = Key<Bool>("retentionMaxAgeEnabled", default: false)
     static let retentionMaxAgeDays = Key<Int>("retentionMaxAgeDays", default: 30)
@@ -51,7 +48,6 @@ nonisolated struct IDGeneratorClient {
 nonisolated struct CapturePreferencesClient {
     var encodingOptions: @Sendable () -> CaptureEncodingOptions
     var thumbnailMaximumPixelSize: @Sendable () -> Int
-    var deduplicationOptions: @Sendable () -> FrameDeduplicationOptions
     var retentionPolicy: @Sendable () -> RetentionPolicy
     var autoCompactOnSessionClose: @Sendable () -> Bool
 }
@@ -206,13 +202,6 @@ extension CapturePreferencesClient: DependencyKey {
         thumbnailMaximumPixelSize: {
             Defaults[.thumbnailMaximumPixelSize]
         },
-        deduplicationOptions: {
-            FrameDeduplicationOptions(
-                isEnabled: Defaults[.skipIdenticalFrames],
-                hammingThreshold: Defaults[.identicalFrameHammingThreshold],
-                heartbeat: .seconds(Defaults[.identicalFrameHeartbeatSeconds])
-            )
-        },
         retentionPolicy: {
             RetentionPolicy(
                 maxAge: Defaults[.retentionMaxAgeEnabled]
@@ -235,7 +224,6 @@ extension CapturePreferencesClient: DependencyKey {
     static let testValue = Self(
         encodingOptions: { .defaultValue },
         thumbnailMaximumPixelSize: { 1024 },
-        deduplicationOptions: { .defaultValue },
         retentionPolicy: { .none },
         autoCompactOnSessionClose: { false }
     )
@@ -253,7 +241,7 @@ extension PerceptualHashClient: DependencyKey {
     /// dHash: downscale to 9x8 grayscale and, for each row, emit a bit per adjacent-pixel
     /// comparison (left brighter than right), yielding 8×8 = 64 bits. Robust to small changes
     /// and cheap to compute.
-    private static func differenceHash(_ image: CGImage) -> UInt64 {
+    private nonisolated static func differenceHash(_ image: CGImage) -> UInt64 {
         let width = 9
         let height = 8
         var pixels = [UInt8](repeating: 0, count: width * height)
@@ -684,6 +672,11 @@ extension ThumbnailClient: DependencyKey {
             let (image, _) = try await generator.image(at: time)
             return image
         }
+    }
+
+    static let testValue = Self { _, _ in
+        reportIssue("ThumbnailClient.thumbnail is unimplemented")
+        throw CancellationError()
     }
 }
 

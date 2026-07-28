@@ -304,27 +304,49 @@ extension CapturePermissionClient: DependencyKey {
     )
 }
 
+/// Retains the `SCWindow` snapshot produced by enumeration long enough for the immediately
+/// following screenshot. Re-enumerating all shareable desktop content for every individual
+/// window doubled the expensive ScreenCaptureKit discovery work in each cycle.
+private final nonisolated class ScreenCaptureWindowCache: @unchecked Sendable {
+    private let windows = LockIsolated<[Int: SCWindow]>([:])
+
+    func store(_ newWindows: [SCWindow]) {
+        windows.withValue { cached in
+            for window in newWindows {
+                cached[Int(window.windowID)] = window
+            }
+        }
+    }
+
+    func window(id: Int) -> SCWindow? {
+        windows.withValue { $0[id] }
+    }
+}
+
 extension ScreenCaptureClient: DependencyKey {
-    static let liveValue = Self(
-        windows: { application in
-            // Enumerate the windows ScreenCaptureKit considers on-screen. The domain
-            // `shouldCapture` filter then drops minimized/hidden/off-Space windows
-            // (isOnScreen == false) and Stage Manager-stowed windows (flagged below).
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    static let liveValue: Self = {
+        let windowCache = ScreenCaptureWindowCache()
 
-            // A stowed window stays on-screen but is presented as a small strip thumbnail,
-            // so no ScreenCaptureKit/CoreGraphics property reveals it. Accessibility still
-            // reports each window's real size, so a presented frame that matches none of the
-            // app's real Accessibility sizes is a stowed proxy. When Accessibility isn't
-            // granted, axSizes is nil and capture proceeds (graceful degradation).
-            let axSizes = AccessibilityWindowInspector.realWindowSizes(pid: application.processIdentifier)
+        return Self(
+            windows: { application in
+                // Enumerate the windows ScreenCaptureKit considers on-screen. The domain
+                // `shouldCapture` filter then drops minimized/hidden/off-Space windows
+                // (isOnScreen == false) and Stage Manager-stowed windows (flagged below).
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
-            return content.windows
-                .filter { window in
+                // A stowed window stays on-screen but is presented as a small strip thumbnail,
+                // so no ScreenCaptureKit/CoreGraphics property reveals it. Accessibility still
+                // reports each window's real size, so a presented frame that matches none of the
+                // app's real Accessibility sizes is a stowed proxy. When Accessibility isn't
+                // granted, axSizes is nil and capture proceeds (graceful degradation).
+                let axSizes = AccessibilityWindowInspector.realWindowSizes(pid: application.processIdentifier)
+                let applicationWindows = content.windows.filter { window in
                     window.owningApplication?.bundleIdentifier == application.bundleIdentifier
                         && window.owningApplication?.processID == application.processIdentifier
                 }
-                .map { window in
+                windowCache.store(applicationWindows)
+
+                return applicationWindows.map { window in
                     var capturable = CapturableWindow(window: window)
                     if let axSizes {
                         capturable.isStageManagerStowed = !AccessibilityWindowInspector.size(
@@ -334,37 +356,50 @@ extension ScreenCaptureClient: DependencyKey {
                     }
                     return capturable
                 }
-        },
-        capture: { windowID in
-            // Re-enumerate through the same on-screen gate used for detection so a window
-            // that became minimized between ticks is refused here (the caller turns the
-            // thrown error into a timeline placeholder) instead of producing a stale frame.
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let window = content.windows.first(where: { Int($0.windowID) == windowID }),
-                  window.isOnScreen
-            else {
-                throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
+            },
+            capture: { windowID in
+                let window: SCWindow
+                if let cached = windowCache.window(id: windowID) {
+                    window = cached
+                } else {
+                    // Defensive fallback for callers that did not enumerate first.
+                    let content = try await SCShareableContent.excludingDesktopWindows(
+                        false,
+                        onScreenWindowsOnly: true
+                    )
+                    guard let discovered = content.windows.first(where: { Int($0.windowID) == windowID }) else {
+                        throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
+                    }
+                    windowCache.store([discovered])
+                    window = discovered
+                }
+                guard window.isOnScreen else {
+                    throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
+                }
+
+                let filter = SCContentFilter(desktopIndependentWindow: window)
+                let configuration = SCStreamConfiguration()
+                let info = SCShareableContent.info(for: filter)
+                let scale = CGFloat(info.pointPixelScale)
+                let nativeWidth = max(1, Int((info.contentRect.width * scale).rounded(.up)))
+                let nativeHeight = max(1, Int((info.contentRect.height * scale).rounded(.up)))
+                let size = CaptureResolution.cappedPixelSize(
+                    width: nativeWidth,
+                    height: nativeHeight,
+                    maxDimension: Defaults[.captureMaxDimension]
+                )
+                configuration.width = size.width
+                configuration.height = size.height
+                configuration.showsCursor = false
+
+                let image = try await SCScreenshotManager.captureImage(
+                    contentFilter: filter,
+                    configuration: configuration
+                )
+                return CapturedImage(cgImage: image)
             }
-
-            let filter = SCContentFilter(desktopIndependentWindow: window)
-            let configuration = SCStreamConfiguration()
-            let info = SCShareableContent.info(for: filter)
-            let scale = CGFloat(info.pointPixelScale)
-            let nativeWidth = max(1, Int((info.contentRect.width * scale).rounded(.up)))
-            let nativeHeight = max(1, Int((info.contentRect.height * scale).rounded(.up)))
-            let size = CaptureResolution.cappedPixelSize(
-                width: nativeWidth,
-                height: nativeHeight,
-                maxDimension: Defaults[.captureMaxDimension]
-            )
-            configuration.width = size.width
-            configuration.height = size.height
-            configuration.showsCursor = false
-
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            return CapturedImage(cgImage: image)
-        }
-    )
+        )
+    }()
 }
 
 extension ImageEncodingClient: DependencyKey {

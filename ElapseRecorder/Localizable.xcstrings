@@ -845,6 +845,22 @@
         }
       }
     },
+    "Average interval" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Average interval"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "平均截图间隔"
+          }
+        }
+      }
+    },
     "Balanced" : {
       "localizations" : {
         "en" : {
@@ -873,6 +889,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将每一帧的捕获时间烧录到视频角落。"
+          }
+        }
+      }
+    },
+    "Calculated from original capture timestamps and preserved after compaction." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calculated from original capture timestamps and preserved after compaction."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "根据原始捕获时间戳计算，压缩后仍会保留。"
           }
         }
       }

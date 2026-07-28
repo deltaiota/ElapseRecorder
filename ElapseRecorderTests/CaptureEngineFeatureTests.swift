@@ -1340,7 +1340,7 @@ final class CaptureEngineFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testCaptureTickIsIgnoredWhileCycleIsInFlight() async throws {
+    func testCaptureTickCoalescesWhileCycleIsInFlight() async throws {
         let app = RunningApplication(
             bundleIdentifier: "com.example.SlowApp",
             displayName: "Slow App",
@@ -1372,14 +1372,92 @@ final class CaptureEngineFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             CaptureEngineFeature()
         } withDependencies: {
+            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
             $0.screenCaptureClient.windows = { _ in
                 windowEnumerationCount.withValue { $0 += 1 }
                 return []
             }
         }
 
+        await store.send(.captureTick(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCapturePending = true
+        }
         await store.send(.captureTick(app.bundleIdentifier))
         XCTAssertEqual(windowEnumerationCount.value, 0)
+
+        await store.send(.captureCycleFinished(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+            $0.activeSessions[app.bundleIdentifier]?.isCapturePending = false
+        }
+        await store.receive(.captureTick(app.bundleIdentifier)) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
+            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
+        }
+        XCTAssertEqual(windowEnumerationCount.value, 1)
+    }
+
+    @MainActor
+    func testCaptureLoopWaitsFullIntervalBetweenTicks() async {
+        let application = RunningApplication(
+            bundleIdentifier: "com.example.SuspendedApp",
+            displayName: "Suspended App",
+            processIdentifier: 8
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: application.bundleIdentifier,
+            displayName: application.displayName,
+            captureInterval: 1,
+            isEnabled: true
+        )
+        let session = CaptureSession(
+            id: UUID(),
+            bundleIdentifier: application.bundleIdentifier,
+            displayName: application.displayName,
+            processIdentifier: application.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 1)
+        )
+        let clock = TestClock()
+        var state = CaptureEngineFeature.State()
+        state.runningApplications[application.bundleIdentifier] = application
+        state.activeSessions[application.bundleIdentifier] = .init(
+            application: application,
+            config: config,
+            session: session
+        )
+        let store = TestStore(initialState: state) {
+            CaptureEngineFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
+            $0.persistenceClient.closeSession = { _, _ in }
+            $0.screenCaptureClient.windows = { _ in [] }
+        }
+
+        await store.send(.sessionOpened(session, application))
+        await store.receive(.captureTick(application.bundleIdentifier)) {
+            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(application.bundleIdentifier, [])) {
+            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = false
+        }
+
+        await clock.advance(by: .milliseconds(999))
+        await clock.advance(by: .milliseconds(1))
+        await store.receive(.captureTick(application.bundleIdentifier)) {
+            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = true
+        }
+        await store.receive(.windowsLoaded(application.bundleIdentifier, [])) {
+            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = false
+        }
+
+        await store.send(.workspaceEvent(.terminated(application))) {
+            $0.lastWorkspaceEvent = .terminated(application)
+            $0.runningApplications[application.bundleIdentifier] = nil
+            $0.activeSessions[application.bundleIdentifier] = nil
+        }
+        await store.receive(.sessionClosed(application.bundleIdentifier))
     }
 
     @MainActor

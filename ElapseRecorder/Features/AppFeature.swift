@@ -82,9 +82,16 @@ struct AppFeature: Reducer {
                     .send(.viewer(.enforceRetentionRequested))
                 )
 
-            case .captureEngine(.screenshotRecorded),
-                 .captureEngine(.captureUnavailableRecorded),
-                 .captureEngine(.sessionOpened):
+            case let .captureEngine(.screenshotRecorded(record)):
+                guard let bundleIdentifier = state.captureEngine.activeSessions.first(where: {
+                    $0.value.session.id == record.sessionID
+                })?.key else { return .none }
+                return .send(.viewer(.captureScreenshotRecorded(record, bundleIdentifier: bundleIdentifier)))
+
+            case let .captureEngine(.captureUnavailableRecorded(record)):
+                return .send(.viewer(.captureUnavailableRecorded(record)))
+
+            case .captureEngine(.sessionOpened):
                 return .send(.viewer(.refresh))
 
             case .captureEngine, .viewer:

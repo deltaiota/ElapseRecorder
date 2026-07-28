@@ -179,6 +179,7 @@ struct DetailPaneView: View {
             gridItemSize: $gridItemSize,
             onJumpToLatest: { jumpToLatestTrigger += 1 },
             isExportDisabled: exportScopeFrames.isEmpty || store.isExporting,
+            averageInterval: averageScreenshotInterval,
             onExport: {
                 store.send(.exportTimelapseRequested(frames: exportScopeFrames))
             }
@@ -204,18 +205,28 @@ struct DetailPaneView: View {
         return currentScreenshotURLs.contains(current) ? currentScreenshotURLs : [current]
     }
 
-    /// What a timelapse export covers: the multi-selection if the user picked several
-    /// frames, otherwise the whole current grid — always in chronological order. Each frame
-    /// carries its stored pixel size so the encoder can size the video without opening files.
-    private var exportScopeFrames: [ExportFrame] {
+    /// Screenshot scope shared by export and cadence display: a multi-selection when present,
+    /// otherwise every screenshot currently shown. Capture timestamps survive compaction.
+    private var screenshotScopeRecords: [ScreenshotRecord] {
         let entries = store.isShowingFlatGallery ? store.flatTimelineEntries : store.windowTimelineEntries
         let selection = store.selectedScreenshotIDs
         let useSelection = selection.count >= 2
 
         return entries.compactMap { entry in
             guard case let .screenshot(record) = entry else { return nil }
-            if useSelection, !selection.contains(record.id) { return nil }
-            return ExportFrame(
+            return !useSelection || selection.contains(record.id) ? record : nil
+        }
+    }
+
+    private var averageScreenshotInterval: TimeInterval? {
+        ScreenshotInterval.average(records: screenshotScopeRecords)
+    }
+
+    /// What a timelapse export covers, always in chronological order. Each frame carries its
+    /// original capture time independently of whether its pixels live in an image or video.
+    private var exportScopeFrames: [ExportFrame] {
+        screenshotScopeRecords.map { record in
+            ExportFrame(
                 url: record.fileURL,
                 pixelWidth: record.pixelWidth,
                 pixelHeight: record.pixelHeight,

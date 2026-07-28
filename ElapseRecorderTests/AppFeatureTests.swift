@@ -367,6 +367,50 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testRecordedScreenshotUpdatesViewerWithoutFullRefresh() async {
+        let application = RunningApplication(
+            bundleIdentifier: "com.example.ArtApp",
+            displayName: "Art App",
+            processIdentifier: 42
+        )
+        let config = WhitelistedAppConfig(
+            bundleIdentifier: application.bundleIdentifier,
+            displayName: application.displayName,
+            captureInterval: 1,
+            isEnabled: true
+        )
+        let session = CaptureSession(
+            id: UUID(),
+            bundleIdentifier: application.bundleIdentifier,
+            displayName: application.displayName,
+            processIdentifier: application.processIdentifier,
+            startedAt: Date(timeIntervalSince1970: 100)
+        )
+        let record = ScreenshotRecord(
+            id: UUID(),
+            windowID: UUID(),
+            sessionID: session.id,
+            capturedAt: Date(timeIntervalSince1970: 101),
+            fileURL: URL(filePath: "/tmp/frame.heic"),
+            fileSizeBytes: 1
+        )
+        var state = AppFeature.State()
+        state.captureEngine.activeSessions[application.bundleIdentifier] = .init(
+            application: application,
+            config: config,
+            session: session
+        )
+        let store = TestStore(initialState: state) {
+            AppFeature()
+        }
+
+        await store.send(.captureEngine(.screenshotRecorded(record)))
+        await store.receive(
+            .viewer(.captureScreenshotRecorded(record, bundleIdentifier: application.bundleIdentifier))
+        )
+    }
+
+    @MainActor
     func testCaptureSessionEventsRefreshViewer() async {
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()

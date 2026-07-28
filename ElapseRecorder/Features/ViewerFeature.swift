@@ -111,6 +111,8 @@ struct ViewerFeature: Reducer {
         case sessionListSelectionChanged(State.SessionListSelection?)
         case flatGallerySelected
         case flatTimelineEntriesLoaded([CaptureTimelineEntry])
+        case captureScreenshotRecorded(ScreenshotRecord, bundleIdentifier: String)
+        case captureUnavailableRecorded(CaptureUnavailableRecord)
         case screenshotSelectionChanged(Set<UUID>)
         case quickLookURLChanged(URL?)
         case quickLookRequested(ScreenshotRecord)
@@ -278,6 +280,18 @@ struct ViewerFeature: Reducer {
             case let .flatTimelineEntriesLoaded(entries):
                 state.flatTimelineEntries = entries
                 state.isLoading = false
+                return .none
+
+            case let .captureScreenshotRecorded(record, bundleIdentifier):
+                let requiresStructuralRefresh = state.selectedBundleIdentifier == bundleIdentifier
+                    && (!state.sessions.contains { $0.id == record.sessionID }
+                        || (state.selectedSessionID == record.sessionID
+                            && !state.windows.contains { $0.id == record.windowID }))
+                state.recordCapturedScreenshot(record, bundleIdentifier: bundleIdentifier)
+                return requiresStructuralRefresh ? .send(.refresh) : .none
+
+            case let .captureUnavailableRecorded(record):
+                state.recordCaptureUnavailable(record)
                 return .none
 
             case let .screenshotSelectionChanged(ids):
@@ -894,6 +908,98 @@ extension ViewerFeature.State {
         sessionTimeline = nil
         windowTimelineEntries = []
         flatTimelineEntries = []
+    }
+
+    /// Applies one persisted capture without re-querying and copying the full library. This path
+    /// runs once per frame, so it must stay proportional to the small summary/timeline surfaces
+    /// being updated rather than to the total number of stored screenshots.
+    mutating func recordCapturedScreenshot(
+        _ record: ScreenshotRecord,
+        bundleIdentifier: String
+    ) {
+        if let index = apps.firstIndex(where: { $0.bundleIdentifier == bundleIdentifier }) {
+            let previousLastCapture = apps[index].lastCapturedAt
+            apps[index].screenshotCount += 1
+            apps[index].sizeBytes += record.fileSizeBytes
+            apps[index].lastCapturedAt = max(previousLastCapture ?? record.capturedAt, record.capturedAt)
+
+            if let session = sessions.first(where: { $0.id == record.sessionID }),
+               session.endedAt == nil
+            {
+                let priorEnd = max(session.startedAt, previousLastCapture ?? session.startedAt)
+                apps[index].totalActiveDuration += max(0, record.capturedAt.timeIntervalSince(priorEnd))
+            }
+        }
+
+        if let index = sessions.firstIndex(where: { $0.id == record.sessionID }) {
+            sessions[index].screenshotCount += 1
+            sessions[index].sizeBytes += record.fileSizeBytes
+        }
+        if let index = windows.firstIndex(where: { $0.id == record.windowID }) {
+            windows[index].screenshotCount += 1
+        }
+
+        if isShowingFlatGallery, selectedBundleIdentifier == bundleIdentifier {
+            Self.appendIfNew(.screenshot(record), to: &flatTimelineEntries)
+        }
+        if selectedSessionID == record.sessionID,
+           selectedWindowID == record.windowID,
+           selectedSegment.map({ record.capturedAt >= $0.startedAt && record.capturedAt <= $0.endedAt }) ?? true
+        {
+            Self.appendIfNew(.screenshot(record), to: &windowTimelineEntries)
+        }
+
+        if var timeline = sessionTimeline,
+           timeline.sessionID == record.sessionID,
+           let laneIndex = timeline.lanes.firstIndex(where: { $0.windowID == record.windowID })
+        {
+            timeline.lanes[laneIndex].diedAt = max(timeline.lanes[laneIndex].diedAt, record.capturedAt)
+            timeline.lanes[laneIndex].screenshotCount += 1
+            if let segmentIndex = timeline.lanes[laneIndex].segments.lastIndex(where: {
+                record.capturedAt >= $0.startedAt && record.capturedAt <= $0.endedAt
+            }) {
+                timeline.lanes[laneIndex].segments[segmentIndex].screenshotCount += 1
+            }
+            sessionTimeline = timeline
+        }
+    }
+
+    mutating func recordCaptureUnavailable(_ record: CaptureUnavailableRecord) {
+        guard selectedSessionID == record.sessionID else { return }
+
+        let entry = CaptureTimelineEntry.unavailable(record)
+        if selectedWindowID != nil {
+            Self.upsert(entry, in: &windowTimelineEntries)
+        }
+        if var timeline = sessionTimeline, timeline.sessionID == record.sessionID {
+            if let index = timeline.unavailableSpans.lastIndex(where: { $0.startedAt == record.startedAt }) {
+                timeline.unavailableSpans[index].endedAt = record.endedAt
+            } else {
+                timeline.unavailableSpans.append(TimeSpan(startedAt: record.startedAt, endedAt: record.endedAt))
+            }
+            sessionTimeline = timeline
+        }
+    }
+
+    private static func appendIfNew(
+        _ entry: CaptureTimelineEntry,
+        to entries: inout [CaptureTimelineEntry]
+    ) {
+        guard entries.last?.id != entry.id else { return }
+        entries.append(entry)
+    }
+
+    private static func upsert(
+        _ entry: CaptureTimelineEntry,
+        in entries: inout [CaptureTimelineEntry]
+    ) {
+        if entries.last?.id == entry.id {
+            entries[entries.count - 1] = entry
+        } else if let index = entries.firstIndex(where: { $0.id == entry.id }) {
+            entries[index] = entry
+        } else {
+            entries.append(entry)
+        }
     }
 
     mutating func clearScreenshotSelection() {

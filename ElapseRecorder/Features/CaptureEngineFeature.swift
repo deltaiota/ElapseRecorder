@@ -21,6 +21,10 @@ struct CaptureEngineFeature: Reducer {
             var nextWindowNumber: Int = 1
             var windowsBySystemID: [Int: MonitoredWindow] = [:]
             var isCaptureInFlight = false
+            /// Coalesces ticks that arrive during a slow cycle. The next cycle starts as soon as
+            /// the current one finishes instead of waiting for — and potentially missing —
+            /// another scheduler tick.
+            var isCapturePending = false
             var captureUnavailableReason: CaptureUnavailableReason?
             var unavailableRecordID: UUID?
             var unavailableStartedAt: Date?
@@ -272,15 +276,16 @@ struct CaptureEngineFeature: Reducer {
                 return .none
 
             case let .captureTick(bundleIdentifier):
-                guard var active = state.activeSessions[bundleIdentifier],
-                      !active.isCaptureInFlight
-                else {
+                guard var active = state.activeSessions[bundleIdentifier] else { return .none }
+                guard !active.isCaptureInFlight else {
+                    active.isCapturePending = true
+                    state.activeSessions[bundleIdentifier] = active
                     return .none
                 }
 
                 active.isCaptureInFlight = true
+                active.isCapturePending = false
                 state.activeSessions[bundleIdentifier] = active
-
                 let application = active.application
                 let screenCapture = screenCapture
                 return .run { send in
@@ -306,11 +311,9 @@ struct CaptureEngineFeature: Reducer {
                 // stretch: it's created on the transition (only after the session has seen
                 // real windows) and its end time is extended on each subsequent tick.
                 guard !capturableWindows.isEmpty else {
-                    active.isCaptureInFlight = false
-
                     guard !active.windowsBySystemID.isEmpty else {
                         state.activeSessions[bundleIdentifier] = active
-                        return .none
+                        return finishCaptureCycle(bundleIdentifier, state: &state)
                     }
 
                     active.captureUnavailableReason = .windowMinimized
@@ -320,14 +323,17 @@ struct CaptureEngineFeature: Reducer {
                     active.unavailableStartedAt = startedAt
                     state.activeSessions[bundleIdentifier] = active
 
-                    return recordCaptureUnavailable(
-                        CaptureUnavailableRecord(
-                            id: recordID,
-                            sessionID: active.session.id,
-                            startedAt: startedAt,
-                            endedAt: seenAt,
-                            reason: .windowMinimized
-                        )
+                    return .merge(
+                        recordCaptureUnavailable(
+                            CaptureUnavailableRecord(
+                                id: recordID,
+                                sessionID: active.session.id,
+                                startedAt: startedAt,
+                                endedAt: seenAt,
+                                reason: .windowMinimized
+                            )
+                        ),
+                        finishCaptureCycle(bundleIdentifier, state: &state)
                     )
                 }
 
@@ -376,13 +382,12 @@ struct CaptureEngineFeature: Reducer {
                 )
 
             case let .windowsFailed(bundleIdentifier, message):
-                state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
                 let shouldLog = state.lastError != message
                 state.recordDiagnostic(.failure(message))
                 if shouldLog {
                     logger.log(.error, message, [:])
                 }
-                return .none
+                return finishCaptureCycle(bundleIdentifier, state: &state)
 
             case let .screenshotRecorded(record):
                 for (bundleIdentifier, active) in state.activeSessions where active.session.id == record.sessionID {
@@ -410,13 +415,26 @@ struct CaptureEngineFeature: Reducer {
                 return .none
 
             case let .captureCycleFinished(bundleIdentifier):
-                state.activeSessions[bundleIdentifier]?.isCaptureInFlight = false
-                return .none
+                return finishCaptureCycle(bundleIdentifier, state: &state)
 
             case .sessionClosed:
                 return .none
             }
         }
+    }
+
+    /// Completes one capture cycle and immediately services one coalesced tick, if present.
+    /// This avoids quantizing a 1.1-second cycle into a 2-second effective interval.
+    private func finishCaptureCycle(
+        _ bundleIdentifier: String,
+        state: inout State
+    ) -> Effect<Action> {
+        guard var active = state.activeSessions[bundleIdentifier] else { return .none }
+        let shouldStartPendingCycle = active.isCapturePending
+        active.isCaptureInFlight = false
+        active.isCapturePending = false
+        state.activeSessions[bundleIdentifier] = active
+        return shouldStartPendingCycle ? .send(.captureTick(bundleIdentifier)) : .none
     }
 
     private func attemptAutoStart(
@@ -535,31 +553,17 @@ struct CaptureEngineFeature: Reducer {
         let clock = clock
 
         return .run { send in
-            // Drift-free fixed-rate scheduling. Each cycle's real elapsed time (tick
-            // dispatch and the sleep itself) is measured and accumulated, and the next
-            // sleep is sized so the running total tracks the absolute grid n·interval.
-            // Sleeping a flat `interval` after each tick instead lets per-cycle overhead
-            // and any sleep overshoot accumulate, drifting the effective period longer
-            // than requested; feeding the measured elapsed back keeps the long-run
-            // average exactly at `interval`.
+            // One immediate tick, then one sleep per interval. Never replay elapsed ticks after
+            // main-thread stalls or system sleep: catch-up bursts only burn CPU and cannot
+            // reconstruct screenshots from the missed wall-clock instants.
             do {
-                var elapsed: Duration = .zero
-                var tickCount = 0
-
                 while !Task.isCancelled {
-                    elapsed += await clock.measure {
-                        await send(.captureTick(bundleIdentifier))
-                    }
-                    tickCount += 1
-
-                    let remaining = interval * tickCount - elapsed
-                    if remaining > .zero {
-                        elapsed += try await clock.measure {
-                            try await clock.sleep(for: remaining)
-                        }
-                    }
+                    await send(.captureTick(bundleIdentifier))
+                    try await clock.sleep(for: interval)
                 }
-            } catch {}
+            } catch is CancellationError {
+                // Normal cancellation when a session ends or its interval changes.
+            }
         }
         .cancellable(
             id: captureLoopID(bundleIdentifier),

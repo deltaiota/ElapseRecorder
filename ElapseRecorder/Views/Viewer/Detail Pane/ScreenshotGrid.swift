@@ -19,11 +19,15 @@ struct ScreenshotGrid: View {
     private let prefetchCount = 6
 
     var body: some View {
+        // Derive the prefetch map once per grid update. Computing it inside every lazy cell
+        // turns an n-frame gallery into O(n²) work and can starve capture actions on MainActor.
+        let displayedEntries = displayedEntries
+        let prefetchByID = makePrefetchMap(for: displayedEntries)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: itemSize), spacing: 14)], spacing: 14) {
                     ForEach(displayedEntries) { entry in
-                        cell(for: entry)
+                        cell(for: entry, prefetchByID: prefetchByID)
                             .id(entry.id)
                     }
                 }
@@ -87,7 +91,10 @@ struct ScreenshotGrid: View {
     }
 
     @ViewBuilder
-    private func cell(for entry: CaptureTimelineEntry) -> some View {
+    private func cell(
+        for entry: CaptureTimelineEntry,
+        prefetchByID: [UUID: [ScreenshotRecord]]
+    ) -> some View {
         switch entry {
         case let .screenshot(record):
             ScreenshotCell(
@@ -167,9 +174,15 @@ struct ScreenshotGrid: View {
         }
     }
 
-    private var prefetchByID: [UUID: [ScreenshotRecord]] {
-        let records = orderedScreenshots
+    private func makePrefetchMap(
+        for entries: [CaptureTimelineEntry]
+    ) -> [UUID: [ScreenshotRecord]] {
+        let records = entries.compactMap { entry in
+            if case let .screenshot(record) = entry { return record }
+            return nil
+        }
         var map: [UUID: [ScreenshotRecord]] = [:]
+        map.reserveCapacity(records.count)
         for (index, record) in records.enumerated() {
             let start = index + 1
             let end = min(start + prefetchCount, records.count)

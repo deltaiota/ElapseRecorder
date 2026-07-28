@@ -6,6 +6,7 @@ struct ScreenshotGridBottomBar: View {
     @Binding var gridItemSize: GridItemSize
     var onJumpToLatest: () -> Void
     var isExportDisabled: Bool = false
+    var averageInterval: TimeInterval?
     var onExport: () -> Void
 
     @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
@@ -75,6 +76,26 @@ struct ScreenshotGridBottomBar: View {
                 .buttonStyle(.borderless)
                 .help("Jump to latest")
 
+                if let averageInterval {
+                    Divider()
+                        .frame(height: 16)
+
+                    Label {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text("Average interval")
+                            Text(averageInterval, format: .number.precision(.fractionLength(2)))
+                                .monospacedDigit()
+                            Text("s", comment: "Time unit suffix for seconds")
+                        }
+                    } icon: {
+                        Image(systemSymbol: .timer)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help("Calculated from original capture timestamps and preserved after compaction.")
+                }
+
                 Spacer()
 
                 Button("Export…") { onExport() }
@@ -91,6 +112,7 @@ struct ScreenshotGridBottomBar: View {
     ScreenshotGridBottomBar(
         gridItemSize: .constant(.default),
         onJumpToLatest: {},
+        averageInterval: 1.48,
         onExport: {}
     )
     .frame(width: 520)

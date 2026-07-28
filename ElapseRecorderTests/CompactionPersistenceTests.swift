@@ -81,6 +81,7 @@ final class CompactionPersistenceTests: XCTestCase {
             XCTAssertEqual(frame.videoURL, URL(filePath: videoPath))
             XCTAssertEqual(frame.videoFrameIndex, index)
             XCTAssertTrue(frame.isCompacted)
+            XCTAssertEqual(frame.capturedAt, Date(timeIntervalSince1970: 100 + Double(index)))
         }
         // Apportioned sizes sum exactly to the video size.
         XCTAssertEqual(frames.reduce(0) { $0 + $1.fileSizeBytes }, 1005)

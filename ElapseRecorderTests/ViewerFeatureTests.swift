@@ -418,6 +418,106 @@ final class ViewerFeatureTests: XCTestCase {
         await store.send(.enforceRetentionRequested)
     }
 
+    @MainActor
+    func testCaptureScreenshotUpdatesVisibleStateIncrementally() async {
+        let bundleIdentifier = "com.example.ArtApp"
+        let sessionID = UUID()
+        let windowID = UUID()
+        let segmentID = UUID()
+        let startedAt = Date(timeIntervalSince1970: 100)
+        let previousCapture = Date(timeIntervalSince1970: 110)
+        let capturedAt = Date(timeIntervalSince1970: 112)
+        let record = ScreenshotRecord(
+            id: UUID(),
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: capturedAt,
+            fileURL: URL(filePath: "/tmp/frame.heic"),
+            fileSizeBytes: 5
+        )
+
+        var state = ViewerFeature.State()
+        state.apps = [
+            AppCaptureSummary(
+                bundleIdentifier: bundleIdentifier,
+                displayName: "Art App",
+                sessionCount: 1,
+                screenshotCount: 10,
+                lastCapturedAt: previousCapture,
+                sizeBytes: 100,
+                totalActiveDuration: 10
+            ),
+        ]
+        state.sessions = [
+            CaptureSessionSummary(
+                id: sessionID,
+                bundleIdentifier: bundleIdentifier,
+                displayName: "Art App",
+                startedAt: startedAt,
+                endedAt: nil,
+                windowCount: 1,
+                screenshotCount: 10,
+                sizeBytes: 100
+            ),
+        ]
+        state.windows = [
+            WindowCaptureSummary(
+                id: windowID,
+                displayNumber: 1,
+                label: "Canvas",
+                firstSeenAt: startedAt,
+                lastSeenAt: previousCapture,
+                screenshotCount: 10
+            ),
+        ]
+        state.selectedBundleIdentifier = bundleIdentifier
+        state.selectedSessionID = sessionID
+        state.selectedWindowID = windowID
+        state.sessionTimeline = SessionTimeline(
+            sessionID: sessionID,
+            startedAt: startedAt,
+            endedAt: nil,
+            lanes: [
+                WindowLane(
+                    windowID: windowID,
+                    displayNumber: 1,
+                    systemWindowID: 1,
+                    bornAt: startedAt,
+                    diedAt: previousCapture,
+                    segments: [
+                        WindowTitleSegment(
+                            id: segmentID,
+                            title: "Canvas",
+                            startedAt: startedAt,
+                            endedAt: Date(timeIntervalSince1970: 200),
+                            screenshotCount: 10
+                        ),
+                    ],
+                    screenshotCount: 10
+                ),
+            ],
+            unavailableSpans: []
+        )
+
+        let store = TestStore(initialState: state) {
+            ViewerFeature()
+        }
+
+        await store.send(.captureScreenshotRecorded(record, bundleIdentifier: bundleIdentifier)) {
+            $0.apps[0].screenshotCount = 11
+            $0.apps[0].lastCapturedAt = capturedAt
+            $0.apps[0].sizeBytes = 105
+            $0.apps[0].totalActiveDuration = 12
+            $0.sessions[0].screenshotCount = 11
+            $0.sessions[0].sizeBytes = 105
+            $0.windows[0].screenshotCount = 11
+            $0.windowTimelineEntries = [.screenshot(record)]
+            $0.sessionTimeline?.lanes[0].diedAt = capturedAt
+            $0.sessionTimeline?.lanes[0].segments[0].screenshotCount = 11
+            $0.sessionTimeline?.lanes[0].screenshotCount = 11
+        }
+    }
+
     func testExportFrameFilterDropsSimilarKeepsUnknownHashes() {
         // 1 vs 255 differ by 7 bits (> threshold 4) → kept; equal hashes dropped.
         XCTAssertEqual(ExportFrameFilter.keptIndices(hashes: [1, 1, 255, 255, 1]), [0, 2, 4])

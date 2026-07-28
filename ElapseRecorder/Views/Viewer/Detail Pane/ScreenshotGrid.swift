@@ -16,18 +16,13 @@ struct ScreenshotGrid: View {
     @State private var columnCount = 1
     @FocusState private var isFocused: Bool
 
-    private let prefetchCount = 6
-
     var body: some View {
-        // Derive the prefetch map once per grid update. Computing it inside every lazy cell
-        // turns an n-frame gallery into O(n²) work and can starve capture actions on MainActor.
         let displayedEntries = displayedEntries
-        let prefetchByID = makePrefetchMap(for: displayedEntries)
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: itemSize), spacing: 14)], spacing: 14) {
                     ForEach(displayedEntries) { entry in
-                        cell(for: entry, prefetchByID: prefetchByID)
+                        cell(for: entry)
                             .id(entry.id)
                     }
                 }
@@ -91,15 +86,11 @@ struct ScreenshotGrid: View {
     }
 
     @ViewBuilder
-    private func cell(
-        for entry: CaptureTimelineEntry,
-        prefetchByID: [UUID: [ScreenshotRecord]]
-    ) -> some View {
+    private func cell(for entry: CaptureTimelineEntry) -> some View {
         switch entry {
         case let .screenshot(record):
             ScreenshotCell(
                 record: record,
-                prefetch: prefetchByID[record.id] ?? [],
                 isSelected: selectedIDs.contains(record.id),
                 onClick: { handleClick(record) },
                 onQuickLook: { openQuickLook(record) },
@@ -173,35 +164,17 @@ struct ScreenshotGrid: View {
             return nil
         }
     }
-
-    private func makePrefetchMap(
-        for entries: [CaptureTimelineEntry]
-    ) -> [UUID: [ScreenshotRecord]] {
-        let records = entries.compactMap { entry in
-            if case let .screenshot(record) = entry { return record }
-            return nil
-        }
-        var map: [UUID: [ScreenshotRecord]] = [:]
-        map.reserveCapacity(records.count)
-        for (index, record) in records.enumerated() {
-            let start = index + 1
-            let end = min(start + prefetchCount, records.count)
-            map[record.id] = start < end ? Array(records[start ..< end]) : []
-        }
-        return map
-    }
 }
 
 private struct ScreenshotCell: View {
     let record: ScreenshotRecord
-    var prefetch: [ScreenshotRecord]
     let isSelected: Bool
     let onClick: () -> Void
     let onQuickLook: () -> Void
     let onReveal: () -> Void
 
     var body: some View {
-        ScreenshotThumbnailView(record: record, prefetch: prefetch)
+        ScreenshotThumbnailView(record: record)
             .aspectRatio(16 / 10, contentMode: .fit)
             .overlay(alignment: .bottomLeading) {
                 timestamp()

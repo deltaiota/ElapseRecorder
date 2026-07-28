@@ -14,7 +14,10 @@ final class ThumbnailCache: @unchecked Sendable {
     private let cache = NSCache<NSString, CGImage>()
 
     private init() {
-        cache.countLimit = 500
+        // Decoded thumbnails are much larger than their compressed files. Bound both count and
+        // real pixel memory so a long scrollbar drag cannot retain gigabytes of images.
+        cache.countLimit = 200
+        cache.totalCostLimit = 160 * 1024 * 1024
     }
 
     func image(forID id: UUID) -> CGImage? {
@@ -22,6 +25,6 @@ final class ThumbnailCache: @unchecked Sendable {
     }
 
     func insert(_ image: CGImage, forID id: UUID) {
-        cache.setObject(image, forKey: id.uuidString as NSString)
+        cache.setObject(image, forKey: id.uuidString as NSString, cost: image.bytesPerRow * image.height)
     }
 }

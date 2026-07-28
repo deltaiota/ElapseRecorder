@@ -1,5 +1,11 @@
 import Foundation
 
+nonisolated enum CaptureSessionStorageState: Equatable {
+    case uncompacted
+    case partiallyCompacted
+    case compacted
+}
+
 nonisolated struct CaptureSessionSummary: Equatable, Identifiable {
     var id: UUID
     var bundleIdentifier: String
@@ -9,12 +15,15 @@ nonisolated struct CaptureSessionSummary: Equatable, Identifiable {
     var windowCount: Int
     var screenshotCount: Int
     var sizeBytes: Int = 0
-    /// Number of this session's screenshots stored inside a compacted video. Drives the
-    /// compacted-vs-uncompressed session icon in the list.
+    /// Number of this session's screenshots stored inside compacted video files.
     var compactedScreenshotCount: Int = 0
 
-    /// True once the session has been compacted into HEVC video(s).
+    var storageState: CaptureSessionStorageState {
+        guard screenshotCount > 0, compactedScreenshotCount > 0 else { return .uncompacted }
+        return compactedScreenshotCount == screenshotCount ? .compacted : .partiallyCompacted
+    }
+
     var isCompacted: Bool {
-        compactedScreenshotCount > 0
+        storageState == .compacted
     }
 }

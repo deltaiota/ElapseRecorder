@@ -107,7 +107,8 @@ struct SessionListColumn: View {
             }
         } icon: {
             Image(systemSymbol: sessionSymbol(session, isRecording: isRecording))
-                .foregroundStyle(isRecording ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(sessionIconStyle(session, isRecording: isRecording))
                 .symbolEffect(.pulse, options: .repeating, isActive: isRecording)
         }
         .tag(ViewerFeature.State.SessionListSelection.session(id: session.id))
@@ -136,11 +137,33 @@ struct SessionListColumn: View {
         }
     }
 
-    /// Ended sessions get distinct icons so the list conveys whether a session has been
-    /// compacted into video (archived) or is still individual images.
+    /// Storage icons are deliberately different in both silhouette and fill:
+    /// photos = standalone frames, stack + play badge = mixed, filled archive = video-backed.
     private func sessionSymbol(_ session: CaptureSessionSummary, isRecording: Bool) -> SFSymbol {
-        if isRecording { return .recordCircle }
-        return session.isCompacted ? .archivebox : .photoOnRectangle
+        guard !isRecording else { return .recordCircle }
+        switch session.storageState {
+        case .uncompacted:
+            return .photoOnRectangle
+        case .partiallyCompacted:
+            return .rectangleStackBadgePlay
+        case .compacted:
+            return .archiveboxFill
+        }
+    }
+
+    private func sessionIconStyle(
+        _ session: CaptureSessionSummary,
+        isRecording: Bool
+    ) -> AnyShapeStyle {
+        if isRecording { return AnyShapeStyle(.red) }
+        switch session.storageState {
+        case .uncompacted:
+            return AnyShapeStyle(.secondary)
+        case .partiallyCompacted:
+            return AnyShapeStyle(.orange)
+        case .compacted:
+            return AnyShapeStyle(Color.accentColor)
+        }
     }
 
     private func sessionSummaryItems(_ session: CaptureSessionSummary) -> [CountSummary.Item] {

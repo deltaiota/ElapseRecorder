@@ -6,6 +6,7 @@
 //
 
 import ComposableArchitecture
+import Sparkle
 import SwiftData
 import SwiftUI
 
@@ -13,8 +14,14 @@ import SwiftUI
 struct ElapseRecorderApp: App {
     private let sharedModelContainer: ModelContainer
     private let store: StoreOf<AppFeature>
+    private let updaterController: SPUStandardUpdaterController
 
     init() {
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
         do {
             let modelContainer = try ModelContainer.elapseRecorder()
             sharedModelContainer = modelContainer
@@ -51,7 +58,8 @@ struct ElapseRecorderApp: App {
         MenuBarExtra("Elapse Recorder", systemImage: "record.circle") {
             MenuBarView(
                 store: store,
-                libraryWindowID: Self.libraryWindowID
+                libraryWindowID: Self.libraryWindowID,
+                updater: updaterController.updater
             )
         }
         .menuBarExtraStyle(.menu)

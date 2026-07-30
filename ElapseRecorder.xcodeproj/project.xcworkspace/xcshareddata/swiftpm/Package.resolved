@@ -1,5 +1,5 @@
 {
-  "originHash" : "d3eb0dcd92395e37581e0e2524528831e99d1f9e29195c5b9ca484acc9b46f03",
+  "originHash" : "9efaf67c764c6b920d7bc41d976c8eb1fe85ace09cf58af2882aadecafd3dfcb",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -20,15 +20,6 @@
       }
     },
     {
-      "identity" : "logoutloud",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/Aeastr/LogOutLoud",
-      "state" : {
-        "revision" : "78f4d0d634c4834f13f7ab1bcca79c150c4c172a",
-        "version" : "3.0.2"
-      }
-    },
-    {
       "identity" : "launchatlogin-modern",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sindresorhus/LaunchAtLogin-Modern",
@@ -38,12 +29,30 @@
       }
     },
     {
+      "identity" : "logoutloud",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/Aeastr/LogOutLoud",
+      "state" : {
+        "revision" : "78f4d0d634c4834f13f7ab1bcca79c150c4c172a",
+        "version" : "3.0.2"
+      }
+    },
+    {
       "identity" : "sfsafesymbols",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/SFSafeSymbols/SFSafeSymbols",
       "state" : {
         "revision" : "e01b3d4f861412f8dcee8d93c417d2c2b0cdfd77",
         "version" : "7.0.0"
+      }
+    },
+    {
+      "identity" : "sparkle",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/sparkle-project/Sparkle",
+      "state" : {
+        "revision" : "b6496a74a087257ef5e6da1c5b29a447a60f5bd7",
+        "version" : "2.9.4"
       }
     },
     {

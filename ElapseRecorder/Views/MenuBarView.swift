@@ -1,15 +1,18 @@
 import AppKit
+import Combine
 import ComposableArchitecture
 import Defaults
 import IssueReporting
 import LaunchAtLogin
 import SFSafeSymbols
+import Sparkle
 import SwiftUI
 import TranslateKit
 
 struct MenuBarView: View {
     @Bindable var store: StoreOf<AppFeature>
     let libraryWindowID: String
+    let updater: SPUUpdater
 
     @Environment(\.openWindow) private var openWindow
     @State private var selectedImageFormat = Defaults[.captureImageFormat]
@@ -45,6 +48,8 @@ struct MenuBarView: View {
             LaunchAtLogin.Toggle {
                 Text("Launch at Login")
             }
+
+            CheckForUpdatesButton(updater: updater)
 
             Text("Version \(shortVersion) (\(buildVersion))")
                 .foregroundStyle(.secondary)
@@ -391,4 +396,30 @@ struct MenuBarView: View {
             quality: 0.8
         ),
     ]
+}
+
+private struct CheckForUpdatesButton: View {
+    @StateObject private var viewModel: CheckForUpdatesViewModel
+    private let updater: SPUUpdater
+
+    init(updater: SPUUpdater) {
+        self.updater = updater
+        _viewModel = StateObject(wrappedValue: CheckForUpdatesViewModel(updater: updater))
+    }
+
+    var body: some View {
+        Button("Check for Updates…", systemSymbol: .arrowTrianglehead2ClockwiseRotate90) {
+            updater.checkForUpdates()
+        }
+        .disabled(!viewModel.canCheckForUpdates)
+    }
+}
+
+private final class CheckForUpdatesViewModel: ObservableObject {
+    @Published private(set) var canCheckForUpdates = false
+
+    init(updater: SPUUpdater) {
+        updater.publisher(for: \.canCheckForUpdates)
+            .assign(to: &$canCheckForUpdates)
+    }
 }

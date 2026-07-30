@@ -17,6 +17,14 @@ struct MenuBarView: View {
     @State private var autoCompactOnClose = Defaults[.autoCompactOnSessionClose]
     @State private var selectedCompactionQuality = Defaults[.compactionQuality]
 
+    private var shortVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—"
+    }
+
+    private var buildVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
+    }
+
     var body: some View {
         frontmostAppSection()
 
@@ -37,6 +45,9 @@ struct MenuBarView: View {
             LaunchAtLogin.Toggle {
                 Text("Launch at Login")
             }
+
+            Text("Version \(shortVersion) (\(buildVersion))")
+                .foregroundStyle(.secondary)
 
             Button("Quit") {
                 NSApp.terminate(nil)

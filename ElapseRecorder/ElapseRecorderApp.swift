@@ -69,12 +69,15 @@ struct ElapseRecorderApp: App {
     static let aboutWindowID = "about"
 }
 
-/// Replaces the standard "About" item so it opens our custom About window.
-private struct AboutMenuButton: View {
+/// Native SwiftUI action shared by the standard App menu and the menu-bar menu.
+struct AboutMenuButton: View {
     @Environment(\.openWindow) private var openWindow
+    private var appName: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Elapse Recorder"
+    }
 
     var body: some View {
-        Button("About Elapse Recorder") {
+        Button("About \(appName)") {
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: ElapseRecorderApp.aboutWindowID)
         }

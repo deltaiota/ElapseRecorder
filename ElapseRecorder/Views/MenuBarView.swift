@@ -54,6 +54,8 @@ struct MenuBarView: View {
             Text("Version \(shortVersion) (\(buildVersion))")
                 .foregroundStyle(.secondary)
 
+            AboutMenuButton()
+
             Button("Quit") {
                 NSApp.terminate(nil)
             }

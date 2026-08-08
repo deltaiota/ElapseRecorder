@@ -15,6 +15,7 @@ nonisolated extension CaptureImageFormat: Defaults.Serializable {}
 nonisolated extension Defaults.Keys {
     static let captureImageFormat = Key<CaptureImageFormat>("captureImageFormat", default: .heic)
     static let captureHEICQuality = Key<Double>("captureHEICQuality", default: 0.82)
+    static let segmentHEVCQuality = Key<Double>("segmentHEVCQuality", default: 0.65)
     /// Longest-edge pixel cap applied to captured frames (0 = native resolution). Retina windows
     /// are captured at physical resolution, so capping keeps frames review-crisp while cutting
     /// storage roughly by the square of the scale factor.
@@ -28,13 +29,6 @@ nonisolated extension Defaults.Keys {
     static let retentionMaxSizeMegabytes = Key<Int>("retentionMaxSizeMegabytes", default: 2048)
     static let retentionMaxCountEnabled = Key<Bool>("retentionMaxCountEnabled", default: false)
     static let retentionMaxScreenshotCount = Key<Int>("retentionMaxScreenshotCount", default: 10000)
-    /// Quality (0...1) for HEVC video compaction of closed sessions. 0.65 is near-lossless for
-    /// screen-content review while achieving ~11x compression versus standalone HEIC frames.
-    static let compactionQuality = Key<Double>("compactionQuality", default: 0.65)
-    /// When true, a session's frames are automatically compacted into HEVC videos as soon as the
-    /// session ends (the live session is never touched). Reuses the same verified pipeline as the
-    /// manual "Compact" button.
-    static let autoCompactOnSessionClose = Key<Bool>("autoCompactOnSessionClose", default: false)
 }
 
 nonisolated struct DateClient {
@@ -47,9 +41,9 @@ nonisolated struct IDGeneratorClient {
 
 nonisolated struct CapturePreferencesClient {
     var encodingOptions: @Sendable () -> CaptureEncodingOptions
+    var segmentHEVCQuality: @Sendable () -> Double
     var thumbnailMaximumPixelSize: @Sendable () -> Int
     var retentionPolicy: @Sendable () -> RetentionPolicy
-    var autoCompactOnSessionClose: @Sendable () -> Bool
 }
 
 /// Computes a 64-bit difference hash (dHash) of a captured frame for near-duplicate detection.
@@ -87,6 +81,16 @@ nonisolated struct FileStorageClient {
     var write: @Sendable (_ data: Data, _ url: URL) async throws -> Int
     var deleteSessionCaptures: @Sendable (_ bundleIdentifier: String, _ sessionID: UUID) async throws -> Void
     var deleteAppCaptures: @Sendable (_ bundleIdentifier: String) async throws -> Void
+    /// Unique durable spool location for a frame. Callers must never reuse a frame UUID.
+    var spoolFrameURL: @Sendable (_ handle: RecordingSessionHandle, _ windowID: UUID, _ frameID: UUID, _ format: CaptureImageFormat) throws -> URL
+    /// Unique staging and immutable ready locations for a segment asset.
+    var segmentAssetURLs: @Sendable (_ handle: RecordingSessionHandle, _ assetID: UUID) throws -> (partial: URL, final: URL)
+    /// Atomically publishes a staged segment without replacing an existing ready asset.
+    var publishSegment: @Sendable (_ partialURL: URL, _ finalURL: URL) async throws -> Void
+    var fileExists: @Sendable (_ url: URL) async -> Bool
+    var fileSize: @Sendable (_ url: URL) async throws -> Int
+    var availableCapacity: @Sendable () async throws -> Int64
+    var probeWritable: @Sendable () async throws -> Void
     /// All regular files under the capture root(s), used by the integrity sweep to find orphans.
     var captureFileURLs: @Sendable () async throws -> [URL]
     /// Of the given absolute paths, those that still exist on disk (root-agnostic existence
@@ -94,6 +98,8 @@ nonisolated struct FileStorageClient {
     var filterExistingPaths: @Sendable (_ paths: [String]) async -> Set<String>
     /// Deletes the given files (ignoring any that are already gone) and returns bytes reclaimed.
     var removeFiles: @Sendable (_ urls: [URL]) async throws -> Int
+    /// Tombstone deletion: ignores only missing files and surfaces every other failure for retry.
+    var removeFilesStrict: @Sendable (_ urls: [URL]) async throws -> Int
 }
 
 nonisolated struct PersistenceClient {
@@ -108,17 +114,51 @@ nonisolated struct PersistenceClient {
     var screenshotPathsForSession: @Sendable (_ sessionID: UUID) async throws -> [String]
     var screenshotPathsForApp: @Sendable (_ bundleIdentifier: String) async throws -> [String]
     var endedSessionsOldestFirst: @Sendable () async throws -> [CaptureSessionSummary]
-    var compactionPlanForSession: @Sendable (_ sessionID: UUID) async throws -> SessionCompactionPlan?
-    var applyCompaction: @Sendable (_ windowID: UUID, _ videoPath: String, _ orderedRecordIDs: [UUID], _ totalVideoBytes: Int) async throws -> Void
+    /// Consistent totals: ended sessions are eviction candidates; open-session usage is counted
+    /// against limits but is never returned as a candidate.
+    var retentionSnapshot: @Sendable () async throws -> RetentionSnapshot
+    /// Atomically tombstones eligible ended sessions and journals their unique referenced files.
+    var prepareSessionDeletion: @Sendable (_ sessionIDs: [UUID]) async throws -> StorageDeletionManifest?
+    var pendingSessionDeletions: @Sendable () async throws -> [StorageDeletionManifest]
+    /// Atomically removes tombstoned metadata after its files have been removed.
+    var finalizeSessionDeletion: @Sendable (_ tombstoneID: UUID) async throws -> Void
     var upsertWindow: @Sendable (_ window: MonitoredWindow) async throws -> Void
     var recordScreenshot: @Sendable (_ record: ScreenshotRecord) async throws -> Void
     var recordCaptureUnavailable: @Sendable (_ record: CaptureUnavailableRecord) async throws -> Void
+    var registerSpoolFrame: @Sendable (_ registration: SpoolFrameRegistration) async throws -> Void
+    var markSpoolFrameReady: @Sendable (_ frameID: UUID, _ byteCount: Int) async throws -> StoredSpoolFrame
+    var failSpoolFrame: @Sendable (_ frameID: UUID, _ message: String) async throws -> Void
+    var recoverSpoolFrames: @Sendable (_ limit: Int) async throws -> [SpoolFrameRecoveryItem]
+    var pendingSpoolFrames: @Sendable (_ limit: Int) async throws -> [StoredSpoolFrame]
+    var spoolByteCount: @Sendable () async throws -> Int
+    var createSegmentJob: @Sendable (_ manifest: SegmentJobManifest) async throws -> Void
+    var leaseSegmentJob: @Sendable (_ workerID: UUID, _ now: Date, _ leaseDuration: TimeInterval) async throws -> SegmentJobLease?
+    var markSegmentJobPublished: @Sendable (_ publication: SegmentJobCommit) async throws -> Void
+    var commitSegmentJob: @Sendable (_ commit: SegmentJobCommit) async throws -> [URL]
+    var failSegmentJob: @Sendable (
+        _ jobID: UUID,
+        _ workerID: UUID,
+        _ message: String,
+        _ retryAt: Date,
+        _ finalByteCount: Int
+    ) async throws -> Void
+    var recoverSegmentJobs: @Sendable (_ now: Date) async throws -> [SegmentRecoveryItem]
+    var pendingSegmentCleanups: @Sendable () async throws -> [SegmentCleanupManifest]
+    var completeSegmentCleanup: @Sendable (_ jobID: UUID) async throws -> Void
     var apps: @Sendable () async throws -> [AppCaptureSummary]
     var sessions: @Sendable (_ bundleIdentifier: String) async throws -> [CaptureSessionSummary]
     var windows: @Sendable (_ sessionID: UUID) async throws -> [WindowCaptureSummary]
     var screenshotsForSession: @Sendable (_ sessionID: UUID) async throws -> [ScreenshotRecord]
     var screenshotsForWindow: @Sendable (_ windowID: UUID) async throws -> [ScreenshotRecord]
     var screenshotsForApp: @Sendable (_ bundleIdentifier: String) async throws -> [ScreenshotRecord]
+    /// A stable, bounded keyset page in chronological `(capturedAt, id)` order.
+    var framePage: @Sendable (_ query: FrameQuery, _ after: FrameCursor?, _ limit: Int) async throws -> FramePage
+    /// Count for the complete descriptor, independent of the current presentation page.
+    /// Freezes a query at its current inclusive terminal keyset coordinate in one read transaction.
+    var frameQuerySnapshot: @Sendable (_ query: FrameQuery) async throws -> FrameQuerySnapshot
+    var frameCount: @Sendable (_ query: FrameQuery) async throws -> Int
+    /// Resolves an explicit selection in the same order as `ids`; unknown ids are omitted.
+    var framesByID: @Sendable (_ ids: [UUID]) async throws -> [ScreenshotRecord]
     var timelineForSession: @Sendable (_ sessionID: UUID) async throws -> [CaptureTimelineEntry]
     var timelineForWindow: @Sendable (_ sessionID: UUID, _ windowID: UUID) async throws -> [CaptureTimelineEntry]
     var timelineForApp: @Sendable (_ bundleIdentifier: String) async throws -> [CaptureTimelineEntry]
@@ -185,6 +225,8 @@ extension WorkspaceClient: DependencyKey {
 
 extension DateClient: DependencyKey {
     static let liveValue = Self(now: Date.init)
+
+    static let testValue = Self(now: { Date(timeIntervalSince1970: 0) })
 }
 
 extension IDGeneratorClient: DependencyKey {
@@ -199,6 +241,7 @@ extension CapturePreferencesClient: DependencyKey {
                 heicQuality: Defaults[.captureHEICQuality]
             )
         },
+        segmentHEVCQuality: { Defaults[.segmentHEVCQuality] },
         thumbnailMaximumPixelSize: {
             Defaults[.thumbnailMaximumPixelSize]
         },
@@ -214,18 +257,15 @@ extension CapturePreferencesClient: DependencyKey {
                     ? max(1, Defaults[.retentionMaxScreenshotCount])
                     : nil
             )
-        },
-        autoCompactOnSessionClose: {
-            Defaults[.autoCompactOnSessionClose]
         }
     )
 
     /// Test defaults: no retention limits so pruning is a no-op unless a test opts in.
     static let testValue = Self(
         encodingOptions: { .defaultValue },
+        segmentHEVCQuality: { 0.65 },
         thumbnailMaximumPixelSize: { 1024 },
-        retentionPolicy: { .none },
-        autoCompactOnSessionClose: { false }
+        retentionPolicy: { .none }
     )
 }
 
@@ -236,7 +276,9 @@ extension PerceptualHashClient: DependencyKey {
 
     /// The hash is a pure, deterministic function of the image, so tests can use the real
     /// implementation. Tests that need controlled Hamming distances override `hash` directly.
-    static let testValue = liveValue
+    static let testValue = Self { image in
+        differenceHash(image.cgImage)
+    }
 
     /// dHash: downscale to 9x8 grayscale and, for each row, emit a bit per adjacent-pixel
     /// comparison (left brighter than right), yielding 8×8 = 64 bits. Robust to small changes
@@ -471,6 +513,43 @@ extension FileStorageClient: DependencyKey {
             guard FileManager.default.fileExists(atPath: directory.path(percentEncoded: false)) else { return }
             try FileManager.default.removeItem(at: directory)
         },
+        spoolFrameURL: { handle, windowID, frameID, format in
+            try FileStoragePaths.spoolFrameURL(handle: handle, windowID: windowID, frameID: frameID, format: format)
+        },
+        segmentAssetURLs: { handle, assetID in
+            try FileStoragePaths.segmentAssetURLs(handle: handle, assetID: assetID)
+        },
+        publishSegment: { partialURL, finalURL in
+            guard !FileManager.default.fileExists(atPath: finalURL.path(percentEncoded: false)) else {
+                throw StorageCoordinatorError.readyAssetAlreadyExists(finalURL)
+            }
+            try FileManager.default.moveItem(at: partialURL, to: finalURL)
+        },
+        fileExists: { url in
+            FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
+        },
+        fileSize: { url in
+            let values = try url.resourceValues(forKeys: [.fileSizeKey])
+            return values.fileSize ?? 0
+        },
+        availableCapacity: {
+            let root = try FileStoragePaths.captureRoot()
+            let values = try root.resourceValues(forKeys: [
+                .volumeAvailableCapacityForImportantUsageKey,
+                .volumeAvailableCapacityKey,
+            ])
+            return values.volumeAvailableCapacityForImportantUsage
+                ?? values.volumeAvailableCapacity.map(Int64.init)
+                ?? 0
+        },
+        probeWritable: {
+            let directory = try FileStoragePaths.captureRoot()
+                .appending(path: ".health", directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let url = directory.appending(path: "\(UUID().uuidString).probe", directoryHint: .notDirectory)
+            defer { try? FileManager.default.removeItem(at: url) }
+            try Data([0]).write(to: url, options: [.atomic, .withoutOverwriting])
+        },
         captureFileURLs: {
             FileStoragePaths.allCaptureFileURLs()
         },
@@ -489,11 +568,90 @@ extension FileStorageClient: DependencyKey {
                     try FileManager.default.removeItem(at: url)
                     reclaimed += size
                 } catch {
-                    // Ignore files that are already gone; keep reclaiming the rest.
                     continue
                 }
             }
             return reclaimed
+        },
+        removeFilesStrict: { urls in
+            var reclaimed = 0
+            for url in urls {
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                do {
+                    try FileManager.default.removeItem(at: url)
+                    reclaimed += size
+                } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                    continue
+                }
+            }
+            return reclaimed
+        }
+    )
+
+    static let testValue = Self(
+        captureRoot: {
+            reportIssue("FileStorageClient.captureRoot is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        screenshotURL: { _, _, _, _ in
+            reportIssue("FileStorageClient.screenshotURL is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        write: { _, _ in
+            reportIssue("FileStorageClient.write is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        deleteSessionCaptures: { _, _ in
+            reportIssue("FileStorageClient.deleteSessionCaptures is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        deleteAppCaptures: { _ in
+            reportIssue("FileStorageClient.deleteAppCaptures is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        spoolFrameURL: { _, _, _, _ in
+            reportIssue("FileStorageClient.spoolFrameURL is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        segmentAssetURLs: { _, _ in
+            reportIssue("FileStorageClient.segmentAssetURLs is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        publishSegment: { _, _ in
+            reportIssue("FileStorageClient.publishSegment is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        fileExists: { _ in
+            reportIssue("FileStorageClient.fileExists is unimplemented")
+            return false
+        },
+        fileSize: { _ in
+            reportIssue("FileStorageClient.fileSize is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        availableCapacity: {
+            reportIssue("FileStorageClient.availableCapacity is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        probeWritable: {
+            reportIssue("FileStorageClient.probeWritable is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        captureFileURLs: {
+            reportIssue("FileStorageClient.captureFileURLs is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        filterExistingPaths: { _ in
+            reportIssue("FileStorageClient.filterExistingPaths is unimplemented")
+            return []
+        },
+        removeFiles: { _ in
+            reportIssue("FileStorageClient.removeFiles is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        removeFilesStrict: { _ in
+            reportIssue("FileStorageClient.removeFilesStrict is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
         }
     )
 }
@@ -620,11 +778,17 @@ nonisolated enum FileStoragePaths {
         return urls
     }
 
-    /// Deterministic on-disk location for the SwiftData store.
-    ///
-    /// The default store location (`default.store` in the bare Application Support directory)
-    /// can fail to open in a signed, non-sandboxed build, so we pin the database to a stable
-    /// app-owned subdirectory that we create ourselves.
+    /// Deterministic app-owned location for the GRDB database.
+    static func legacyStoreURL() throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        return base.appending(path: "ElapseRecorder/ElapseRecorder.store", directoryHint: .notDirectory)
+    }
+
     static func databaseURL() throws -> URL {
         let base = try FileManager.default.url(
             for: .applicationSupportDirectory,
@@ -634,7 +798,7 @@ nonisolated enum FileStoragePaths {
         )
         let directory = base.appending(path: "ElapseRecorder", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appending(path: "ElapseRecorder.store", directoryHint: .notDirectory)
+        return directory.appending(path: CaptureDatabaseSchema.fileName, directoryHint: .notDirectory)
     }
 
     static func sessionDirectory(
@@ -650,6 +814,41 @@ nonisolated enum FileStoragePaths {
         }
 
         return directory
+    }
+
+    static func spoolFrameURL(
+        handle: RecordingSessionHandle,
+        windowID: UUID,
+        frameID: UUID,
+        format: CaptureImageFormat
+    ) throws -> URL {
+        let directory = try sessionDirectory(
+            bundleIdentifier: handle.bundleIdentifier,
+            sessionID: handle.sessionID,
+            create: true
+        )
+        .appending(path: "Spool", directoryHint: .isDirectory)
+        .appending(path: windowID.uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appending(path: "\(frameID.uuidString).\(format.fileExtension)", directoryHint: .notDirectory)
+    }
+
+    static func segmentAssetURLs(
+        handle: RecordingSessionHandle,
+        assetID: UUID
+    ) throws -> (partial: URL, final: URL) {
+        let directory = try sessionDirectory(
+            bundleIdentifier: handle.bundleIdentifier,
+            sessionID: handle.sessionID,
+            create: true
+        )
+        .appending(path: "Media/Segments", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let stem = assetID.uuidString
+        return (
+            directory.appending(path: "\(stem).partial.mov", directoryHint: .notDirectory),
+            directory.appending(path: "\(stem).mov", directoryHint: .notDirectory)
+        )
     }
 
     static func appDirectory(
@@ -673,40 +872,10 @@ extension PersistenceClient: DependencyKey {
 
 extension ThumbnailClient: DependencyKey {
     static let liveValue = Self { source, maximumPixelSize in
-        switch source {
-        case let .file(url):
-            return try await Task.detached(priority: .high) {
-                guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                    throw CaptureEngineError.fileWriteFailed(url)
-                }
-
-                let clampedMaximumPixelSize = ImageSourceSizing.clampedMaximumPixelSize(
-                    for: source,
-                    requested: maximumPixelSize
-                )
-                let options = [
-                    kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceCreateThumbnailWithTransform: true,
-                    kCGImageSourceThumbnailMaxPixelSize: clampedMaximumPixelSize,
-                ] as CFDictionary
-
-                guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else {
-                    throw CaptureEngineError.fileWriteFailed(url)
-                }
-                return thumbnail
-            }.value
-
-        case let .videoFrame(video, index):
-            let asset = AVURLAsset(url: video)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.requestedTimeToleranceBefore = .zero
-            generator.requestedTimeToleranceAfter = .zero
-            generator.appliesPreferredTrackTransform = true
-            generator.maximumSize = CGSize(width: maximumPixelSize, height: maximumPixelSize)
-            let time = CMTime(value: CMTimeValue(index), timescale: CompactionVideo.frameRate)
-            let (image, _) = try await generator.image(at: time)
-            return image
-        }
+        try await FrameReader.shared.image(
+            for: source,
+            maximumPixelSize: max(1, maximumPixelSize)
+        )
     }
 
     static let testValue = Self { _, _ in
@@ -899,16 +1068,64 @@ nonisolated extension PersistenceClient {
             reportIssue("PersistenceClient.endedSessionsOldestFirst is unimplemented")
             return []
         },
-        compactionPlanForSession: { _ in
-            reportIssue("PersistenceClient.compactionPlanForSession is unimplemented")
+        retentionSnapshot: {
+            reportIssue("PersistenceClient.retentionSnapshot is unimplemented")
+            return RetentionSnapshot(endedSessionsOldestFirst: [], activeSizeBytes: 0, activeFrameCount: 0)
+        },
+        prepareSessionDeletion: { _ in
+            reportIssue("PersistenceClient.prepareSessionDeletion is unimplemented")
             return nil
         },
-        applyCompaction: { _, _, _, _ in
-            reportIssue("PersistenceClient.applyCompaction is unimplemented")
+        pendingSessionDeletions: {
+            reportIssue("PersistenceClient.pendingSessionDeletions is unimplemented")
+            return []
         },
+        finalizeSessionDeletion: { _ in reportIssue("PersistenceClient.finalizeSessionDeletion is unimplemented") },
         upsertWindow: { _ in reportIssue("PersistenceClient.upsertWindow is unimplemented") },
         recordScreenshot: { _ in reportIssue("PersistenceClient.recordScreenshot is unimplemented") },
         recordCaptureUnavailable: { _ in reportIssue("PersistenceClient.recordCaptureUnavailable is unimplemented") },
+        registerSpoolFrame: { _ in reportIssue("PersistenceClient.registerSpoolFrame is unimplemented") },
+        markSpoolFrameReady: { _, _ in
+            reportIssue("PersistenceClient.markSpoolFrameReady is unimplemented")
+            throw CaptureEngineError.persistenceUnavailable
+        },
+        failSpoolFrame: { _, _ in reportIssue("PersistenceClient.failSpoolFrame is unimplemented") },
+        recoverSpoolFrames: { _ in
+            reportIssue("PersistenceClient.recoverSpoolFrames is unimplemented")
+            return []
+        },
+        pendingSpoolFrames: { _ in
+            reportIssue("PersistenceClient.pendingSpoolFrames is unimplemented")
+            return []
+        },
+        spoolByteCount: {
+            reportIssue("PersistenceClient.spoolByteCount is unimplemented")
+            return 0
+        },
+        createSegmentJob: { _ in reportIssue("PersistenceClient.createSegmentJob is unimplemented") },
+        leaseSegmentJob: { _, _, _ in
+            reportIssue("PersistenceClient.leaseSegmentJob is unimplemented")
+            return nil
+        },
+        markSegmentJobPublished: { _ in
+            reportIssue("PersistenceClient.markSegmentJobPublished is unimplemented")
+        },
+        commitSegmentJob: { _ in
+            reportIssue("PersistenceClient.commitSegmentJob is unimplemented")
+            return []
+        },
+        failSegmentJob: { _, _, _, _, _ in reportIssue("PersistenceClient.failSegmentJob is unimplemented") },
+        recoverSegmentJobs: { _ in
+            reportIssue("PersistenceClient.recoverSegmentJobs is unimplemented")
+            return []
+        },
+        pendingSegmentCleanups: {
+            reportIssue("PersistenceClient.pendingSegmentCleanups is unimplemented")
+            return []
+        },
+        completeSegmentCleanup: { _ in
+            reportIssue("PersistenceClient.completeSegmentCleanup is unimplemented")
+        },
         apps: {
             reportIssue("PersistenceClient.apps is unimplemented")
             return []
@@ -931,6 +1148,23 @@ nonisolated extension PersistenceClient {
         },
         screenshotsForApp: { _ in
             reportIssue("PersistenceClient.screenshotsForApp is unimplemented")
+            return []
+        },
+        framePage: { _, _, _ in
+            reportIssue("PersistenceClient.framePage is unimplemented")
+            return .empty
+        },
+        frameQuerySnapshot: { _ in
+            reportIssue("PersistenceClient.frameQuerySnapshot is unimplemented")
+            return FrameQuerySnapshot(selection: .ids([]), count: 0)
+        },
+        frameCount: { _ in
+            reportIssue("PersistenceClient.frameCount is unimplemented")
+            return 0
+        },
+
+        framesByID: { _ in
+            reportIssue("PersistenceClient.framesByID is unimplemented")
             return []
         },
         timelineForSession: { _ in

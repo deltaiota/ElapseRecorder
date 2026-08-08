@@ -13,9 +13,11 @@ nonisolated struct ExportFrame: Equatable {
     var capturedAt: Date
     /// 64-bit difference hash, used by the optional export-time near-duplicate filter.
     var perceptualHash: UInt64
-    /// When set, pixels come from this compacted video at `videoFrameIndex` instead of `url`.
+    /// When set, pixels come from this video segment at the persisted presentation timestamp.
     var videoURL: URL?
     var videoFrameIndex: Int?
+    var videoPTSValue: Int64?
+    var videoPTSTimescale: Int32?
 
     init(
         url: URL,
@@ -24,7 +26,9 @@ nonisolated struct ExportFrame: Equatable {
         capturedAt: Date = Date(timeIntervalSince1970: 0),
         perceptualHash: UInt64 = 0,
         videoURL: URL? = nil,
-        videoFrameIndex: Int? = nil
+        videoFrameIndex: Int? = nil,
+        videoPTSValue: Int64? = nil,
+        videoPTSTimescale: Int32? = nil
     ) {
         self.url = url
         self.pixelWidth = pixelWidth
@@ -33,14 +37,18 @@ nonisolated struct ExportFrame: Equatable {
         self.perceptualHash = perceptualHash
         self.videoURL = videoURL
         self.videoFrameIndex = videoFrameIndex
+        self.videoPTSValue = videoPTSValue
+        self.videoPTSTimescale = videoPTSTimescale
     }
 
     var frameSource: FrameSource {
-        if let videoURL, let videoFrameIndex {
-            .videoFrame(video: videoURL, index: videoFrameIndex)
-        } else {
-            .file(url)
+        guard let videoURL, let videoPTSValue, let videoPTSTimescale, videoPTSTimescale > 0 else {
+            return .file(url)
         }
+        return .videoFrame(
+            video: videoURL,
+            presentationTime: FramePresentationTime(value: videoPTSValue, timescale: videoPTSTimescale)
+        )
     }
 
     var knownPixelSize: CGSize? {

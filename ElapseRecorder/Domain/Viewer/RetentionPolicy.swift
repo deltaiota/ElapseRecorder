@@ -16,15 +16,14 @@ nonisolated struct RetentionPolicy: Equatable {
         maxAge != nil || maxTotalBytes != nil || maxScreenshotCount != nil
     }
 
-    /// Given the ended sessions sorted oldest-first, returns the ids to delete so that every
-    /// active limit holds. Deletes oldest first and stops as soon as the oldest remaining
-    /// session is within the age limit and the size/count caps are satisfied. Open (still
-    /// recording) sessions must not be included by the caller.
-    func sessionIDsToPrune(endedSessionsOldestFirst sessions: [CaptureSessionSummary], now: Date) -> [UUID] {
+    /// Selects ended sessions for deletion while accounting for usage owned by active sessions.
+    /// Active usage contributes to caps but can never itself be evicted.
+    func sessionIDsToPrune(snapshot: RetentionSnapshot, now: Date) -> [UUID] {
         guard hasAnyLimit else { return [] }
 
-        var totalBytes = sessions.reduce(0) { $0 + $1.sizeBytes }
-        var totalCount = sessions.reduce(0) { $0 + $1.screenshotCount }
+        let sessions = snapshot.endedSessionsOldestFirst
+        var totalBytes = snapshot.activeSizeBytes + sessions.reduce(0) { $0 + $1.sizeBytes }
+        var totalCount = snapshot.activeFrameCount + sessions.reduce(0) { $0 + $1.screenshotCount }
         let ageCutoff = maxAge.map { now.addingTimeInterval(-$0) }
 
         var ids: [UUID] = []
@@ -34,11 +33,22 @@ nonisolated struct RetentionPolicy: Equatable {
             let overCount = maxScreenshotCount.map { totalCount > $0 } ?? false
 
             guard tooOld || overSize || overCount else { break }
-
             ids.append(session.id)
             totalBytes -= session.sizeBytes
             totalCount -= session.screenshotCount
         }
         return ids
+    }
+
+    /// Compatibility helper for callers that already supply only ended-session usage.
+    func sessionIDsToPrune(endedSessionsOldestFirst sessions: [CaptureSessionSummary], now: Date) -> [UUID] {
+        sessionIDsToPrune(
+            snapshot: RetentionSnapshot(
+                endedSessionsOldestFirst: sessions,
+                activeSizeBytes: 0,
+                activeFrameCount: 0
+            ),
+            now: now
+        )
     }
 }

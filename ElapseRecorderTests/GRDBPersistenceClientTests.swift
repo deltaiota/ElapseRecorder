@@ -1,12 +1,11 @@
 @testable import ElapseRecorder
 import Foundation
-import SwiftData
 import XCTest
 
-final class SwiftDataPersistenceClientTests: XCTestCase {
+final class GRDBPersistenceClientTests: XCTestCase {
     @MainActor
     func testQueriesReturnExpectedSummariesAndChronologicalScreenshots() async throws {
-        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let client = try temporaryClient()
 
         let appSession = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000101"),
@@ -164,7 +163,7 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
     @MainActor
     func testCloseOpenSessionsAndDeleteSession() async throws {
-        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let client = try temporaryClient()
         let emptySession = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000401"),
             bundleIdentifier: "com.example.StaleApp",
@@ -215,7 +214,7 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
     @MainActor
     func testCloseOpenSessionsSkipsSessionsStartedAfterCutoff() async throws {
-        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let client = try temporaryClient()
         let priorRunSession = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000501"),
             bundleIdentifier: "com.example.CutoffApp",
@@ -266,7 +265,7 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
     @MainActor
     func testClosingEmptySessionDeletesIt() async throws {
-        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let client = try temporaryClient()
         let emptySession = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000405"),
             bundleIdentifier: "com.example.EmptyApp",
@@ -286,8 +285,7 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
     @MainActor
     func testWindowTitleHistoryIsPersistedAndDeduplicated() async throws {
-        let container = try inMemoryContainer()
-        let client = PersistenceClient.live(modelContainer: container)
+        let client = try temporaryClient()
 
         let session = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000401"),
@@ -329,22 +327,15 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         // Re-upserting the identical history must not duplicate observations.
         try await client.upsertWindow(window)
 
-        let context = ModelContext(container)
-        let models = try context.fetch(FetchDescriptor<MonitoredWindowModel>())
-        let stored = try XCTUnwrap(models.first { $0.id == window.id })
-        let history = stored.titleObservations.sorted { $0.observedAt < $1.observedAt }
-
-        XCTAssertEqual(history.map(\.title), ["Untitled", "Notes.txt"])
-        XCTAssertEqual(history.map(\.id), [firstObservation.id, secondObservation.id])
-
-        let domainHistory = try XCTUnwrap(stored.domainValue).titleHistory
-        XCTAssertEqual(domainHistory.map(\.title), ["Untitled", "Notes.txt"])
+        let timeline = try await client.sessionTimeline(session.id)
+        let segments = try XCTUnwrap(timeline.lanes.first).segments
+        XCTAssertEqual(segments.map(\.title), ["Untitled", "Notes.txt"])
+        XCTAssertEqual(segments.map(\.id), [firstObservation.id, secondObservation.id])
     }
 
     @MainActor
     func testSessionTimelineAssemblesLanesSegmentsAndUnavailableSpans() async throws {
-        let container = try inMemoryContainer()
-        let client = PersistenceClient.live(modelContainer: container)
+        let client = try temporaryClient()
 
         let session = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000601"),
@@ -431,7 +422,7 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
     @MainActor
     func testScreenshotDimensionsAndPerceptualHashRoundTrip() async throws {
-        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let client = try temporaryClient()
 
         let session = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000801"),
@@ -476,7 +467,7 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
     @MainActor
     func testStorageAggregatesAndMaintenanceQueries() async throws {
-        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let client = try temporaryClient()
 
         let oldSession = try CaptureSession(
             id: uuid("00000000-0000-0000-0000-000000000901"),
@@ -560,7 +551,7 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
 
     @MainActor
     func testAppSummaryTotalActiveDurationSumsSessionSpans() async throws {
-        let client = try PersistenceClient.live(modelContainer: inMemoryContainer())
+        let client = try temporaryClient()
         let bundleID = "com.example.ArtApp"
 
         // Ended session: explicit 140s span (100...240).
@@ -604,9 +595,13 @@ final class SwiftDataPersistenceClientTests: XCTestCase {
         XCTAssertEqual(app.totalActiveDuration, 160, accuracy: 0.001)
     }
 
-    private func inMemoryContainer() throws -> ModelContainer {
-        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: Schema.elapseRecorder, configurations: [configuration])
+    private func temporaryClient() throws -> PersistenceClient {
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "ElapseRecorder-GRDBTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let database = try ElapseDatabase(url: directory.appending(path: "test.sqlite"))
+        return .live(database: database)
     }
 
     private func uuid(_ string: String) throws -> UUID {

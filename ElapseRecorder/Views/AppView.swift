@@ -32,13 +32,6 @@ struct AppView: View {
                 revealCapturesButton()
             }
         }
-        .task {
-            guard !isTesting else {
-                return
-            }
-
-            await store.send(.task).finish()
-        }
         .onAppear {
             updateRecordingPermissionHint(for: store.captureEngine.permissionStatus)
         }
@@ -273,16 +266,20 @@ struct AppView: View {
     }
 
     private var activeCaptureSessions: [CaptureEngineFeature.State.ActiveSession] {
-        store.captureEngine.activeSessions.values.sorted {
-            $0.config.displayName < $1.config.displayName
-        }
+        store.captureEngine.activeSessions.values
+            .filter { $0.pauseReason == nil }
+            .sorted { $0.config.displayName < $1.config.displayName }
     }
 
     private var viewerCaptureConfiguration: ViewerView.CaptureConfiguration {
         ViewerView.CaptureConfiguration(
             whitelistConfigs: store.whitelistConfigs,
             defaultCaptureInterval: store.draftIntervalSeconds,
-            activeCaptureBundleIdentifiers: Set(store.captureEngine.activeSessions.keys),
+            activeCaptureBundleIdentifiers: Set(
+                store.captureEngine.activeSessions.compactMap { bundleIdentifier, session in
+                    session.pauseReason == nil ? bundleIdentifier : nil
+                }
+            ),
             runningApplicationBundleIdentifiers: Set(store.captureEngine.runningApplications.keys),
             unavailableReasonsByBundleIdentifier: store.captureEngine.activeSessions.compactMapValues(\.captureUnavailableReason)
         )

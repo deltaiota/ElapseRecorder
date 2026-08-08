@@ -11,6 +11,7 @@ struct ScreenshotGrid: View {
     var isQuickLookOpen: Bool = false
     var openQuickLook: (ScreenshotRecord) -> Void = { _ in }
     var revealScreenshot: (ScreenshotRecord) -> Void = { _ in }
+    var loadMore: () -> Void = {}
 
     @State private var anchorID: UUID?
     @State private var columnCount = 1
@@ -24,6 +25,11 @@ struct ScreenshotGrid: View {
                     ForEach(displayedEntries) { entry in
                         cell(for: entry)
                             .id(entry.id)
+                            .onAppear {
+                                if entry.id == displayedEntries.last?.id {
+                                    loadMore()
+                                }
+                            }
                     }
                 }
                 .padding()

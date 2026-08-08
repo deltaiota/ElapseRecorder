@@ -1,5 +1,5 @@
 import CoreGraphics
 
-nonisolated struct CapturedImage {
+nonisolated struct CapturedImage: @unchecked Sendable {
     var cgImage: CGImage
 }

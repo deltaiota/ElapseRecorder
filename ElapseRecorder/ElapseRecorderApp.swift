@@ -7,12 +7,10 @@
 
 import ComposableArchitecture
 import Sparkle
-import SwiftData
 import SwiftUI
 
 @main
 struct ElapseRecorderApp: App {
-    private let sharedModelContainer: ModelContainer
     private let store: StoreOf<AppFeature>
     private let updaterController: SPUStandardUpdaterController
 
@@ -23,15 +21,24 @@ struct ElapseRecorderApp: App {
             userDriverDelegate: nil
         )
         do {
-            let modelContainer = try ModelContainer.elapseRecorder()
-            sharedModelContainer = modelContainer
-            store = Store(initialState: AppFeature.State()) {
+            let isTesting = Self.isTesting
+            let backend = try BackendContainer(
+                databaseURL: isTesting ? Self.testDatabaseURL : FileStoragePaths.databaseURL(),
+                legacyStoreURL: isTesting ? nil : FileStoragePaths.legacyStoreURL()
+            )
+            let appStore = Store(initialState: AppFeature.State()) {
                 AppFeature()
             } withDependencies: {
-                $0.persistenceClient = .live(modelContainer: modelContainer)
+                $0.persistenceClient = backend.persistence
+                $0.storageCoordinatorClient = backend.storage
+                $0.recordingServiceClient = backend.recording
+            }
+            store = appStore
+            if !isTesting {
+                appStore.send(.task)
             }
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            fatalError("Could not create V2 database: \(error)")
         }
     }
 
@@ -39,7 +46,6 @@ struct ElapseRecorderApp: App {
         Window("Elapse Recorder", id: Self.libraryWindowID) {
             ContentView(store: store)
         }
-        .modelContainer(sharedModelContainer)
         .defaultLaunchBehavior(.suppressed)
         .restorationBehavior(.disabled)
         .commands {
@@ -66,6 +72,16 @@ struct ElapseRecorderApp: App {
     }
 
     private static let libraryWindowID = "library"
+    private static var isTesting: Bool {
+        NSClassFromString("XCTestCase") != nil
+            || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+
+    private static var testDatabaseURL: URL {
+        FileManager.default.temporaryDirectory
+            .appending(path: "ElapseRecorder-Tests-\(ProcessInfo.processInfo.processIdentifier).sqlite")
+    }
+
     static let aboutWindowID = "about"
 }
 

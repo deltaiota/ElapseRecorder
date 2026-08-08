@@ -7,6 +7,9 @@ struct AppFeature: Reducer {
         var captureEngine = CaptureEngineFeature.State()
         var viewer = ViewerFeature.State()
         var hasStarted = false
+        /// Correlates the service event with the compatibility screenshotRecorded action emitted
+        /// by CaptureEngineFeature, including recovery frames whose session is no longer active.
+        var committedFrameBundleIdentifiers: [UUID: String] = [:]
         var whitelistConfigs: [WhitelistedAppConfig] = []
         var draftBundleIdentifier = "com.apple.TextEdit"
         var draftDisplayName = "TextEdit"
@@ -20,6 +23,9 @@ struct AppFeature: Reducer {
         case task
         case captureEngine(CaptureEngineFeature.Action)
         case viewer(ViewerFeature.Action)
+        case maintenanceRequested
+        case maintenanceFinished(deletedSessionCount: Int)
+        case maintenanceFailed(String)
         case draftBundleIdentifierChanged(String)
         case draftDisplayNameChanged(String)
         case draftIntervalSecondsChanged(Double)
@@ -45,6 +51,10 @@ struct AppFeature: Reducer {
     @Dependency(\.fileRevealClient) private var fileReveal
     @Dependency(\.fileStorageClient) private var fileStorage
     @Dependency(\.persistenceClient) private var persistence
+    @Dependency(\.storageCoordinatorClient) private var storageCoordinator
+    @Dependency(\.maintenanceServiceClient) private var maintenance
+    @Dependency(\.capturePreferencesClient) private var preferences
+    @Dependency(\.dateClient) private var date
     @Dependency(\.whitelistConfigurationClient) private var whitelistConfiguration
 
     var body: some Reducer<State, Action> {
@@ -66,6 +76,7 @@ struct AppFeature: Reducer {
                 return .merge(
                     .send(.captureEngine(.task)),
                     .send(.viewer(.task)),
+                    .send(.maintenanceRequested),
                     .run { send in
                         do {
                             try await send(.savedWhitelistLoaded(await whitelistConfiguration.load()))
@@ -78,14 +89,22 @@ struct AppFeature: Reducer {
             case .captureEngine(.sessionClosed):
                 return .merge(
                     .send(.viewer(.refresh)),
-                    .send(.viewer(.autoCompactOnSessionCloseRequested)),
-                    .send(.viewer(.enforceRetentionRequested))
+                    .send(.maintenanceRequested)
                 )
 
+            case let .captureEngine(.recordingServiceEvent(.frameCommitted(handle, record))):
+                state.committedFrameBundleIdentifiers[record.id] = handle.bundleIdentifier
+                return .none
+
+            case let .captureEngine(.recordingServiceEvent(.segmentCommitted(handle, _, frameIDs, _))):
+                return .send(.viewer(.segmentCommitted(handle: handle, frameIDs: frameIDs)))
+
             case let .captureEngine(.screenshotRecorded(record)):
-                guard let bundleIdentifier = state.captureEngine.activeSessions.first(where: {
-                    $0.value.session.id == record.sessionID
-                })?.key else { return .none }
+                let bundleIdentifier = state.committedFrameBundleIdentifiers.removeValue(forKey: record.id)
+                    ?? state.captureEngine.activeSessions.first(where: {
+                        $0.value.session.id == record.sessionID
+                    })?.key
+                guard let bundleIdentifier else { return .none }
                 return .send(.viewer(.captureScreenshotRecorded(record, bundleIdentifier: bundleIdentifier)))
 
             case let .captureEngine(.captureUnavailableRecorded(record)):
@@ -93,6 +112,33 @@ struct AppFeature: Reducer {
 
             case .captureEngine(.sessionOpened):
                 return .send(.viewer(.refresh))
+
+            case .maintenanceRequested:
+                let maintenance = maintenance
+                let environment = MaintenanceEnvironment(
+                    persistence: persistence,
+                    fileStorage: fileStorage,
+                    storageCoordinator: storageCoordinator
+                )
+                let policyProvider = preferences.retentionPolicy
+                let policy = policyProvider()
+                let now = date.now()
+                return .run { send in
+                    await maintenance.startDailyRetention(environment, policyProvider)
+                    do {
+                        try await maintenance.recover(environment)
+                        let count = try await maintenance.enforceRetention(policy, now, environment)
+                        await send(.maintenanceFinished(deletedSessionCount: count))
+                    } catch {
+                        await send(.maintenanceFailed(error.localizedDescription))
+                    }
+                }
+
+            case let .maintenanceFinished(deletedSessionCount):
+                return deletedSessionCount > 0 ? .send(.viewer(.refresh)) : .none
+
+            case let .maintenanceFailed(message):
+                return .send(.viewer(.loadingFailed(message)))
 
             case .captureEngine, .viewer:
                 return .none

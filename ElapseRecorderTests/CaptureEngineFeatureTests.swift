@@ -5,1713 +5,1054 @@ import Foundation
 import XCTest
 
 final class CaptureEngineFeatureTests: XCTestCase {
-    @MainActor
-    func testRunningWhitelistedAppStartsAndStopsSession() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.DrawingApp",
-            displayName: "Drawing App",
-            processIdentifier: 42
+    func testAbsoluteSchedulerSkipsBusyDeadlinesWithoutCatchUpBurst() async throws {
+        let clock = TestClock<Duration>()
+        let windowGate = WindowGate()
+        let storageEvents = StreamPipe<StorageCoordinatorEvent>()
+        let harness = makeHarness(
+            clock: clock,
+            storageEvents: storageEvents,
+            windows: { _ in try await windowGate.next() }
         )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
-        let startedAt = Date(timeIntervalSince1970: 100)
-        let clock = TestClock()
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
 
-        var initialState = CaptureEngineFeature.State()
-        initialState.permissionStatus = .authorized
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually { windowGate.requestCount == 1 }
 
-        let store = TestStore(initialState: initialState) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.continuousClock = clock
-            $0.capturePermissionClient.status = { .authorized }
-            $0.capturePermissionClient.request = { .authorized }
-            $0.dateClient.now = { startedAt }
-            $0.idGeneratorClient.uuid = { sessionID }
-            $0.persistenceClient.openSession = { _ in }
-            $0.persistenceClient.closeSession = { _, _ in }
-            $0.screenCaptureClient.windows = { _ in [] }
-            $0.loggingClient.log = { _, _, _ in }
-            $0.workspaceClient.runningApplications = { [app] }
-            $0.workspaceClient.events = {
-                AsyncStream { continuation in
-                    continuation.finish()
-                }
+        await clock.advance(by: .seconds(35))
+        try await eventually {
+            collector.events.contains {
+                if case .schedulerDeadlineMissed = $0 { return true }
+                return false
+            }
+        }
+        XCTAssertEqual(windowGate.requestCount, 1, "a busy cycle must not be replayed at missed deadlines")
+
+        windowGate.resumeNext(returning: [])
+        try await eventually {
+            collector.events.contains {
+                if case let .sessionUpdated(snapshot) = $0 { return !snapshot.isCaptureInFlight }
+                return false
             }
         }
 
-        await store.send(.whitelistUpdated([config])) {
-            $0.whitelist = [config.bundleIdentifier: config]
-        }
-
-        let expectedSession = CaptureSession(
-            id: sessionID,
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: startedAt
-        )
-
-        await store.send(.runningApplicationsLoaded([app])) {
-            $0.runningApplications = [app.bundleIdentifier: app]
-            $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-                application: app,
-                config: config,
-                session: expectedSession
-            )
-        }
-
-        await store.receive(.sessionOpened(expectedSession, app))
-        await store.receive(.captureTick(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
-        }
-        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-
-        await store.send(.workspaceEvent(.terminated(app))) {
-            $0.lastWorkspaceEvent = .terminated(app)
-            $0.runningApplications[app.bundleIdentifier] = nil
-            $0.activeSessions[app.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
-    }
-
-    @MainActor
-    func testDuplicateStartRequestsAreIgnoredWhileSessionOpenIsPending() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.RacyAutoApp",
-            displayName: "Racy Auto App",
-            processIdentifier: 142
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000054"))
-        let startedAt = Date(timeIntervalSince1970: 540)
-        let clock = TestClock()
-        let openedSessions = LockIsolated([CaptureSession]())
-
-        var initialState = CaptureEngineFeature.State()
-        initialState.whitelist = [config.bundleIdentifier: config]
-        initialState.permissionStatus = .authorized
-
-        let store = TestStore(initialState: initialState) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.capturePermissionClient.status = { .authorized }
-            $0.capturePermissionClient.request = { .authorized }
-            $0.continuousClock = clock
-            $0.dateClient.now = { startedAt }
-            $0.idGeneratorClient.uuid = { sessionID }
-            $0.persistenceClient.closeSession = { _, _ in }
-            $0.persistenceClient.openSession = { session in
-                try await clock.sleep(for: .seconds(1))
-                openedSessions.withValue { $0.append(session) }
-            }
-            $0.screenCaptureClient.windows = { _ in [] }
-        }
-
-        let expectedSession = CaptureSession(
-            id: sessionID,
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: startedAt
-        )
-
-        await store.send(.runningApplicationsLoaded([app])) {
-            $0.runningApplications = [app.bundleIdentifier: app]
-            $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-                application: app,
-                config: config,
-                session: expectedSession
-            )
-        }
-        await Task.yield()
-        await store.send(.whitelistUpdated([config]))
-        XCTAssertEqual(openedSessions.value.map(\.id), [])
+        await clock.advance(by: .seconds(4))
+        XCTAssertEqual(windowGate.requestCount, 1)
         await clock.advance(by: .seconds(1))
-
-        await store.receive(.sessionOpened(expectedSession, app))
-        await store.receive(.captureTick(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
-        }
-        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-
-        XCTAssertEqual(openedSessions.value.map(\.id), [sessionID])
-        await store.send(.workspaceEvent(.terminated(app))) {
-            $0.lastWorkspaceEvent = .terminated(app)
-            $0.runningApplications[app.bundleIdentifier] = nil
-            $0.activeSessions[app.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
+        try await eventually { windowGate.requestCount == 2 }
     }
 
-    @MainActor
-    func testLaunchStormOpensExactlyOneSession() async throws {
-        // Reproduces the real launch sequence the user hit: running-app load, launch and
-        // activate workspace events, and both forms of permission resolution all arrive in
-        // a burst. The synchronous start chokepoint must collapse them into one session.
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.LaunchStormApp",
-            displayName: "Launch Storm App",
-            processIdentifier: 200
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000200"))
-        let clock = TestClock()
-        let openedSessions = LockIsolated([CaptureSession]())
-
-        var initialState = CaptureEngineFeature.State()
-        initialState.whitelist = [config.bundleIdentifier: config]
-        initialState.permissionStatus = .authorized
-
-        let store = TestStore(initialState: initialState) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.continuousClock = clock
-            $0.capturePermissionClient.status = { .authorized }
-            $0.capturePermissionClient.request = { .authorized }
-            $0.dateClient.now = { Date(timeIntervalSince1970: 1000) }
-            $0.idGeneratorClient.uuid = { sessionID }
-            $0.persistenceClient.openSession = { session in
-                openedSessions.withValue { $0.append(session) }
+    func testIntervalChangeDeterministicallyReanchorsFromChangeInstant() async throws {
+        let clock = TestClock<Duration>()
+        let requestCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            windows: { _ in
+                requestCount.withValue { $0 += 1 }
+                return []
             }
-            $0.persistenceClient.closeSession = { _, _ in }
-            $0.screenCaptureClient.windows = { _ in [] }
-            $0.loggingClient.log = { _, _, _ in }
-        }
-        store.exhaustivity = .off
+        )
+        let stream = await harness.service.start()
+        let task = Task { for await _ in stream {} }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually { requestCount.value == 1 }
 
-        await store.send(.runningApplicationsLoaded([app]))
-        await store.send(.workspaceEvent(.launched(app)))
-        await store.send(.workspaceEvent(.activated(app)))
-        await store.send(.permissionResolved(.authorized, nil))
-        await store.send(.permissionResolved(.authorized, app))
+        await clock.advance(by: .seconds(4))
+        var changed = harness.config
+        changed.captureInterval = 20
+        await harness.service.applyWhitelist([changed])
 
-        XCTAssertEqual(store.state.activeSessions[app.bundleIdentifier]?.session.id, sessionID)
-
-        await store.send(.workspaceEvent(.terminated(app)))
-
-        XCTAssertNil(store.state.activeSessions[app.bundleIdentifier])
-        XCTAssertEqual(openedSessions.value.map(\.id), [sessionID])
+        await clock.advance(by: .seconds(19))
+        XCTAssertEqual(requestCount.value, 1)
+        await clock.advance(by: .seconds(1))
+        try await eventually { requestCount.value == 2 }
     }
 
-    @MainActor
-    func testRunningApplicationRegisteredMergesWithoutClearingOtherApps() async {
-        let existing = RunningApplication(
-            bundleIdentifier: "com.example.ExistingApp",
-            displayName: "Existing App",
-            processIdentifier: 210
+    func testProcessReplacementUsesNewGenerationAndCorrelatedHandle() async throws {
+        let clock = TestClock<Duration>()
+        let workspaceEvents = StreamPipe<WorkspaceEvent>()
+        let harness = makeHarness(
+            clock: clock,
+            workspaceEvents: workspaceEvents,
+            windows: { _ in [] }
         )
-        let registered = RunningApplication(
-            bundleIdentifier: "com.example.RegisteredApp",
-            displayName: "Registered App",
-            processIdentifier: 211
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: registered.bundleIdentifier,
-            displayName: registered.displayName,
-            captureInterval: 60,
-            captureMode: .manual,
-            isEnabled: false
-        )
-
-        var initialState = CaptureEngineFeature.State()
-        initialState.permissionStatus = .authorized
-        initialState.whitelist = [config.bundleIdentifier: config]
-        initialState.runningApplications = [existing.bundleIdentifier: existing]
-
-        let store = TestStore(initialState: initialState) {
-            CaptureEngineFeature()
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually {
+            collector.events.filter {
+                if case .sessionOpened = $0 { return true }
+                return false
+            }.count == 1
         }
 
-        // Manual config: registering must merge the app in without dropping the existing
-        // one, and must not auto-start a session (manual apps wait for an explicit start).
-        await store.send(.runningApplicationRegistered(registered)) {
-            $0.runningApplications[registered.bundleIdentifier] = registered
+        workspaceEvents.yield(.terminated(harness.application))
+        let replacement = RunningApplication(
+            bundleIdentifier: harness.application.bundleIdentifier,
+            displayName: harness.application.displayName,
+            processIdentifier: 202
+        )
+        workspaceEvents.yield(.launched(replacement))
+        try await eventually {
+            collector.events.filter {
+                if case .sessionOpened = $0 { return true }
+                return false
+            }.count >= 2
         }
+
+        let handles = collector.events.compactMap { event -> RecordingSessionHandle? in
+            guard case let .sessionOpened(snapshot) = event else { return nil }
+            return snapshot.handle
+        }
+        XCTAssertEqual(handles.map(\.generation), [1, 2])
+        XCTAssertEqual(handles.map(\.processIdentifier), [101, 202])
+        XCTAssertNotEqual(handles[0].sessionID, handles[1].sessionID)
     }
 
-    @MainActor
-    func testDuplicateSessionOpenedIsClosedInsteadOfReplacingActiveSession() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.DuplicateOpenedApp",
-            displayName: "Duplicate Opened App",
-            processIdentifier: 143
+    func testStopWaitsForCaptureEnqueueAndFlushBeforeClosingMetadata() async throws {
+        let clock = TestClock<Duration>()
+        let captureGate = CaptureGate()
+        let order = Locked<[String]>([])
+        let window = CapturableWindow(
+            systemWindowID: 42,
+            title: "Document",
+            frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+            layer: 0,
+            isOnScreen: true
         )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
+        let harness = makeHarness(
+            clock: clock,
+            windows: { _ in [window] },
+            capture: { _ in try await captureGate.next() },
+            enqueue: { frame in
+                order.withValue { $0.append("enqueue") }
+                return .accepted(frameID: frame.id)
+            },
+            flush: { _ in order.withValue { $0.append("flush") } },
+            close: { _, _ in order.withValue { $0.append("close") } }
         )
-        let activeSession = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000055")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 550)
-        )
-        let duplicateSession = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000056")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 551)
-        )
-        let closedSessions = LockIsolated([(UUID, Date)]())
-        let closedAt = Date(timeIntervalSince1970: 552)
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually { captureGate.requestCount == 1 }
 
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.runningApplications = [app.bundleIdentifier: app]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: activeSession
-        )
+        await harness.service.stopCapture(bundleIdentifier: harness.config.bundleIdentifier)
+        await Task.yield()
+        XCTAssertFalse(order.value.contains("close"), "metadata must remain open while frame acquisition is draining")
 
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { closedAt }
-            $0.persistenceClient.closeSession = { sessionID, endedAt in
-                closedSessions.withValue { $0.append((sessionID, endedAt)) }
+        await captureGate.resumeNext(returning: Self.makeImage())
+        try await eventually {
+            collector.events.contains {
+                if case .sessionClosed = $0 { return true }
+                return false
             }
         }
-
-        await store.send(.sessionOpened(duplicateSession, app))
-        await store.receive(.sessionClosed(app.bundleIdentifier))
-
-        XCTAssertEqual(store.state.activeSessions[app.bundleIdentifier]?.session, activeSession)
-        XCTAssertEqual(closedSessions.value.map(\.0), [duplicateSession.id])
-        XCTAssertEqual(closedSessions.value.map(\.1), [closedAt])
+        XCTAssertEqual(order.value, ["enqueue", "flush", "close"])
     }
 
-    @MainActor
-    func testManualCaptureDoesNotStartFromRunningApplicationDetection() async {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.ManualApp",
-            displayName: "Manual App",
-            processIdentifier: 43
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            captureMode: .manual,
-            isEnabled: false
-        )
-
-        var initialState = CaptureEngineFeature.State()
-        initialState.permissionStatus = .authorized
-
-        let store = TestStore(initialState: initialState) {
-            CaptureEngineFeature()
-        }
-
-        await store.send(.whitelistUpdated([config])) {
-            $0.whitelist = [config.bundleIdentifier: config]
-        }
-        await store.send(.runningApplicationsLoaded([app])) {
-            $0.runningApplications = [app.bundleIdentifier: app]
-        }
-        await store.send(.workspaceEvent(.launched(app))) {
-            $0.lastWorkspaceEvent = .launched(app)
-            $0.runningApplications = [app.bundleIdentifier: app]
-        }
-    }
-
-    @MainActor
-    func testUserCaptureStartsAndStopsOnlyFromExplicitActions() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.ManualStartApp",
-            displayName: "Manual Start App",
-            processIdentifier: 45
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            captureMode: .manual,
-            isEnabled: false
-        )
-        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000051"))
-        let startedAt = Date(timeIntervalSince1970: 510)
-        let endedAt = Date(timeIntervalSince1970: 610)
-        let now = LockIsolated(startedAt)
-        let clock = TestClock()
-
-        var initialState = CaptureEngineFeature.State()
-        initialState.whitelist = [config.bundleIdentifier: config]
-        initialState.runningApplications = [app.bundleIdentifier: app]
-        initialState.permissionStatus = .authorized
-
-        let store = TestStore(initialState: initialState) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.continuousClock = clock
-            $0.dateClient.now = { now.value }
-            $0.idGeneratorClient.uuid = { sessionID }
-            $0.persistenceClient.openSession = { _ in }
-            $0.persistenceClient.closeSession = { _, _ in }
-            $0.screenCaptureClient.windows = { _ in [] }
-        }
-
-        let expectedSession = CaptureSession(
-            id: sessionID,
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: startedAt
-        )
-
-        await store.send(.captureStart(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-                application: app,
-                config: config,
-                session: expectedSession
+    func testFrameAcquisitionNeverExceedsConfiguredConcurrency() async throws {
+        let clock = TestClock<Duration>()
+        let captureGate = CaptureGate()
+        let enqueuedCount = Locked(0)
+        let windows = (1 ... 5).map { number in
+            CapturableWindow(
+                systemWindowID: number,
+                title: "Window \(number)",
+                frame: CGRect(x: CGFloat(number * 10), y: CGFloat(number * 10), width: 800, height: 600),
+                layer: 0,
+                isOnScreen: true
             )
         }
+        let harness = makeHarness(
+            clock: clock,
+            windows: { _ in windows },
+            capture: { _ in try await captureGate.next() },
+            enqueue: { frame in
+                enqueuedCount.withValue { $0 += 1 }
+                return .accepted(frameID: frame.id)
+            }
+        )
+        let stream = await harness.service.start()
+        let task = Task { for await _ in stream {} }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
 
-        await store.receive(.sessionOpened(expectedSession, app))
-        await store.receive(.captureTick(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
+        try await eventually { captureGate.requestCount == 2 }
+        for expectedRequestCount in 3 ... 5 {
+            await captureGate.resumeNext(returning: Self.makeImage())
+            try await eventually { captureGate.requestCount == expectedRequestCount }
         }
-        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-
-        now.setValue(endedAt)
-        await store.send(.captureStop(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
+        await captureGate.resumeNext(returning: Self.makeImage())
+        await captureGate.resumeNext(returning: Self.makeImage())
+        try await eventually { enqueuedCount.value == 5 }
+        XCTAssertEqual(captureGate.maximumActiveCount, 2)
     }
 
-    @MainActor
-    func testSwitchingAutoSessionToManualKeepsSessionUntilUserStops() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.ModeSwitchApp",
-            displayName: "Mode Switch App",
-            processIdentifier: 46
-        )
-        let autoConfig = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            captureMode: .auto,
-            isEnabled: true
-        )
-        let manualConfig = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            captureMode: .manual,
-            isEnabled: false
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000052")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 520)
-        )
-        let endedAt = Date(timeIntervalSince1970: 620)
-        let closedSessions = LockIsolated([(UUID, Date)]())
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [app.bundleIdentifier: autoConfig]
-        state.runningApplications = [app.bundleIdentifier: app]
-        state.permissionStatus = .authorized
-        state.activeSessions = [
-            app.bundleIdentifier: CaptureEngineFeature.State.ActiveSession(
-                application: app,
-                config: autoConfig,
-                session: session
+    func testEncodingOptionsAreFrozenForEveryFrameInCycle() async throws {
+        let clock = TestClock<Duration>()
+        let captureGate = CaptureGate()
+        let selectedOptions = Locked(CaptureEncodingOptions(format: .heic, heicQuality: 0.61))
+        let envelopes = Locked<[CapturedFrameEnvelope]>([])
+        let windows = [
+            CapturableWindow(
+                systemWindowID: 1,
+                title: "First",
+                frame: CGRect(x: 0, y: 0, width: 800, height: 600),
+                layer: 0,
+                isOnScreen: true
+            ),
+            CapturableWindow(
+                systemWindowID: 2,
+                title: "Second",
+                frame: CGRect(x: 20, y: 20, width: 800, height: 600),
+                layer: 0,
+                isOnScreen: true
             ),
         ]
+        let harness = makeHarness(
+            clock: clock,
+            encodingOptions: { selectedOptions.value },
+            windows: { _ in windows },
+            capture: { _ in try await captureGate.next() },
+            enqueue: { envelope in
+                envelopes.withValue { $0.append(envelope) }
+                return .accepted(frameID: envelope.id)
+            }
+        )
+        let stream = await harness.service.start()
+        let task = Task { for await _ in stream {} }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually { captureGate.requestCount == 2 }
 
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { endedAt }
-            $0.persistenceClient.closeSession = { sessionID, endedAt in
-                closedSessions.withValue { $0.append((sessionID, endedAt)) }
+        selectedOptions.withValue { $0 = CaptureEncodingOptions(format: .png, heicQuality: 1) }
+        await captureGate.resumeNext(returning: Self.makeImage())
+        await captureGate.resumeNext(returning: Self.makeImage())
+        try await eventually { envelopes.value.count == 2 }
+        XCTAssertEqual(envelopes.value.map(\.encodingOptions), [
+            CaptureEncodingOptions(format: .heic, heicQuality: 0.61),
+            CaptureEncodingOptions(format: .heic, heicQuality: 0.61),
+        ])
+    }
+
+    func testStorageDegradationPausesAndResumeReanchorsWithoutImmediateCapture() async throws {
+        let clock = TestClock<Duration>()
+        let storageEvents = StreamPipe<StorageCoordinatorEvent>()
+        let requestCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            storageEvents: storageEvents,
+            windows: { _ in
+                requestCount.withValue { $0 += 1 }
+                return []
+            }
+        )
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually { requestCount.value == 1 }
+
+        storageEvents.yield(.storageDegraded(.queueFull(capacity: 3)))
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionUpdated(snapshot) = $0 else { return false }
+                return snapshot.pauseReason == .storageUnavailable(.queueFull(capacity: 3))
+            }
+        }
+        await clock.advance(by: .seconds(60))
+        XCTAssertEqual(requestCount.value, 1)
+
+        storageEvents.yield(.storageResumed)
+        try await eventually {
+            collector.events.contains {
+                if case .storageResumed = $0 { return true }
+                return false
+            }
+        }
+        XCTAssertEqual(requestCount.value, 1, "resume must re-anchor rather than capture immediately")
+        await clock.advance(by: .seconds(9))
+        XCTAssertEqual(requestCount.value, 1)
+        await clock.advance(by: .seconds(1))
+        try await eventually { requestCount.value == 2 }
+    }
+
+    func testAutoWhitelistStartsAndTerminationClosesSession() async throws {
+        let clock = TestClock<Duration>()
+        let workspaceEvents = StreamPipe<WorkspaceEvent>()
+        let closedSessionIDs = Locked<[UUID]>([])
+        let harness = makeHarness(
+            clock: clock,
+            workspaceEvents: workspaceEvents,
+            windows: { _ in [] },
+            close: { sessionID, _ in closedSessionIDs.withValue { $0.append(sessionID) } }
+        )
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually {
+            collector.events.contains {
+                if case .sessionOpened = $0 { return true }
+                return false
+            }
+        }
+        let openedID = try XCTUnwrap(collector.events.compactMap { event -> UUID? in
+            guard case let .sessionOpened(snapshot) = event else { return nil }
+            return snapshot.handle.sessionID
+        }.first)
+
+        workspaceEvents.yield(.terminated(harness.application))
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionClosed(handle, _) = $0 else { return false }
+                return handle.sessionID == openedID
+            }
+        }
+        XCTAssertEqual(closedSessionIDs.value, [openedID])
+    }
+
+    func testManualWhitelistWaitsForExplicitStart() async throws {
+        let clock = TestClock<Duration>()
+        let openCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            open: { _ in openCount.withValue { $0 += 1 } },
+            windows: { _ in [] }
+        )
+        var manual = harness.config
+        manual.captureMode = .manual
+        manual.isEnabled = false
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([manual])
+
+        try await eventually {
+            collector.events.contains {
+                guard case let .runningApplicationsChanged(applications) = $0 else { return false }
+                return applications.contains(harness.application)
+            }
+        }
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        XCTAssertEqual(openCount.value, 0)
+
+        await harness.service.startCapture(bundleIdentifier: manual.bundleIdentifier)
+        try await eventually { openCount.value == 1 }
+        try await eventually {
+            collector.events.contains {
+                if case .sessionOpened = $0 { return true }
+                return false
+            }
+        }
+    }
+
+    func testPauseAndResumeKeepSessionOpenAndReanchorSchedule() async throws {
+        let clock = TestClock<Duration>()
+        let requestCount = Locked(0)
+        let closeCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            windows: { _ in
+                requestCount.withValue { $0 += 1 }
+                return []
+            },
+            close: { _, _ in closeCount.withValue { $0 += 1 } }
+        )
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually { requestCount.value == 1 }
+
+        await harness.service.pauseCapture(bundleIdentifier: harness.config.bundleIdentifier)
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionUpdated(snapshot) = $0 else { return false }
+                return snapshot.pauseReason == .user
+            }
+        }
+        await clock.advance(by: .seconds(30))
+        XCTAssertEqual(requestCount.value, 1)
+        XCTAssertEqual(closeCount.value, 0)
+
+        let resumeEventOffset = collector.events.count
+        await harness.service.resumeCapture(bundleIdentifier: harness.config.bundleIdentifier)
+        try await eventually {
+            collector.events.dropFirst(resumeEventOffset).contains {
+                guard case let .sessionUpdated(snapshot) = $0 else { return false }
+                return snapshot.pauseReason == nil
+            }
+        }
+        await clock.advance(by: .seconds(9))
+        XCTAssertEqual(requestCount.value, 1)
+        await clock.advance(by: .seconds(1))
+        try await eventually { requestCount.value == 2 }
+        XCTAssertEqual(closeCount.value, 0)
+    }
+
+    func testWindowRegistryKeepsStableNumbersAndTitleHistory() async throws {
+        let clock = TestClock<Duration>()
+        let cycles = Locked([
+            [
+                Self.window(id: 10, title: "Untitled"),
+                Self.window(id: 20, title: "Second"),
+            ],
+            [
+                Self.window(id: 10, title: "Notes.txt"),
+                Self.window(id: 20, title: "Second"),
+                Self.window(id: 30, title: "Third"),
+            ],
+        ])
+        let harness = makeHarness(
+            clock: clock,
+            windows: { _ in cycles.withValue { $0.removeFirst() } }
+        )
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionUpdated(snapshot) = $0 else { return false }
+                return snapshot.windowsBySystemID.count == 2 && !snapshot.isCaptureInFlight
             }
         }
 
-        await store.send(.whitelistUpdated([manualConfig])) {
-            $0.whitelist = [app.bundleIdentifier: manualConfig]
-            $0.activeSessions[app.bundleIdentifier]?.config = manualConfig
+        await clock.advance(by: .seconds(10))
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionUpdated(snapshot) = $0 else { return false }
+                return snapshot.windowsBySystemID.count == 3 && !snapshot.isCaptureInFlight
+            }
         }
-
-        await store.send(.captureStop(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
-
-        XCTAssertEqual(closedSessions.value.map(\.0), [session.id])
-        XCTAssertEqual(closedSessions.value.map(\.1), [endedAt])
+        let snapshot = try XCTUnwrap(collector.events.compactMap { event -> RecordingSessionSnapshot? in
+            guard case let .sessionUpdated(snapshot) = event,
+                  snapshot.windowsBySystemID.count == 3,
+                  !snapshot.isCaptureInFlight
+            else { return nil }
+            return snapshot
+        }.last)
+        XCTAssertEqual(snapshot.windowsBySystemID[10]?.displayNumber, 1)
+        XCTAssertEqual(snapshot.windowsBySystemID[20]?.displayNumber, 2)
+        XCTAssertEqual(snapshot.windowsBySystemID[30]?.displayNumber, 3)
+        XCTAssertEqual(snapshot.nextWindowNumber, 4)
+        XCTAssertEqual(snapshot.windowsBySystemID[10]?.titleHistory.map(\.title), ["Untitled", "Notes.txt"] as [String?])
     }
 
-    @MainActor
-    func testSwitchingManualSessionToAutoKeepsSessionUntilAppTerminates() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.ManualToAutoApp",
-            displayName: "Manual To Auto App",
-            processIdentifier: 47
+    func testWindowFilteringExcludesAttachedSheetsAndStageManagerWindows() async throws {
+        let clock = TestClock<Duration>()
+        let main = Self.window(id: 1, title: "Document", frame: CGRect(x: 0, y: 0, width: 1000, height: 800))
+        let sheet = Self.window(id: 2, title: "Open", frame: CGRect(x: 100, y: 100, width: 400, height: 300))
+        var stowed = Self.window(id: 3, title: "Stowed", frame: CGRect(x: 0, y: 0, width: 300, height: 200))
+        stowed.isStageManagerStowed = true
+        var offscreen = Self.window(id: 4, title: "Hidden")
+        offscreen.isOnScreen = false
+        let stowedWindow = stowed
+        let offscreenWindow = offscreen
+        let other = Self.window(id: 5, title: "Other", frame: CGRect(x: 1100, y: 0, width: 500, height: 500))
+        let harness = makeHarness(
+            clock: clock,
+            windows: { _ in [main, sheet, stowedWindow, offscreenWindow, other] }
         )
-        let manualConfig = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            captureMode: .manual,
-            isEnabled: false
-        )
-        let autoConfig = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            captureMode: .auto,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000053")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 530)
-        )
-        let endedAt = Date(timeIntervalSince1970: 630)
-        let closedSessions = LockIsolated([(UUID, Date)]())
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionUpdated(snapshot) = $0 else { return false }
+                return Set(snapshot.windowsBySystemID.keys) == Set([1, 5]) && !snapshot.isCaptureInFlight
+            }
+        }
+        let snapshot = try XCTUnwrap(collector.events.compactMap { event -> RecordingSessionSnapshot? in
+            guard case let .sessionUpdated(snapshot) = event,
+                  Set(snapshot.windowsBySystemID.keys) == Set([1, 5])
+            else { return nil }
+            return snapshot
+        }.last)
+        XCTAssertEqual(snapshot.windowsBySystemID[1]?.displayNumber, 1)
+        XCTAssertEqual(snapshot.windowsBySystemID[5]?.displayNumber, 2)
+    }
 
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [app.bundleIdentifier: manualConfig]
-        state.runningApplications = [app.bundleIdentifier: app]
-        state.permissionStatus = .authorized
-        state.activeSessions = [
-            app.bundleIdentifier: CaptureEngineFeature.State.ActiveSession(
-                application: app,
-                config: manualConfig,
-                session: session
+    func testUnavailableSpanExtendsOneStableRecordAcrossCycles() async throws {
+        let clock = TestClock<Duration>()
+        let cycles = Locked([
+            [Self.window(id: 1, title: "Document")],
+            [],
+            [],
+        ])
+        let records = Locked<[CaptureUnavailableRecord]>([])
+        let harness = makeHarness(
+            clock: clock,
+            recordUnavailable: { record in records.withValue { $0.append(record) } },
+            windows: { _ in cycles.withValue { $0.removeFirst() } }
+        )
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionUpdated(snapshot) = $0 else { return false }
+                return snapshot.windowsBySystemID.count == 1 && !snapshot.isCaptureInFlight
+            }
+        }
+
+        await clock.advance(by: .seconds(10))
+        try await eventually { records.value.count == 1 }
+        await clock.advance(by: .seconds(10))
+        try await eventually { records.value.count == 2 }
+
+        let first = records.value[0]
+        let second = records.value[1]
+        XCTAssertEqual(first.id, second.id)
+        XCTAssertEqual(first.startedAt, second.startedAt)
+        XCTAssertEqual(first.startedAt, Date(timeIntervalSince1970: 10))
+        XCTAssertEqual(first.endedAt, Date(timeIntervalSince1970: 10))
+        XCTAssertEqual(second.endedAt, Date(timeIntervalSince1970: 20))
+        XCTAssertEqual(first.reason, .windowMinimized)
+        XCTAssertEqual(second.reason, .windowMinimized)
+    }
+
+    func testDuplicateManualStartsOpenOnlyOneSession() async throws {
+        let clock = TestClock<Duration>()
+        let openCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            open: { _ in openCount.withValue { $0 += 1 } },
+            windows: { _ in [] }
+        )
+        var manual = harness.config
+        manual.captureMode = .manual
+        manual.isEnabled = false
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([manual])
+        await harness.service.startCapture(bundleIdentifier: manual.bundleIdentifier)
+        await harness.service.startCapture(bundleIdentifier: manual.bundleIdentifier)
+        try await eventually {
+            collector.events.contains {
+                if case .sessionOpened = $0 { return true }
+                return false
+            }
+        }
+        await harness.service.startCapture(bundleIdentifier: manual.bundleIdentifier)
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+        XCTAssertEqual(openCount.value, 1)
+        XCTAssertEqual(collector.events.filter {
+            if case .sessionOpened = $0 { return true }
+            return false
+        }.count, 1)
+    }
+
+    func testOpenFailureReleasesSlotForExplicitRetry() async throws {
+        let clock = TestClock<Duration>()
+        let openCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            open: { _ in
+                let attempt = openCount.withValue { value -> Int in
+                    value += 1
+                    return value
+                }
+                if attempt == 1 { throw RecordingServiceTestError.openFailed }
+            },
+            windows: { _ in [] }
+        )
+        var manual = harness.config
+        manual.captureMode = .manual
+        manual.isEnabled = false
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([manual])
+        await harness.service.startCapture(bundleIdentifier: manual.bundleIdentifier)
+        try await eventually {
+            collector.events.contains {
+                if case .diagnostic(.failure) = $0 { return true }
+                return false
+            }
+        }
+        XCTAssertFalse(collector.events.contains {
+            if case .sessionOpened = $0 { return true }
+            return false
+        })
+
+        await harness.service.startCapture(bundleIdentifier: manual.bundleIdentifier)
+        try await eventually {
+            collector.events.contains {
+                guard case let .sessionOpened(snapshot) = $0 else { return false }
+                return snapshot.handle.generation == 2
+            }
+        }
+        XCTAssertEqual(openCount.value, 2)
+    }
+
+    func testDeniedPermissionDoesNotConsumePendingManualStart() async {
+        let clock = TestClock<Duration>()
+        let permissionStatus = Locked(CapturePermissionStatus.denied)
+        let openCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            permission: CapturePermissionClient(
+                status: { permissionStatus.value },
+                request: { permissionStatus.value }
             ),
-        ]
+            open: { _ in openCount.withValue { $0 += 1 } },
+            windows: { _ in [] }
+        )
+        var manual = harness.config
+        manual.captureMode = .manual
+        manual.isEnabled = false
+        let stream = await harness.service.start()
+        let task = Task { for await _ in stream {} }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([manual])
 
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { endedAt }
-            $0.persistenceClient.closeSession = { sessionID, endedAt in
-                closedSessions.withValue { $0.append((sessionID, endedAt)) }
+        await harness.service.startCapture(bundleIdentifier: manual.bundleIdentifier)
+        await harness.service.registerRunningApplication(harness.application)
+        for _ in 0 ..< 50 {
+            await Task.yield()
+        }
+
+        XCTAssertEqual(openCount.value, 0)
+    }
+
+    func testAutomaticOpenRetriesAfterTransientFailure() async throws {
+        let clock = TestClock<Duration>()
+        let openCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            open: { _ in
+                let attempt = openCount.withValue { count -> Int in
+                    count += 1
+                    return count
+                }
+                if attempt == 1 { throw RecordingServiceTestError.openFailed }
+            },
+            windows: { _ in [] }
+        )
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually {
+            collector.events.contains {
+                if case .diagnostic(.failure) = $0 { return true }
+                return false
             }
         }
-
-        await store.send(.whitelistUpdated([autoConfig])) {
-            $0.whitelist = [app.bundleIdentifier: autoConfig]
-            $0.activeSessions[app.bundleIdentifier]?.config = autoConfig
+        for _ in 0 ..< 50 {
+            await Task.yield()
         }
 
-        await store.send(.workspaceEvent(.terminated(app))) {
-            $0.lastWorkspaceEvent = .terminated(app)
-            $0.runningApplications[app.bundleIdentifier] = nil
-            $0.activeSessions[app.bundleIdentifier] = nil
+        await clock.advance(by: .seconds(1))
+        try await eventually {
+            collector.events.contains {
+                if case .sessionOpened = $0 { return true }
+                return false
+            }
         }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
+        XCTAssertEqual(openCount.value, 2)
+    }
 
-        XCTAssertEqual(closedSessions.value.map(\.0), [session.id])
-        XCTAssertEqual(closedSessions.value.map(\.1), [endedAt])
+    func testCloseRetriesBeforeReplacementGenerationStarts() async throws {
+        let clock = TestClock<Duration>()
+        let workspaceEvents = StreamPipe<WorkspaceEvent>()
+        let closeCount = Locked(0)
+        let harness = makeHarness(
+            clock: clock,
+            workspaceEvents: workspaceEvents,
+            windows: { _ in [] },
+            close: { _, _ in
+                let attempt = closeCount.withValue { count -> Int in
+                    count += 1
+                    return count
+                }
+                if attempt == 1 { throw RecordingServiceTestError.closeFailed }
+            }
+        )
+        let collector = EventCollector()
+        let stream = await harness.service.start()
+        let task = Task { for await event in stream {
+            collector.append(event)
+        } }
+        defer { task.cancel() }
+        await harness.service.applyWhitelist([harness.config])
+        try await eventually { Self.sessionOpenedCount(in: collector.events) == 1 }
+
+        let replacement = RunningApplication(
+            bundleIdentifier: harness.application.bundleIdentifier,
+            displayName: harness.application.displayName,
+            processIdentifier: 202
+        )
+        workspaceEvents.yield(.launched(replacement))
+        try await eventually { closeCount.value == 1 }
+        XCTAssertEqual(Self.sessionOpenedCount(in: collector.events), 1)
+
+        await clock.advance(by: .seconds(1))
+        try await eventually { Self.sessionOpenedCount(in: collector.events) == 2 }
+        XCTAssertEqual(closeCount.value, 2)
     }
 
     @MainActor
-    func testExplicitPermissionRequestStartsWhitelistedRunningAppsWhenAuthorized() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.PermissionApp",
-            displayName: "Permission App",
-            processIdentifier: 44
-        )
+    func testReducerIgnoresStaleGenerationSnapshotForReplacementSession() async throws {
+        let app = RunningApplication(bundleIdentifier: "com.example.Editor", displayName: "Editor", processIdentifier: 2)
         let config = WhitelistedAppConfig(
             bundleIdentifier: app.bundleIdentifier,
             displayName: app.displayName,
-            captureInterval: 60,
+            captureInterval: 10,
             isEnabled: true
         )
-        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000050"))
-        let startedAt = Date(timeIntervalSince1970: 500)
-
+        let replacementSession = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000002")),
+            bundleIdentifier: app.bundleIdentifier,
+            displayName: app.displayName,
+            processIdentifier: 2,
+            startedAt: .init(timeIntervalSince1970: 2)
+        )
         var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.runningApplications = [app.bundleIdentifier: app]
-        state.permissionStatus = .denied
-        state.lastError = CaptureEngineError.screenRecordingPermissionDenied.localizedDescription
-
-        let clock = TestClock()
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.continuousClock = clock
-            $0.capturePermissionClient.request = { .authorized }
-            $0.dateClient.now = { startedAt }
-            $0.idGeneratorClient.uuid = { sessionID }
-            $0.persistenceClient.openSession = { _ in }
-            $0.persistenceClient.closeSession = { _, _ in }
-            $0.screenCaptureClient.windows = { _ in [] }
-        }
-
-        let expectedSession = CaptureSession(
-            id: sessionID,
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: startedAt
-        )
-
-        await store.send(.requestPermissionButtonTapped)
-        await store.receive(.permissionResolved(.authorized, nil)) {
-            $0.permissionStatus = .authorized
-            $0.lastError = nil
-            $0.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-                application: app,
-                config: config,
-                session: expectedSession
-            )
-        }
-
-        await store.receive(.sessionOpened(expectedSession, app))
-        await store.receive(.captureTick(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
-        }
-        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-        await store.send(.workspaceEvent(.terminated(app))) {
-            $0.lastWorkspaceEvent = .terminated(app)
-            $0.runningApplications[app.bundleIdentifier] = nil
-            $0.activeSessions[app.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
-    }
-
-    @MainActor
-    func testWorkspaceEventsUpdateLifecycleDiagnostics() async {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.LifecycleApp",
-            displayName: "Lifecycle App",
-            processIdentifier: 45
-        )
-
-        let store = TestStore(initialState: CaptureEngineFeature.State()) {
-            CaptureEngineFeature()
-        }
-
-        await store.send(.workspaceEvent(.launched(app))) {
-            $0.lastWorkspaceEvent = .launched(app)
-            $0.runningApplications[app.bundleIdentifier] = app
-        }
-        await store.send(.workspaceEvent(.activated(app))) {
-            $0.lastWorkspaceEvent = .activated(app)
-            $0.runningApplications[app.bundleIdentifier] = app
-        }
-        await store.send(.workspaceEvent(.terminated(app))) {
-            $0.lastWorkspaceEvent = .terminated(app)
-            $0.runningApplications[app.bundleIdentifier] = nil
-        }
-    }
-
-    @MainActor
-    func testStaleOpenSessionsClosedRecordsDiagnostic() async {
-        let store = TestStore(initialState: CaptureEngineFeature.State()) {
-            CaptureEngineFeature()
-        }
-
-        await store.send(.staleOpenSessionsClosed(2)) {
-            $0.lastError = CaptureDiagnostic.closedStaleSessions(count: 2).message
-            $0.recentDiagnostics = [.closedStaleSessions(count: 2)]
-        }
-    }
-
-    @MainActor
-    func testWindowsReceiveStableSessionScopedNumbers() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.Modeler",
-            displayName: "Modeler",
-            processIdentifier: 99
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000010")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let firstWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000011"))
-        let firstObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000012"))
-        let secondWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000013"))
-        let secondObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000014"))
-        let ids = UUIDSequence([firstWindowID, firstObservationID, secondWindowID, secondObservationID])
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
+        state.activeSessions[app.bundleIdentifier] = .init(
             application: app,
             config: config,
-            session: session
+            session: replacementSession,
+            generation: 2
         )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
-            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
-            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
-            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
-            $0.fileStorageClient.write = { data, _ in data.count }
-            $0.imageEncodingClient.encode = { _, _ in Data() }
-            $0.idGeneratorClient.uuid = { ids.next() }
-            $0.persistenceClient.recordCaptureUnavailable = { _ in }
-            $0.persistenceClient.upsertWindow = { _ in }
-            $0.screenCaptureClient.capture = { _ in throw CaptureEngineError.windowCaptureFailed(systemWindowID: -1) }
-            $0.loggingClient.log = { _, _, _ in }
-        }
-        store.exhaustivity = .off
-
-        await store.send(
-            .windowsLoaded(
-                app.bundleIdentifier,
-                [
-                    CapturableWindow(
-                        systemWindowID: 501,
-                        title: "Canvas",
-                        frame: CGRect(x: 0, y: 0, width: 800, height: 600),
-                        layer: 0,
-                        isOnScreen: true
-                    ),
-                    CapturableWindow(
-                        systemWindowID: 777,
-                        title: "Reference",
-                        frame: CGRect(x: 0, y: 0, width: 600, height: 400),
-                        layer: 0,
-                        isOnScreen: true
-                    ),
-                ]
-            )
-        ) {
-            var active = $0.activeSessions[app.bundleIdentifier]!
-            active.nextWindowNumber = 3
-            active.windowsBySystemID[501] = MonitoredWindow(
-                id: firstWindowID,
-                sessionID: session.id,
-                systemWindowID: 501,
-                displayNumber: 1,
-                label: "Canvas",
-                firstSeenAt: Date(timeIntervalSince1970: 10),
-                lastSeenAt: Date(timeIntervalSince1970: 10),
-                titleHistory: [
-                    WindowTitleObservation(
-                        id: firstObservationID,
-                        title: "Canvas",
-                        observedAt: Date(timeIntervalSince1970: 10)
-                    ),
-                ]
-            )
-            active.windowsBySystemID[777] = MonitoredWindow(
-                id: secondWindowID,
-                sessionID: session.id,
-                systemWindowID: 777,
-                displayNumber: 2,
-                label: "Reference",
-                firstSeenAt: Date(timeIntervalSince1970: 10),
-                lastSeenAt: Date(timeIntervalSince1970: 10),
-                titleHistory: [
-                    WindowTitleObservation(
-                        id: secondObservationID,
-                        title: "Reference",
-                        observedAt: Date(timeIntervalSince1970: 10)
-                    ),
-                ]
-            )
-            $0.activeSessions[app.bundleIdentifier] = active
-        }
-    }
-
-    @MainActor
-    func testWindowTitleChangeRecordsNewObservationInHistory() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.TextApp",
-            displayName: "Text App",
-            processIdentifier: 55
-        )
-        let config = WhitelistedAppConfig(
+        let staleSession = try CaptureSession(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000001")),
             bundleIdentifier: app.bundleIdentifier,
             displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
+            processIdentifier: 1,
+            startedAt: .init(timeIntervalSince1970: 1)
         )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A0")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1"))
-        let firstObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A2"))
-        let secondObservationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A3"))
-        let ids = UUIDSequence([windowID, firstObservationID, secondObservationID])
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
+        let staleSnapshot = RecordingSessionSnapshot(
+            handle: RecordingSessionHandle(
+                sessionID: staleSession.id,
+                bundleIdentifier: app.bundleIdentifier,
+                processIdentifier: 1,
+                generation: 1
+            ),
+            application: RunningApplication(
+                bundleIdentifier: app.bundleIdentifier,
+                displayName: app.displayName,
+                processIdentifier: 1
+            ),
             config: config,
-            session: session
+            session: staleSession,
+            nextWindowNumber: 99,
+            windowsBySystemID: [:],
+            isCaptureInFlight: true,
+            captureUnavailableReason: .windowMinimized,
+            pauseReason: nil
         )
+        let store = TestStore(initialState: state) { CaptureEngineFeature() }
 
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
-            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
-            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
-            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
-            $0.fileStorageClient.write = { data, _ in data.count }
-            $0.imageEncodingClient.encode = { _, _ in Data() }
-            $0.idGeneratorClient.uuid = { ids.next() }
-            $0.persistenceClient.recordCaptureUnavailable = { _ in }
-            $0.persistenceClient.upsertWindow = { _ in }
-            $0.screenCaptureClient.capture = { _ in throw CaptureEngineError.windowCaptureFailed(systemWindowID: -1) }
-            $0.loggingClient.log = { _, _, _ in }
-        }
-        store.exhaustivity = .off
-
-        // First tick: the window is seen as "Untitled".
-        await store.send(
-            .windowsLoaded(app.bundleIdentifier, [
-                CapturableWindow(
-                    systemWindowID: 700,
-                    title: "Untitled",
-                    frame: CGRect(x: 0, y: 0, width: 800, height: 600),
-                    layer: 0,
-                    isOnScreen: true
-                ),
-            ])
-        )
-        await store.skipReceivedActions()
-
-        // Second tick: the same window (same system id) is now "Notes.txt".
-        await store.send(
-            .windowsLoaded(app.bundleIdentifier, [
-                CapturableWindow(
-                    systemWindowID: 700,
-                    title: "Notes.txt",
-                    frame: CGRect(x: 0, y: 0, width: 800, height: 600),
-                    layer: 0,
-                    isOnScreen: true
-                ),
-            ])
-        )
-        await store.skipReceivedActions()
-
-        let history = try XCTUnwrap(
-            store.state.activeSessions[app.bundleIdentifier]?.windowsBySystemID[700]?.titleHistory
-        )
-        XCTAssertEqual(history.map(\.title), ["Untitled", "Notes.txt"])
-        XCTAssertEqual(history.map(\.id), [firstObservationID, secondObservationID])
+        await store.send(.recordingServiceEvent(.sessionUpdated(staleSnapshot)))
+        XCTAssertEqual(store.state.activeSessions[app.bundleIdentifier]?.session.id, replacementSession.id)
+        XCTAssertEqual(store.state.activeSessions[app.bundleIdentifier]?.generation, 2)
+        XCTAssertEqual(store.state.activeSessions[app.bundleIdentifier]?.nextWindowNumber, 1)
     }
 
-    @MainActor
-    func testAttachedSheetsAreNotTrackedAsSeparateWindows() async throws {
+    private static func sessionOpenedCount(in events: [RecordingServiceEvent]) -> Int {
+        events.count { event in
+            if case .sessionOpened = event { return true }
+            return false
+        }
+    }
+
+    private func makeHarness(
+        clock: TestClock<Duration>,
+        storageEvents: StreamPipe<StorageCoordinatorEvent> = StreamPipe(),
+        workspaceEvents: StreamPipe<WorkspaceEvent> = StreamPipe(),
+        permission: CapturePermissionClient = CapturePermissionClient(status: { .authorized }, request: { .authorized }),
+        encodingOptions: @escaping @Sendable () -> CaptureEncodingOptions = { .defaultValue },
+        open: @escaping @Sendable (CaptureSession) async throws -> Void = { _ in },
+        recordUnavailable: @escaping @Sendable (CaptureUnavailableRecord) async throws -> Void = { _ in },
+        windows: @escaping @Sendable (RunningApplication) async throws -> [CapturableWindow],
+        capture: @escaping @Sendable (Int) async throws -> CapturedImage = { _ in CaptureEngineFeatureTests.makeImage() },
+        enqueue: @escaping @Sendable (CapturedFrameEnvelope) async -> StorageEnqueueResult = { .accepted(frameID: $0.id) },
+        flush: @escaping @Sendable (RecordingSessionHandle) async throws -> Void = { _ in },
+        close: @escaping @Sendable (UUID, Date) async throws -> Void = { _, _ in }
+    ) -> Harness {
         let app = RunningApplication(
             bundleIdentifier: "com.example.Editor",
             displayName: "Editor",
-            processIdentifier: 100
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000030")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let parentWindowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000031"))
-        let observationID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000032"))
-        let ids = UUIDSequence([parentWindowID, observationID])
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session
-        )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
-            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
-            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
-            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
-            $0.fileStorageClient.write = { data, _ in data.count }
-            $0.imageEncodingClient.encode = { _, _ in Data() }
-            $0.idGeneratorClient.uuid = { ids.next() }
-            $0.persistenceClient.recordCaptureUnavailable = { _ in }
-            $0.persistenceClient.upsertWindow = { _ in }
-            $0.screenCaptureClient.capture = { _ in throw CaptureEngineError.windowCaptureFailed(systemWindowID: -1) }
-            $0.loggingClient.log = { _, _, _ in }
-        }
-        store.exhaustivity = .off
-
-        await store.send(
-            .windowsLoaded(
-                app.bundleIdentifier,
-                [
-                    CapturableWindow(
-                        systemWindowID: 801,
-                        title: "Document",
-                        frame: CGRect(x: 0, y: 0, width: 1000, height: 700),
-                        layer: 0,
-                        isOnScreen: true
-                    ),
-                    CapturableWindow(
-                        systemWindowID: 802,
-                        title: "Save",
-                        frame: CGRect(x: 250, y: 120, width: 500, height: 360),
-                        layer: 0,
-                        isOnScreen: true
-                    ),
-                ]
-            )
-        ) {
-            var active = $0.activeSessions[app.bundleIdentifier]!
-            active.nextWindowNumber = 2
-            active.windowsBySystemID[801] = MonitoredWindow(
-                id: parentWindowID,
-                sessionID: session.id,
-                systemWindowID: 801,
-                displayNumber: 1,
-                label: "Document",
-                firstSeenAt: Date(timeIntervalSince1970: 10),
-                lastSeenAt: Date(timeIntervalSince1970: 10),
-                titleHistory: [
-                    WindowTitleObservation(
-                        id: observationID,
-                        title: "Document",
-                        observedAt: Date(timeIntervalSince1970: 10)
-                    ),
-                ]
-            )
-            $0.activeSessions[app.bundleIdentifier] = active
-        }
-    }
-
-    @MainActor
-    func testUnknownUnavailableWindowsDoNotRecordPlaceholderBeforeFirstRealCapture() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.HiddenApp",
-            displayName: "Hidden App",
             processIdentifier: 101
         )
         let config = WhitelistedAppConfig(
             bundleIdentifier: app.bundleIdentifier,
             displayName: app.displayName,
-            captureInterval: 60,
+            captureInterval: 10,
             isEnabled: true
         )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000060")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let seenAt = Date(timeIntervalSince1970: 60)
-        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
+        var persistence = PersistenceClient.unimplemented
+        persistence.openSession = open
+        persistence.closeSession = close
+        persistence.closeOpenSessions = { _ in 0 }
+        persistence.upsertWindow = { _ in }
+        persistence.recordCaptureUnavailable = recordUnavailable
 
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session,
-            isCaptureInFlight: true
-        )
+        var storage = StorageCoordinatorClient.testValue
+        storage.events = { storageEvents.stream }
+        storage.enqueue = enqueue
+        storage.flushSession = flush
+        storage.recover = {}
+        var preferences = CapturePreferencesClient.testValue
+        preferences.encodingOptions = encodingOptions
 
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { seenAt }
-            $0.persistenceClient.recordCaptureUnavailable = { record in
-                recordedPlaceholders.withValue { $0.append(record) }
-            }
-        }
-
-        await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-
-        XCTAssertEqual(recordedPlaceholders.value, [])
-    }
-
-    @MainActor
-    func testPreviouslySeenWindowsDisappearingRecordUnavailablePlaceholder() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.NormalMinimizeApp",
-            displayName: "Normal Minimize App",
-            processIdentifier: 103
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000080")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let window = try MonitoredWindow(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000081")),
-            sessionID: session.id,
-            systemWindowID: 921,
-            displayNumber: 1,
-            label: "Main",
-            firstSeenAt: Date(timeIntervalSince1970: 10),
-            lastSeenAt: Date(timeIntervalSince1970: 10)
-        )
-        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000082"))
-        let seenAt = Date(timeIntervalSince1970: 80)
-        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session,
-            windowsBySystemID: [window.systemWindowID: window],
-            isCaptureInFlight: true
-        )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { seenAt }
-            $0.idGeneratorClient.uuid = { unavailableID }
-            $0.persistenceClient.recordCaptureUnavailable = { record in
-                recordedPlaceholders.withValue { $0.append(record) }
-            }
-        }
-
-        let expectedRecord = CaptureUnavailableRecord(
-            id: unavailableID,
-            sessionID: session.id,
-            startedAt: seenAt,
-            endedAt: seenAt,
-            reason: .windowMinimized
-        )
-
-        await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
-            $0.activeSessions[app.bundleIdentifier]?.unavailableRecordID = unavailableID
-            $0.activeSessions[app.bundleIdentifier]?.unavailableStartedAt = seenAt
-        }
-        await store.receive(.captureUnavailableRecorded(expectedRecord))
-
-        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
-    }
-
-    @MainActor
-    func testStageManagerStowedWindowIsTreatedAsUnavailable() async throws {
-        // A window stowed by Stage Manager stays on-screen (isOnScreen == true) but the
-        // live layer flags it isStageManagerStowed because its presented size no longer
-        // matches the app's real Accessibility size. It must be skipped, not captured, and
-        // recorded as a placeholder because the session has already seen real windows.
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.StowedApp",
-            displayName: "Stowed App",
-            processIdentifier: 105
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A0")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let window = try MonitoredWindow(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")),
-            sessionID: session.id,
-            systemWindowID: 941,
-            displayNumber: 1,
-            label: "Main",
-            firstSeenAt: Date(timeIntervalSince1970: 10),
-            lastSeenAt: Date(timeIntervalSince1970: 10)
-        )
-        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A2"))
-        let seenAt = Date(timeIntervalSince1970: 95)
-        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
-        let capturedWindowIDs = LockIsolated([Int]())
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session,
-            windowsBySystemID: [window.systemWindowID: window],
-            isCaptureInFlight: true
-        )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { seenAt }
-            $0.idGeneratorClient.uuid = { unavailableID }
-            $0.persistenceClient.recordCaptureUnavailable = { record in
-                recordedPlaceholders.withValue { $0.append(record) }
-            }
-            $0.screenCaptureClient.capture = { windowID in
-                capturedWindowIDs.withValue { $0.append(windowID) }
-                throw CaptureEngineError.windowCaptureFailed(systemWindowID: windowID)
-            }
-        }
-
-        let expectedRecord = CaptureUnavailableRecord(
-            id: unavailableID,
-            sessionID: session.id,
-            startedAt: seenAt,
-            endedAt: seenAt,
-            reason: .windowMinimized
-        )
-
-        await store.send(
-            .windowsLoaded(
-                app.bundleIdentifier,
-                [
-                    CapturableWindow(
-                        systemWindowID: window.systemWindowID,
-                        title: window.label,
-                        frame: CGRect(x: 0, y: 0, width: 1200, height: 800),
-                        layer: 0,
-                        isOnScreen: true,
-                        isStageManagerStowed: true
-                    ),
-                ]
-            )
-        ) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
-            $0.activeSessions[app.bundleIdentifier]?.unavailableRecordID = unavailableID
-            $0.activeSessions[app.bundleIdentifier]?.unavailableStartedAt = seenAt
-        }
-        await store.receive(.captureUnavailableRecorded(expectedRecord))
-
-        XCTAssertEqual(recordedPlaceholders.value, [expectedRecord])
-        XCTAssertEqual(capturedWindowIDs.value, [])
-    }
-
-    @MainActor
-    func testUnavailablePlaceholderExtendsAcrossUnavailableSpan() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.StageManagedApp",
-            displayName: "Stage Managed App",
-            processIdentifier: 104
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000090")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let window = try MonitoredWindow(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000091")),
-            sessionID: session.id,
-            systemWindowID: 931,
-            displayNumber: 1,
-            label: "Main",
-            firstSeenAt: Date(timeIntervalSince1970: 10),
-            lastSeenAt: Date(timeIntervalSince1970: 10)
-        )
-        let unavailableID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000092"))
-        let firstSeenAt = Date(timeIntervalSince1970: 90)
-        let secondSeenAt = Date(timeIntervalSince1970: 150)
-        let now = LockIsolated(firstSeenAt)
-        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session,
-            windowsBySystemID: [window.systemWindowID: window],
-            isCaptureInFlight: true
-        )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { now.value }
-            $0.idGeneratorClient.uuid = { unavailableID }
-            $0.persistenceClient.recordCaptureUnavailable = { record in
-                recordedPlaceholders.withValue { $0.append(record) }
-            }
-        }
-
-        let openingRecord = CaptureUnavailableRecord(
-            id: unavailableID,
-            sessionID: session.id,
-            startedAt: firstSeenAt,
-            endedAt: firstSeenAt,
-            reason: .windowMinimized
-        )
-
-        // First tick opens the span (started == ended == first tick).
-        await store.send(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-            $0.activeSessions[app.bundleIdentifier]?.captureUnavailableReason = .windowMinimized
-            $0.activeSessions[app.bundleIdentifier]?.unavailableRecordID = unavailableID
-            $0.activeSessions[app.bundleIdentifier]?.unavailableStartedAt = firstSeenAt
-        }
-        await store.receive(.captureUnavailableRecorded(openingRecord))
-
-        // A later tick still unavailable extends the same record's end time (same id,
-        // same start, new end) rather than opening a second placeholder.
-        now.setValue(secondSeenAt)
-        let extendedRecord = CaptureUnavailableRecord(
-            id: unavailableID,
-            sessionID: session.id,
-            startedAt: firstSeenAt,
-            endedAt: secondSeenAt,
-            reason: .windowMinimized
-        )
-        await store.send(.windowsLoaded(app.bundleIdentifier, []))
-        await store.receive(.captureUnavailableRecorded(extendedRecord))
-
-        XCTAssertEqual(recordedPlaceholders.value, [openingRecord, extendedRecord])
-        XCTAssertEqual(Set(recordedPlaceholders.value.map(\.id)), [unavailableID])
-    }
-
-    @MainActor
-    func testCaptureFailureIsDiagnosticOnlyAndKeepsSessionRunning() async throws {
-        // With Stage Manager / minimized windows filtered out before capture, a capture
-        // throwing now means a transient error, not unavailability. It is recorded as a
-        // diagnostic and the cycle finishes without a timeline placeholder (the placeholder
-        // path belongs solely to windowsLoaded when no window is capturable).
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.TransientFailureApp",
-            displayName: "Transient Failure App",
-            processIdentifier: 102
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000070")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let window = try MonitoredWindow(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000071")),
-            sessionID: session.id,
-            systemWindowID: 911,
-            displayNumber: 1,
-            label: "Main",
-            firstSeenAt: Date(timeIntervalSince1970: 10),
-            lastSeenAt: Date(timeIntervalSince1970: 10),
-            titleHistory: [
-                WindowTitleObservation(
-                    id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000073")),
-                    title: "Main",
-                    observedAt: Date(timeIntervalSince1970: 10)
+        let idSequence = IDSequence()
+        let clockOrigin = clock.now
+        let service = RecordingService(
+            dependencies: .init(
+                workspace: WorkspaceClient(
+                    runningApplications: { [app] },
+                    events: { workspaceEvents.stream }
                 ),
-            ]
-        )
-        let failedAt = Date(timeIntervalSince1970: 70)
-        let error = CaptureEngineError.windowCaptureFailed(systemWindowID: window.systemWindowID)
-        let recordedPlaceholders = LockIsolated([CaptureUnavailableRecord]())
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session,
-            windowsBySystemID: [window.systemWindowID: window],
-            isCaptureInFlight: true
-        )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
-            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
-            $0.dateClient.now = { failedAt }
-            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/unused.heic") }
-            $0.fileStorageClient.write = { data, _ in data.count }
-            $0.imageEncodingClient.encode = { _, _ in Data() }
-            $0.idGeneratorClient.uuid = { UUID(uuidString: "00000000-0000-0000-0000-000000000072")! }
-            $0.persistenceClient.recordCaptureUnavailable = { record in
-                recordedPlaceholders.withValue { $0.append(record) }
-            }
-            $0.persistenceClient.upsertWindow = { _ in }
-            $0.screenCaptureClient.capture = { _ in throw error }
-            $0.loggingClient.log = { _, _, _ in }
-        }
-
-        await store.send(
-            .windowsLoaded(
-                app.bundleIdentifier,
-                [
-                    CapturableWindow(
-                        systemWindowID: window.systemWindowID,
-                        title: window.label,
-                        frame: CGRect(x: 0, y: 0, width: 1000, height: 700),
-                        layer: 0,
-                        isOnScreen: true
-                    ),
-                ]
+                permission: permission,
+                screenCapture: ScreenCaptureClient(windows: windows, capture: capture),
+                persistence: persistence,
+                storage: storage,
+                date: DateClient(now: {
+                    let elapsed = clockOrigin.duration(to: clock.now)
+                    return Date(timeIntervalSince1970: TimeInterval(elapsed.components.seconds))
+                }),
+                ids: IDGeneratorClient(uuid: { idSequence.next() }),
+                perceptualHash: PerceptualHashClient(hash: { _ in 0x1234 }),
+                preferences: preferences,
+                logger: LoggingClient(log: { _, _, _ in }),
+                clock: RecordingServiceClock(
+                    now: { clockOrigin.duration(to: clock.now) },
+                    sleep: { try await clock.sleep(for: $0) }
+                ),
+                maximumConcurrentFrameAcquisitions: 2
             )
-        ) {
-            $0.activeSessions[app.bundleIdentifier]?.windowsBySystemID[window.systemWindowID]?.lastSeenAt = failedAt
-        }
-        await store.receive(.screenshotFailed(app.bundleIdentifier, error.localizedDescription)) {
-            $0.lastError = error.localizedDescription
-            $0.recentDiagnostics = [.failure(error.localizedDescription)]
-        }
-        await store.receive(.captureCycleFinished(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-
-        XCTAssertEqual(recordedPlaceholders.value, [])
-        XCTAssertNotNil(store.state.activeSessions[app.bundleIdentifier])
+        )
+        return Harness(service: service, config: config, application: app)
     }
 
-    @MainActor
-    func testCaptureTickCoalescesWhileCycleIsInFlight() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.SlowApp",
-            displayName: "Slow App",
-            processIdentifier: 7
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 1,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000020")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-
-        var state = CaptureEngineFeature.State()
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session,
-            isCaptureInFlight: true
-        )
-
-        let windowEnumerationCount = LockIsolated(0)
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
-            $0.screenCaptureClient.windows = { _ in
-                windowEnumerationCount.withValue { $0 += 1 }
-                return []
-            }
+    private func eventually(
+        _ predicate: @escaping @Sendable () async -> Bool,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws {
+        for _ in 0 ..< 2000 {
+            if await predicate() { return }
+            await Task.yield()
         }
-
-        await store.send(.captureTick(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCapturePending = true
-        }
-        await store.send(.captureTick(app.bundleIdentifier))
-        XCTAssertEqual(windowEnumerationCount.value, 0)
-
-        await store.send(.captureCycleFinished(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-            $0.activeSessions[app.bundleIdentifier]?.isCapturePending = false
-        }
-        await store.receive(.captureTick(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
-        }
-        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-        XCTAssertEqual(windowEnumerationCount.value, 1)
+        XCTFail("Condition was not reached", file: file, line: line)
     }
 
-    @MainActor
-    func testCaptureLoopWaitsFullIntervalBetweenTicks() async {
-        let application = RunningApplication(
-            bundleIdentifier: "com.example.SuspendedApp",
-            displayName: "Suspended App",
-            processIdentifier: 8
+    private static func window(
+        id: Int,
+        title: String?,
+        frame: CGRect = CGRect(x: 0, y: 0, width: 800, height: 600)
+    ) -> CapturableWindow {
+        CapturableWindow(
+            systemWindowID: id,
+            title: title,
+            frame: frame,
+            layer: 0,
+            isOnScreen: true
         )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: application.bundleIdentifier,
-            displayName: application.displayName,
-            captureInterval: 1,
-            isEnabled: true
-        )
-        let session = CaptureSession(
-            id: UUID(),
-            bundleIdentifier: application.bundleIdentifier,
-            displayName: application.displayName,
-            processIdentifier: application.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let clock = TestClock()
-        var state = CaptureEngineFeature.State()
-        state.runningApplications[application.bundleIdentifier] = application
-        state.activeSessions[application.bundleIdentifier] = .init(
-            application: application,
-            config: config,
-            session: session
-        )
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.continuousClock = clock
-            $0.dateClient.now = { Date(timeIntervalSince1970: 10) }
-            $0.persistenceClient.closeSession = { _, _ in }
-            $0.screenCaptureClient.windows = { _ in [] }
-        }
-
-        await store.send(.sessionOpened(session, application))
-        await store.receive(.captureTick(application.bundleIdentifier)) {
-            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = true
-        }
-        await store.receive(.windowsLoaded(application.bundleIdentifier, [])) {
-            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = false
-        }
-
-        await clock.advance(by: .milliseconds(999))
-        await clock.advance(by: .milliseconds(1))
-        await store.receive(.captureTick(application.bundleIdentifier)) {
-            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = true
-        }
-        await store.receive(.windowsLoaded(application.bundleIdentifier, [])) {
-            $0.activeSessions[application.bundleIdentifier]?.isCaptureInFlight = false
-        }
-
-        await store.send(.workspaceEvent(.terminated(application))) {
-            $0.lastWorkspaceEvent = .terminated(application)
-            $0.runningApplications[application.bundleIdentifier] = nil
-            $0.activeSessions[application.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(application.bundleIdentifier))
     }
 
-    @MainActor
-    func testWhitelistUpdateChangesActiveConfigAndRestartsLoopWhenIntervalChanges() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.IntervalApp",
-            displayName: "Interval App",
-            processIdentifier: 8
-        )
-        let originalConfig = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let updatedConfig = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: "Renamed Interval App",
-            captureInterval: 5,
-            isEnabled: true
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000030")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let clock = TestClock()
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [originalConfig.bundleIdentifier: originalConfig]
-        state.permissionStatus = .authorized
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: originalConfig,
-            session: session
-        )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.continuousClock = clock
-            $0.dateClient.now = { Date(timeIntervalSince1970: 20) }
-            $0.persistenceClient.closeSession = { _, _ in }
-            $0.screenCaptureClient.windows = { _ in [] }
-        }
-
-        await store.send(.whitelistUpdated([updatedConfig])) {
-            $0.whitelist = [updatedConfig.bundleIdentifier: updatedConfig]
-            $0.activeSessions[app.bundleIdentifier]?.config = updatedConfig
-        }
-        await store.receive(.captureTick(app.bundleIdentifier)) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = true
-        }
-        await store.receive(.windowsLoaded(app.bundleIdentifier, [])) {
-            $0.activeSessions[app.bundleIdentifier]?.isCaptureInFlight = false
-        }
-        await store.send(.workspaceEvent(.terminated(app))) {
-            $0.lastWorkspaceEvent = .terminated(app)
-            $0.runningApplications[app.bundleIdentifier] = nil
-            $0.activeSessions[app.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
-    }
-
-    @MainActor
-    func testWhitelistUpdateDisablesActiveSessionImmediately() async throws {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.DisableApp",
-            displayName: "Disable App",
-            processIdentifier: 9
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let disabledConfig = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: false
-        )
-        let session = try CaptureSession(
-            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000040")),
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-        let endedAt = Date(timeIntervalSince1970: 20)
-        let closedSessions = LockIsolated([(UUID, Date)]())
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session
-        )
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { endedAt }
-            $0.persistenceClient.closeSession = { sessionID, endedAt in
-                closedSessions.withValue { $0.append((sessionID, endedAt)) }
-            }
-        }
-
-        await store.send(.whitelistUpdated([disabledConfig])) {
-            $0.whitelist = [disabledConfig.bundleIdentifier: disabledConfig]
-            $0.activeSessions[app.bundleIdentifier] = nil
-        }
-        await store.receive(.sessionClosed(app.bundleIdentifier))
-        XCTAssertEqual(closedSessions.value.count, 1)
-        XCTAssertEqual(closedSessions.value.first?.0, session.id)
-        XCTAssertEqual(closedSessions.value.first?.1, endedAt)
-    }
-
-    // MARK: - Frame persistence
-
-    @MainActor
-    func testIdenticalConsecutiveFramesAreRecordedAtEachCaptureCycle() async {
-        let recorded = LockIsolated<[ScreenshotRecord]>([])
-        let hashes = LockIsolated<[UInt64]>([0b0111, 0b0111])
-        let store = makeCaptureStore(recorded: recorded, hashes: hashes)
-
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.captureWindow]))
-        await store.skipReceivedActions()
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.captureWindow]))
-        await store.skipReceivedActions()
-
-        XCTAssertEqual(recorded.value.count, 2, "each successful capture cycle should persist a frame")
-    }
-
-    @MainActor
-    func testRecordedScreenshotCarriesDimensionsAndHash() async {
-        let recorded = LockIsolated<[ScreenshotRecord]>([])
-        let hashes = LockIsolated<[UInt64]>([0x00AB_CDEF_1234_5678])
-        let store = makeCaptureStore(recorded: recorded, hashes: hashes)
-
-        await store.send(.windowsLoaded("com.example.Dedup", [Self.captureWindow]))
-        await store.skipReceivedActions()
-
-        let record = recorded.value.first
-        XCTAssertEqual(record?.perceptualHash, 0x00AB_CDEF_1234_5678)
-        XCTAssertEqual(record?.pixelWidth, 6)
-        XCTAssertEqual(record?.pixelHeight, 4)
-    }
-
-    private static let captureWindow = CapturableWindow(
-        systemWindowID: 501,
-        title: "Canvas",
-        frame: CGRect(x: 0, y: 0, width: 800, height: 600),
-        layer: 0,
-        isOnScreen: true
-    )
-
-    /// Builds a TestStore wired for frame-persistence tests: one active session, controlled
-    /// hash values, and side-effect capture of every recorded frame.
-    @MainActor
-    private func makeCaptureStore(
-        recorded: LockIsolated<[ScreenshotRecord]>,
-        hashes: LockIsolated<[UInt64]>,
-        now: LockIsolated<Date> = LockIsolated(Date(timeIntervalSince1970: 10))
-    ) -> TestStore<CaptureEngineFeature.State, CaptureEngineFeature.Action> {
-        let app = RunningApplication(
-            bundleIdentifier: "com.example.Dedup",
-            displayName: "Dedup",
-            processIdentifier: 77
-        )
-        let config = WhitelistedAppConfig(
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            captureInterval: 60,
-            isEnabled: true
-        )
-        let session = CaptureSession(
-            id: UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!,
-            bundleIdentifier: app.bundleIdentifier,
-            displayName: app.displayName,
-            processIdentifier: app.processIdentifier,
-            startedAt: Date(timeIntervalSince1970: 1)
-        )
-
-        var state = CaptureEngineFeature.State()
-        state.whitelist = [config.bundleIdentifier: config]
-        state.activeSessions[app.bundleIdentifier] = CaptureEngineFeature.State.ActiveSession(
-            application: app,
-            config: config,
-            session: session
-        )
-
-        let counter = LockIsolated(0)
-
-        let store = TestStore(initialState: state) {
-            CaptureEngineFeature()
-        } withDependencies: {
-            $0.dateClient.now = { now.value }
-            $0.idGeneratorClient.uuid = {
-                counter.withValue { value in
-                    value += 1
-                    return UUID(uuidString: "00000000-0000-0000-0000-\(String(format: "%012d", value))")!
-                }
-            }
-            $0.capturePreferencesClient.encodingOptions = { .defaultValue }
-            $0.capturePreferencesClient.thumbnailMaximumPixelSize = { 320 }
-            $0.perceptualHashClient.hash = { _ in
-                hashes.withValue { $0.isEmpty ? 0 : $0.removeFirst() }
-            }
-            $0.screenCaptureClient.capture = { _ in Self.makeSolidImage(width: 6, height: 4) }
-            $0.imageEncodingClient.encode = { _, _ in Data([0x1]) }
-            $0.fileStorageClient.screenshotURL = { _, _, _, _ in URL(filePath: "/tmp/frame.heic") }
-            $0.fileStorageClient.write = { data, _ in data.count }
-            $0.persistenceClient.upsertWindow = { _ in }
-            $0.persistenceClient.recordScreenshot = { record in
-                recorded.withValue { $0.append(record) }
-            }
-            $0.loggingClient.log = { _, _, _ in }
-        }
-        store.exhaustivity = .off
-        return store
-    }
-
-    private static func makeSolidImage(width: Int, height: Int) -> CapturedImage {
+    private static func makeImage() -> CapturedImage {
         let context = CGContext(
             data: nil,
-            width: width,
-            height: height,
+            width: 4,
+            height: 4,
             bitsPerComponent: 8,
             bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )!
-        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         return CapturedImage(cgImage: context.makeImage()!)
     }
+}
 
-    private final class UUIDSequence: @unchecked Sendable {
-        private let lock = NSLock()
-        private var values: [UUID]
+private struct Harness {
+    var service: RecordingService
+    var config: WhitelistedAppConfig
+    var application: RunningApplication
+}
 
-        init(_ values: [UUID]) {
-            self.values = values.reversed()
+private enum RecordingServiceTestError: Error {
+    case openFailed
+    case closeFailed
+}
+
+private final class EventCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [RecordingServiceEvent] = []
+
+    var events: [RecordingServiceEvent] {
+        lock.withLock { storage }
+    }
+
+    func append(_ event: RecordingServiceEvent) {
+        lock.withLock { storage.append(event) }
+    }
+}
+
+private final class StreamPipe<Element: Sendable>: @unchecked Sendable {
+    let stream: AsyncStream<Element>
+    private let continuation: AsyncStream<Element>.Continuation
+
+    init() {
+        let pair = AsyncStream<Element>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
+    }
+
+    func yield(_ element: Element) {
+        continuation.yield(element)
+    }
+}
+
+private final class WindowGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuations: [CheckedContinuation<[CapturableWindow], Error>] = []
+    private var count = 0
+
+    var requestCount: Int {
+        lock.withLock { count }
+    }
+
+    func next() async throws -> [CapturableWindow] {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.withLock {
+                count += 1
+                continuations.append(continuation)
+            }
         }
+    }
 
-        func next() -> UUID {
-            lock.lock()
-            defer { lock.unlock() }
-            return values.removeLast()
+    func resumeNext(returning windows: [CapturableWindow]) {
+        let continuation = lock.withLock { continuations.removeFirst() }
+        continuation.resume(returning: windows)
+    }
+}
+
+private final class CaptureGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuations: [CheckedContinuation<CapturedImage, Error>] = []
+    private var count = 0
+    private var activeCount = 0
+    private var maximumActive = 0
+
+    var requestCount: Int {
+        lock.withLock { count }
+    }
+
+    var maximumActiveCount: Int {
+        lock.withLock { maximumActive }
+    }
+
+    func next() async throws -> CapturedImage {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.withLock {
+                count += 1
+                activeCount += 1
+                maximumActive = max(maximumActive, activeCount)
+                continuations.append(continuation)
+            }
         }
+    }
+
+    func resumeNext(returning image: CapturedImage) async {
+        for _ in 0 ..< 2000 {
+            if let continuation = lock.withLock({ () -> CheckedContinuation<CapturedImage, Error>? in
+                guard !continuations.isEmpty else { return nil }
+                activeCount -= 1
+                return continuations.removeFirst()
+            }) {
+                continuation.resume(returning: image)
+                return
+            }
+            await Task.yield()
+        }
+        XCTFail("Timed out waiting for an active capture continuation")
+    }
+}
+
+private final class IDSequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+
+    func next() -> UUID {
+        lock.withLock {
+            value += 1
+            let suffix = String(format: "%012llu", value)
+            return UUID(uuidString: "00000000-0000-0000-0000-\(suffix)")!
+        }
+    }
+}
+
+private final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Value
+
+    init(_ value: Value) {
+        storage = value
+    }
+
+    var value: Value {
+        lock.withLock { storage }
+    }
+
+    @discardableResult
+    func withValue<Result>(_ operation: (inout Value) -> Result) -> Result {
+        lock.withLock { operation(&storage) }
     }
 }

@@ -165,10 +165,9 @@ private nonisolated enum TimelapseEncoder {
         _ request: TimelapseExportRequest,
         progress: @Sendable (TimelapseExportProgress) -> Void
     ) async throws {
-        let frames = request.frames
-        guard !frames.isEmpty else { throw TimelapseExportError.noFrames }
+        guard request.source.count > 0 else { throw TimelapseExportError.noFrames }
 
-        let canvas = try await canvasSize(for: frames, maxDimension: request.maxOutputDimension)
+        let canvas = try await canvasSize(for: request.source, maxDimension: request.maxOutputDimension)
         try? FileManager.default.removeItem(at: request.destinationURL)
 
         let writer = try AVAssetWriter(outputURL: request.destinationURL, fileType: request.container.avFileType)
@@ -204,13 +203,14 @@ private nonisolated enum TimelapseEncoder {
         let fps = max(1, request.framesPerSecond)
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(fps))
         let interpolation = max(0, request.interpolationFrames)
-        let frameCount = frames.count
         let outputFrameCount = request.outputFrameCount
+        let maximumPixelSize = Int(max(canvas.width, canvas.height))
+        let reader = FrameReader.shared
+        let overlayFormat: Date.FormatStyle? = request.timestampOverlay
+            ? Date.FormatStyle(date: .abbreviated, time: .standard)
+            : nil
 
         var emitted = 0
-        // Report every frame for typical exports so the frame counter advances one-by-one, but
-        // cap very long exports (10k+) to ~500 updates so we never flood the main-actor reducer
-        // with actions and make the UI unresponsive.
         let reportStride = max(1, outputFrameCount / 500)
         func report() {
             if emitted % reportStride == 0 || emitted == outputFrameCount {
@@ -220,6 +220,12 @@ private nonisolated enum TimelapseEncoder {
         func append(_ draw: (CGContext) -> Void) async throws {
             try Task.checkCancellation()
             while !input.isReadyForMoreMediaData {
+                try Task.checkCancellation()
+                guard writer.status == .writing else {
+                    throw TimelapseExportError.encodingFailed(
+                        writer.error?.localizedDescription ?? "video writer stopped accepting frames"
+                    )
+                }
                 try await Task.sleep(nanoseconds: 5_000_000)
             }
             guard let pool = adaptor.pixelBufferPool else {
@@ -232,138 +238,91 @@ private nonisolated enum TimelapseEncoder {
             }
             emitted += 1
             report()
-            // Yield between frames so a long, CPU-bound export never monopolizes its executor:
-            // this lets progress values and UI updates flow smoothly instead of arriving in a
-            // burst at the end.
             await Task.yield()
         }
 
-        // Decode source images on background tasks so decoding (the main cost for HEIC) overlaps
-        // with drawing and VideoToolbox encoding. A bounded look-ahead keeps only a few decoded
-        // frames resident at once regardless of how long the export is.
-        let lookAhead = 3
-        var decodeTasks = [Task<SendableImage, Error>?](repeating: nil, count: frameCount)
-        func startDecode(_ index: Int) {
-            guard index < frameCount, decodeTasks[index] == nil else { return }
-            let source = frames[index].frameSource
-            decodeTasks[index] = Task.detached(priority: .userInitiated) {
-                try await SendableImage(image: loadImage(source, fittingWithin: canvas))
-            }
-        }
-        defer { for task in decodeTasks {
-            task?.cancel()
-        } }
-
-        // Optional timestamp overlay: format each source frame's capture time once and burn it
-        // into that frame's output (its hold plus the crossfade frames leading to the next one).
-        let overlayFormat: Date.FormatStyle? = request.timestampOverlay
-            ? Date.FormatStyle(date: .abbreviated, time: .standard)
-            : nil
-        func overlayText(_ index: Int) -> String? {
-            overlayFormat.map { frames[index].capturedAt.formatted($0) }
-        }
-
         do {
-            for index in 0 ..< min(lookAhead, frameCount) {
-                startDecode(index)
+            var iterator = request.source.stream().makeAsyncIterator()
+            guard var currentFrame = try await iterator.next() else {
+                throw TimelapseExportError.noFrames
             }
+            var current = try await reader.image(
+                for: currentFrame.frameSource,
+                maximumPixelSize: maximumPixelSize
+            )
 
-            if frameCount == 1 {
-                let image = try await decodeTasks[0]!.value.image
-                let text = overlayText(0)
-                try await append { context in
-                    drawFrame(image, in: context, canvas: canvas)
-                    if let text { drawTimestamp(text, in: context, canvas: canvas) }
+            while let nextFrame = try await iterator.next() {
+                // Decode the next descriptor while the current image is drawn and submitted.
+                // FrameReader applies the process-wide hard concurrency bound.
+                let nextDecode = Task {
+                    try SendableImage(await reader.image(
+                        for: nextFrame.frameSource,
+                        maximumPixelSize: maximumPixelSize
+                    ))
                 }
-            } else {
-                var current = try await decodeTasks[0]!.value.image
-                for index in 0 ..< frameCount - 1 {
-                    // Keep the decode window full so source `index + lookAhead` decodes while
-                    // this pair's frames are drawn and encoded.
-                    startDecode(index + lookAhead)
-
-                    let text = overlayText(index)
-
-                    // Hold the current screenshot, then dissolve toward the next one. Drawing
-                    // `current` fully opaque and compositing `next` over it at alpha f yields a
-                    // true crossfade (current·(1-f) + next·f), which stays fully opaque — unlike
-                    // fading both, which dips translucent and shows the background mid-transition.
-                    try await append { context in
-                        drawFrame(current, in: context, canvas: canvas)
-                        if let text { drawTimestamp(text, in: context, canvas: canvas) }
-                    }
-
-                    let next = try await decodeTasks[index + 1]!.value.image
-                    for step in stride(from: 1, through: interpolation, by: 1) {
-                        let progressFraction = Double(step) / Double(interpolation + 1)
-                        try await append { context in
-                            drawFrame(current, in: context, canvas: canvas)
-                            drawFrame(next, in: context, canvas: canvas, alpha: progressFraction, clearBackground: false)
-                            if let text { drawTimestamp(text, in: context, canvas: canvas) }
-                        }
-                    }
-                    decodeTasks[index] = nil
-                    current = next
-                }
-                // Hold the final screenshot.
-                let lastText = overlayText(frameCount - 1)
+                defer { nextDecode.cancel() }
+                let text = overlayFormat.map { currentFrame.capturedAt.formatted($0) }
                 try await append { context in
                     drawFrame(current, in: context, canvas: canvas)
-                    if let lastText { drawTimestamp(lastText, in: context, canvas: canvas) }
+                    if let text { drawTimestamp(text, in: context, canvas: canvas) }
                 }
+                let next = try await nextDecode.value.value
+
+                for step in stride(from: 1, through: interpolation, by: 1) {
+                    let fraction = Double(step) / Double(interpolation + 1)
+                    try await append { context in
+                        drawFrame(current, in: context, canvas: canvas)
+                        drawFrame(next, in: context, canvas: canvas, alpha: fraction, clearBackground: false)
+                        if let text { drawTimestamp(text, in: context, canvas: canvas) }
+                    }
+                }
+                currentFrame = nextFrame
+                current = next
+            }
+
+            let finalText = overlayFormat.map { currentFrame.capturedAt.formatted($0) }
+            try await append { context in
+                drawFrame(current, in: context, canvas: canvas)
+                if let finalText { drawTimestamp(finalText, in: context, canvas: canvas) }
             }
 
             input.markAsFinished()
             await writer.finishWriting()
-
             if writer.status != .completed {
                 throw TimelapseExportError.encodingFailed(writer.error?.localizedDescription ?? "encoding did not complete")
             }
         } catch {
-            // Discard the half-written file on cancellation or failure so we never leave a
-            // truncated, unplayable video behind.
             writer.cancelWriting()
             try? FileManager.default.removeItem(at: request.destinationURL)
             throw error
         }
     }
 
-    /// A decoded frame that can cross task boundaries. `CGImage` is immutable and safe to read
-    /// concurrently, so wrapping it as unchecked-Sendable is sound.
     private struct SendableImage: @unchecked Sendable {
-        let image: CGImage
+        let value: CGImage
+        init(_ value: CGImage) {
+            self.value = value
+        }
     }
 
-    /// The smallest even-sized canvas that fits every frame (H.264/HEVC want even sides). Uses
-    /// each frame's stored pixel size when known, reading image or video metadata as a fallback.
-    /// When `maxDimension` is set, the canvas is scaled down so its longest side fits the cap.
-    private static func canvasSize(for frames: [ExportFrame], maxDimension: Int?) async throws -> CGSize {
+    /// The smallest even-sized canvas that fits every frame (H.264/HEVC want even sides).
+    /// Descriptor streaming makes this first pass constant-memory even for very large scopes.
+    private static func canvasSize(for source: ExportFrameStream, maxDimension: Int?) async throws -> CGSize {
         var maxWidth = 0
         var maxHeight = 0
-        var videoSizes: [URL: CGSize] = [:]
 
-        for frame in frames {
-            let size: CGSize
-            if let known = frame.knownPixelSize {
-                size = known
+        for try await frame in source.stream() {
+            try Task.checkCancellation()
+            let size = if let known = frame.knownPixelSize {
+                known
             } else {
-                switch frame.frameSource {
-                case let .file(url):
-                    size = try imagePixelSize(at: url)
-                case let .videoFrame(video, _):
-                    if let cached = videoSizes[video] {
-                        size = cached
-                    } else {
-                        let resolved = try await videoPixelSize(at: video)
-                        videoSizes[video] = resolved
-                        size = resolved
-                    }
-                }
+                try await FrameReader.shared.pixelSize(for: frame.frameSource)
             }
             maxWidth = max(maxWidth, Int(size.width))
             maxHeight = max(maxHeight, Int(size.height))
         }
 
+        guard maxWidth > 0, maxHeight > 0 else { throw TimelapseExportError.noFrames }
         if let cap = maxDimension, cap > 0 {
             let longest = max(maxWidth, maxHeight)
             if longest > cap {
@@ -374,78 +333,6 @@ private nonisolated enum TimelapseEncoder {
         }
 
         return CGSize(width: max(2, maxWidth + maxWidth % 2), height: max(2, maxHeight + maxHeight % 2))
-    }
-
-    private static func imagePixelSize(at url: URL) throws -> CGSize {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-              let width = properties[kCGImagePropertyPixelWidth] as? Int,
-              let height = properties[kCGImagePropertyPixelHeight] as? Int
-        else {
-            throw TimelapseExportError.unreadableImage(url)
-        }
-        return CGSize(width: width, height: height)
-    }
-
-    private static func videoPixelSize(at url: URL) async throws -> CGSize {
-        do {
-            let asset = AVURLAsset(url: url)
-            guard let track = try await asset.loadTracks(withMediaType: .video).first else {
-                throw TimelapseExportError.unreadableImage(url)
-            }
-            let naturalSize = try await track.load(.naturalSize)
-            let preferredTransform = try await track.load(.preferredTransform)
-            let presentationSize = CGRect(origin: .zero, size: naturalSize)
-                .applying(preferredTransform)
-                .standardized.size
-            guard presentationSize.width > 0, presentationSize.height > 0 else {
-                throw TimelapseExportError.unreadableImage(url)
-            }
-            return presentationSize
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw TimelapseExportError.unreadableImage(url)
-        }
-    }
-
-    /// Decode a source image eagerly and no larger than the canvas needs. Using the thumbnail
-    /// API decodes directly at the target size (instead of a lazy full-resolution decode that
-    /// would happen on the encoding thread), which keeps the encode loop fed and memory bounded.
-    private static func loadImage(_ source: FrameSource, fittingWithin canvas: CGSize) async throws -> CGImage {
-        switch source {
-        case let .file(url):
-            guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
-                throw TimelapseExportError.unreadableImage(url)
-            }
-
-            let maxPixelSize = Int(max(canvas.width, canvas.height))
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceShouldCacheImmediately: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-            ]
-
-            guard let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
-                throw TimelapseExportError.unreadableImage(url)
-            }
-            return image
-
-        case let .videoFrame(video, index):
-            let asset = AVURLAsset(url: video)
-            let generator = AVAssetImageGenerator(asset: asset)
-            generator.requestedTimeToleranceBefore = .zero
-            generator.requestedTimeToleranceAfter = .zero
-            generator.appliesPreferredTrackTransform = true
-            let time = CMTime(value: CMTimeValue(index), timescale: CompactionVideo.frameRate)
-            do {
-                let (image, _) = try await generator.image(at: time)
-                return image
-            } catch {
-                throw TimelapseExportError.unreadableImage(video)
-            }
-        }
     }
 
     private static func pixelBuffer(

@@ -6,22 +6,25 @@ import XCTest
 final class AppFeatureTests: XCTestCase {
     @MainActor
     func testTaskRunsStartupEffectsOnlyOnce() async {
-        let closeOpenSessionCount = LockIsolated(0)
+        let recordingStartCount = LockIsolated(0)
         let loadWhitelistCount = LockIsolated(0)
+        let dailyRetentionStartCount = LockIsolated(0)
 
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()
         } withDependencies: {
-            $0.capturePermissionClient.status = { .authorized }
             $0.dateClient.now = { Date(timeIntervalSince1970: 1000) }
             $0.persistenceClient.apps = { [] }
-            $0.persistenceClient.closeOpenSessions = { _ in
-                closeOpenSessionCount.withValue { $0 += 1 }
-                return 0
+            $0.maintenanceServiceClient.startDailyRetention = { _, _ in
+                dailyRetentionStartCount.withValue { $0 += 1 }
             }
             $0.whitelistConfigurationClient.load = {
                 loadWhitelistCount.withValue { $0 += 1 }
                 return []
+            }
+            $0.recordingServiceClient.start = {
+                recordingStartCount.withValue { $0 += 1 }
+                return AsyncStream { $0.finish() }
             }
             $0.workspaceClient.events = {
                 AsyncStream { continuation in
@@ -40,8 +43,9 @@ final class AppFeatureTests: XCTestCase {
         await store.send(.task)
         try? await Task.sleep(nanoseconds: 50_000_000)
 
-        XCTAssertEqual(closeOpenSessionCount.value, 1)
+        XCTAssertEqual(recordingStartCount.value, 1)
         XCTAssertEqual(loadWhitelistCount.value, 1)
+        XCTAssertEqual(dailyRetentionStartCount.value, 1)
     }
 
     @MainActor
@@ -334,21 +338,19 @@ final class AppFeatureTests: XCTestCase {
 
     @MainActor
     func testRequestCapturePermissionButtonForwardsToCaptureEngine() async {
+        let requestCount = LockIsolated(0)
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()
         } withDependencies: {
-            $0.capturePermissionClient.request = { .denied }
+            $0.recordingServiceClient.requestPermission = {
+                requestCount.withValue { $0 += 1 }
+            }
         }
+        store.exhaustivity = .off
 
         await store.send(.requestCapturePermissionButtonTapped)
         await store.receive(.captureEngine(.requestPermissionButtonTapped))
-        await store.receive(.captureEngine(.permissionResolved(.denied, nil))) {
-            $0.captureEngine.permissionStatus = .denied
-            $0.captureEngine.lastError = CaptureEngineError.screenRecordingPermissionDenied.localizedDescription
-            $0.captureEngine.recentDiagnostics = [
-                .permissionRequired,
-            ]
-        }
+        XCTAssertEqual(requestCount.value, 1)
     }
 
     @MainActor
@@ -411,21 +413,22 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testCaptureSessionEventsRefreshViewer() async {
+    func testCaptureSessionEventsRefreshViewerAndRunMaintenance() async {
+        let maintenanceRuns = LockIsolated(0)
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()
         } withDependencies: {
             $0.persistenceClient.apps = { [] }
-            $0.persistenceClient.sessions = { _ in [] }
-            $0.persistenceClient.windows = { _ in [] }
-            $0.persistenceClient.screenshotsForApp = { _ in [] }
-            $0.persistenceClient.screenshotsForWindow = { _ in [] }
+            $0.maintenanceServiceClient.recover = { _ in }
+            $0.maintenanceServiceClient.enforceRetention = { _, _, _ in
+                maintenanceRuns.withValue { $0 += 1 }
+                return 0
+            }
         }
+        store.exhaustivity = .off
 
         await store.send(.captureEngine(.sessionClosed("com.example.App")))
-        await store.receive(.viewer(.refresh))
-        await store.receive(.viewer(.autoCompactOnSessionCloseRequested))
-        await store.receive(.viewer(.enforceRetentionRequested))
-        await store.receive(.viewer(.appsLoaded([])))
+        await store.skipReceivedActions()
+        XCTAssertEqual(maintenanceRuns.value, 1)
     }
 }

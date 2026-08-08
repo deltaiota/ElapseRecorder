@@ -1,5 +1,4 @@
 import ComposableArchitecture
-import Defaults
 import Foundation
 
 struct ViewerFeature: Reducer {
@@ -11,6 +10,14 @@ struct ViewerFeature: Reducer {
         var sessionTimeline: SessionTimeline?
         var windowTimelineEntries: [CaptureTimelineEntry] = []
         var flatTimelineEntries: [CaptureTimelineEntry] = []
+        /// The complete frame scope currently represented by the bounded presentation page.
+        var frameQuery: FrameQuery?
+        var nextFrameCursor: FrameCursor?
+        var frameTotalCount = 0
+        var isLoadingMoreFrames = false
+        /// Cadence is computed by streaming the complete scope, never from the visible page.
+        var averageScreenshotInterval: TimeInterval?
+        var cadenceSelection: FrameSelection?
         var selectedBundleIdentifier: String?
         var selectedSessionID: UUID?
         var selectedWindowID: UUID?
@@ -29,12 +36,6 @@ struct ViewerFeature: Reducer {
         var storageIntegrityResult: StorageIntegrityResult?
         /// True while the retention pruner is running, to guard against overlapping runs.
         var isEnforcingRetention = false
-        /// True while a compaction pass is running, to guard re-entry and drive the progress bar.
-        var isCompacting = false
-        /// Live progress of the running compaction pass (nil until the first frame is encoded).
-        var compactionProgress: CompactionProgress?
-        /// The outcome of the most recent compaction pass, shown in the storage management UI.
-        var compactionResult: StorageCompactionResult?
         var isShowingFlatGallery = false
         var isLoading = false
         var errorMessage: String?
@@ -111,13 +112,19 @@ struct ViewerFeature: Reducer {
         case sessionListSelectionChanged(State.SessionListSelection?)
         case flatGallerySelected
         case flatTimelineEntriesLoaded([CaptureTimelineEntry])
+        case framePageLoaded(query: FrameQuery, page: FramePage, appending: Bool)
+        case loadMoreFramesRequested
+        case cadenceLoaded(selection: FrameSelection, average: TimeInterval?)
         case captureScreenshotRecorded(ScreenshotRecord, bundleIdentifier: String)
         case captureUnavailableRecorded(CaptureUnavailableRecord)
+        case segmentCommitted(handle: RecordingSessionHandle, frameIDs: [UUID])
         case screenshotSelectionChanged(Set<UUID>)
         case quickLookURLChanged(URL?)
         case quickLookRequested(ScreenshotRecord)
         case refresh
         case revealScreenshotInFinder(ScreenshotRecord)
+        case exportSelectionRequested(FrameSelection)
+        /// Retained for direct callers with an already-bounded ad-hoc frame set.
         case exportTimelapseRequested(frames: [ExportFrame])
         case exportCancelButtonTapped
         case exportStarted(options: ExportOptions, totalFrames: Int)
@@ -134,23 +141,20 @@ struct ViewerFeature: Reducer {
         case bulkDeleteFinished(deletedSessionCount: Int)
         case enforceRetentionRequested
         case retentionEnforced(deletedSessionCount: Int)
-        case compactStorageButtonTapped
-        case autoCompactOnSessionCloseRequested
-        case compactionProgressed(CompactionProgress)
-        case compactionFinished(StorageCompactionResult)
         case loadingFailed(String)
     }
 
     @Dependency(\.fileRevealClient) private var fileReveal
     @Dependency(\.fileStorageClient) private var fileStorage
     @Dependency(\.persistenceClient) private var persistence
+    @Dependency(\.storageCoordinatorClient) private var storageCoordinator
+    @Dependency(\.maintenanceServiceClient) private var maintenance
     @Dependency(\.capturePreferencesClient) private var preferences
     @Dependency(\.timelapseExportClient) private var timelapseExport
     @Dependency(\.exportPanelClient) private var exportPanel
     @Dependency(\.videoFrameExtractorClient) private var videoFrameExtractor
     @Dependency(\.thumbnailClient) private var thumbnail
     @Dependency(\.perceptualHashClient) private var perceptualHash
-    @Dependency(\.frameVideoCompactorClient) private var frameVideoCompactor
     @Dependency(\.date) private var date
 
     private nonisolated enum CancelID: Hashable { case export }
@@ -160,7 +164,7 @@ struct ViewerFeature: Reducer {
             switch action {
             case .task:
                 state.isLoading = true
-                return .merge(loadApps(), .send(.enforceRetentionRequested))
+                return loadApps()
 
             case .refresh:
                 return refresh(state)
@@ -187,6 +191,7 @@ struct ViewerFeature: Reducer {
                 state.flatTimelineEntries = []
                 state.clearScreenshotSelection()
                 state.isShowingFlatGallery = false
+                state.clearFramePage()
 
                 guard let bundleIdentifier else { return .none }
                 state.isLoading = true
@@ -204,6 +209,7 @@ struct ViewerFeature: Reducer {
                     state.windows = []
                     state.sessionTimeline = nil
                     state.windowTimelineEntries = []
+                    state.clearFramePage()
                 }
                 state.isLoading = false
                 return .none
@@ -220,6 +226,7 @@ struct ViewerFeature: Reducer {
                     state.selectedSegment = nil
                     state.clearScreenshotSelection()
                     state.windowTimelineEntries = []
+                    state.clearFramePage()
                 }
                 state.isLoading = false
                 return .none
@@ -271,6 +278,7 @@ struct ViewerFeature: Reducer {
                     state.sessionTimeline = nil
                     state.windowTimelineEntries = []
                     state.flatTimelineEntries = []
+                    state.clearFramePage()
                     return .none
                 }
 
@@ -280,6 +288,41 @@ struct ViewerFeature: Reducer {
             case let .flatTimelineEntriesLoaded(entries):
                 state.flatTimelineEntries = entries
                 state.isLoading = false
+                return .none
+
+            case let .framePageLoaded(query, page, appending):
+                guard state.frameQuery == query else { return .none }
+                let entries = page.frames.map(CaptureTimelineEntry.screenshot)
+                if state.isShowingFlatGallery {
+                    if appending {
+                        State.appendUnique(entries, to: &state.flatTimelineEntries)
+                    } else {
+                        state.flatTimelineEntries = entries
+                    }
+                } else {
+                    if appending {
+                        State.appendUnique(entries, to: &state.windowTimelineEntries)
+                    } else {
+                        state.windowTimelineEntries = entries
+                    }
+                }
+                state.nextFrameCursor = page.nextCursor
+                state.frameTotalCount = page.totalCount
+                state.isLoadingMoreFrames = false
+                state.isLoading = false
+                return .none
+
+            case .loadMoreFramesRequested:
+                guard let query = state.frameQuery,
+                      let cursor = state.nextFrameCursor,
+                      !state.isLoadingMoreFrames
+                else { return .none }
+                state.isLoadingMoreFrames = true
+                return loadFramePage(query: query, after: cursor, appending: true)
+
+            case let .cadenceLoaded(selection, average):
+                guard state.cadenceSelection == selection else { return .none }
+                state.averageScreenshotInterval = average
                 return .none
 
             case let .captureScreenshotRecorded(record, bundleIdentifier):
@@ -294,9 +337,44 @@ struct ViewerFeature: Reducer {
                 state.recordCaptureUnavailable(record)
                 return .none
 
+            case let .segmentCommitted(handle, frameIDs):
+                let affected = Set(frameIDs)
+                let visibleEntries = state.isShowingFlatGallery
+                    ? state.flatTimelineEntries
+                    : state.windowTimelineEntries
+                let hasAffectedVisibleFrame = visibleEntries.contains { entry in
+                    guard case let .screenshot(record) = entry else { return false }
+                    return affected.contains(record.id)
+                }
+                let queryMatches: Bool
+                if let scope = state.frameQuery?.scope {
+                    queryMatches = switch scope {
+                    case let .app(bundleIdentifier): bundleIdentifier == handle.bundleIdentifier
+                    case let .session(id): id == handle.sessionID
+                    case let .window(sessionID, _): sessionID == handle.sessionID
+                    }
+                } else {
+                    queryMatches = false
+                }
+                // Segment commit atomically repoints records and may delete old spool URLs.
+                return hasAffectedVisibleFrame || queryMatches ? .send(.refresh) : .none
+
             case let .screenshotSelectionChanged(ids):
                 state.selectedScreenshotIDs = ids
-                return .none
+                let visible = state.isShowingFlatGallery
+                    ? state.flatTimelineEntries
+                    : state.windowTimelineEntries
+                let orderedIDs = visible.compactMap { entry -> UUID? in
+                    guard case let .screenshot(record) = entry, ids.contains(record.id) else { return nil }
+                    return record.id
+                }
+                let selection = orderedIDs.count >= 2
+                    ? FrameSelection.ids(orderedIDs)
+                    : state.frameQuery.map(FrameSelection.query)
+                state.cadenceSelection = selection
+                state.averageScreenshotInterval = nil
+                guard let selection else { return .none }
+                return loadCadence(selection: selection)
 
             case let .quickLookURLChanged(url):
                 state.quickLookURL = url
@@ -314,12 +392,12 @@ struct ViewerFeature: Reducer {
                     state.quickLookURL = url
                     state.selectedScreenshotIDs = [record.id]
                     return .none
-                case let .videoFrame(video, index):
-                    // Quick Look needs a real file, so extract the compacted frame to a temp file.
+                case let .videoFrame(video, presentationTime):
+                    // Quick Look needs a real file, so extract the exact persisted timestamp.
                     state.selectedScreenshotIDs = [record.id]
                     let extractor = videoFrameExtractor
                     return .run { send in
-                        guard let url = try? await extractor.temporaryImageFile(video, index) else { return }
+                        guard let url = try? await extractor.temporaryImageFileAtTime(video, presentationTime) else { return }
                         await send(.quickLookURLChanged(url))
                     }
                 }
@@ -330,61 +408,31 @@ struct ViewerFeature: Reducer {
                     await fileReveal.reveal(record.fileURL)
                 }
 
+            case let .exportSelectionRequested(selection):
+                guard !state.isExporting else { return .none }
+                state.isExporting = true
+                state.exportStatus = nil
+                let loader = FramePageLoader(persistence: persistence)
+                return exportEffect(suggestedName: state.exportSuggestedFileName) {
+                    let snapshot = try await loader.snapshot(for: selection)
+                    return ExportFrameStream(selection: snapshot.selection, count: snapshot.count) {
+                        loader.exportFrames(for: snapshot.selection)
+                    }
+                }
+
             case let .exportTimelapseRequested(frames):
                 guard !frames.isEmpty, !state.isExporting else { return .none }
                 state.isExporting = true
                 state.exportStatus = nil
-
-                let exporter = timelapseExport
-                let panel = exportPanel
-                let fileReveal = fileReveal
-                let thumbnail = thumbnail
-                let perceptualHash = perceptualHash
-                let suggestedName = state.exportSuggestedFileName
-                let frameHashes = frames.map(\.perceptualHash)
-
-                return .run { send in
-                    guard let selection = await panel.present(suggestedName, frameHashes) else {
-                        await send(.exportCancelled)
-                        return
-                    }
-
-                    do {
-                        // Apply the chosen trim range and optional near-duplicate filter to the
-                        // frame set before encoding, mirroring what the accessory previewed. Older
-                        // records have no stored hash, so resolve those from their actual pixels.
-                        let selectedFrames = try await applyExportSelection(selection.options, to: frames) { frame in
-                            let image = try await thumbnail.thumbnail(frame.frameSource, 64)
-                            return perceptualHash.hash(CapturedImage(cgImage: image))
+                let source = ExportFrameStream(selection: .ids([]), count: frames.count) {
+                    AsyncThrowingStream { continuation in
+                        for frame in frames {
+                            continuation.yield(frame)
                         }
-                        guard !selectedFrames.isEmpty else {
-                            await send(.exportCancelled)
-                            return
-                        }
-                        let request = TimelapseExportRequest(
-                            frames: selectedFrames,
-                            destinationURL: selection.destinationURL,
-                            codec: selection.options.codec,
-                            container: selection.options.container,
-                            framesPerSecond: selection.options.framesPerSecond,
-                            interpolationFrames: selection.options.interpolationFrames,
-                            maxOutputDimension: selection.options.maxOutputDimension,
-                            timestampOverlay: selection.options.timestampOverlay
-                        )
-                        await send(.exportStarted(options: selection.options, totalFrames: request.outputFrameCount))
-                        for try await progress in exporter.export(request) {
-                            await send(.exportProgressed(progress))
-                        }
-                        try Task.checkCancellation()
-                        await send(.exportCompleted(selection.destinationURL))
-                        await fileReveal.reveal(selection.destinationURL)
-                    } catch is CancellationError {
-                        await send(.exportCancelled)
-                    } catch {
-                        await send(.exportFailed(error.localizedDescription))
+                        continuation.finish()
                     }
                 }
-                .cancellable(id: CancelID.export)
+                return exportEffect(suggestedName: state.exportSuggestedFileName) { source }
 
             case .exportCancelButtonTapped:
                 guard state.isExporting else { return .none }
@@ -437,6 +485,7 @@ struct ViewerFeature: Reducer {
                     state.windows = []
                     state.sessionTimeline = nil
                     state.windowTimelineEntries = []
+                    state.clearFramePage()
                 }
                 state.isLoading = false
                 return .send(.refresh)
@@ -462,7 +511,7 @@ struct ViewerFeature: Reducer {
 
             case .enforceRetentionRequested:
                 let policy = preferences.retentionPolicy()
-                guard policy.hasAnyLimit, !state.isEnforcingRetention else { return .none }
+                guard policy.hasAnyLimit else { return .none }
                 state.isEnforcingRetention = true
                 return enforceRetention(policy)
 
@@ -470,45 +519,74 @@ struct ViewerFeature: Reducer {
                 state.isEnforcingRetention = false
                 return deletedCount > 0 ? .send(.refresh) : .none
 
-            case .compactStorageButtonTapped:
-                guard !state.isCompacting, !state.isRunningStorageMaintenance else { return .none }
-                state.isCompacting = true
-                state.compactionProgress = nil
-                state.compactionResult = nil
-                return compactClosedSessions()
-
-            case .autoCompactOnSessionCloseRequested:
-                // Automatic path: only runs when the user enabled the toggle. Reuses the exact
-                // manual pipeline; already-compacted sessions are skipped cheaply.
-                guard preferences.autoCompactOnSessionClose(),
-                      !state.isCompacting, !state.isRunningStorageMaintenance
-                else {
-                    return .none
-                }
-                state.isCompacting = true
-                state.compactionProgress = nil
-                state.compactionResult = nil
-                return compactClosedSessions()
-
-            case let .compactionProgressed(progress):
-                state.compactionProgress = progress
-                return .none
-
-            case let .compactionFinished(result):
-                state.isCompacting = false
-                state.compactionProgress = nil
-                state.compactionResult = result
-                return result.isEmpty ? .none : .send(.refresh)
-
             case let .loadingFailed(message):
                 state.errorMessage = message
                 state.isLoading = false
                 state.isRunningStorageMaintenance = false
                 state.isEnforcingRetention = false
-                state.isCompacting = false
                 return .none
             }
         }
+    }
+
+    private func exportEffect(
+        suggestedName: String,
+        source: @escaping @Sendable () async throws -> ExportFrameStream
+    ) -> Effect<Action> {
+        let exporter = timelapseExport
+        let panel = exportPanel
+        let fileReveal = fileReveal
+        let thumbnail = thumbnail
+        let perceptualHash = perceptualHash
+
+        return .run { send in
+            do {
+                let rawSource = try await source()
+                guard rawSource.count > 0 else {
+                    await send(.exportCancelled)
+                    return
+                }
+                let hashes = try await ExportFrameStreams.storedHashes(in: rawSource)
+                guard let selection = await panel.present(suggestedName, hashes) else {
+                    await send(.exportCancelled)
+                    return
+                }
+                let selectedSource = try await ExportFrameStreams.filtered(
+                    source: rawSource,
+                    options: selection.options
+                ) { frame in
+                    let image = try await thumbnail.thumbnail(frame.frameSource, 64)
+                    return perceptualHash.hash(CapturedImage(cgImage: image))
+                }
+                guard selectedSource.count > 0 else {
+                    await send(.exportCancelled)
+                    return
+                }
+
+                let request = TimelapseExportRequest(
+                    source: selectedSource,
+                    destinationURL: selection.destinationURL,
+                    codec: selection.options.codec,
+                    container: selection.options.container,
+                    framesPerSecond: selection.options.framesPerSecond,
+                    interpolationFrames: selection.options.interpolationFrames,
+                    maxOutputDimension: selection.options.maxOutputDimension,
+                    timestampOverlay: selection.options.timestampOverlay
+                )
+                await send(.exportStarted(options: selection.options, totalFrames: request.outputFrameCount))
+                for try await progress in exporter.export(request) {
+                    await send(.exportProgressed(progress))
+                }
+                try Task.checkCancellation()
+                await send(.exportCompleted(selection.destinationURL))
+                await fileReveal.reveal(selection.destinationURL)
+            } catch is CancellationError {
+                await send(.exportCancelled)
+            } catch {
+                await send(.exportFailed(error.localizedDescription))
+            }
+        }
+        .cancellable(id: CancelID.export)
     }
 
     private func refresh(_ state: State) -> Effect<Action> {
@@ -517,8 +595,9 @@ struct ViewerFeature: Reducer {
         if let bundleIdentifier = state.selectedBundleIdentifier {
             effects.append(loadSessions(bundleIdentifier: bundleIdentifier))
 
-            if state.isShowingFlatGallery {
-                effects.append(loadFlatTimeline(bundleIdentifier: bundleIdentifier))
+            if state.isShowingFlatGallery, let query = state.frameQuery {
+                effects.append(loadFramePage(query: query, after: nil, appending: false))
+                effects.append(loadCadence(selection: .query(query)))
             }
         }
 
@@ -526,10 +605,9 @@ struct ViewerFeature: Reducer {
             effects.append(loadWindows(sessionID: sessionID))
             effects.append(loadTimelineGraph(sessionID: sessionID))
 
-            if let windowID = state.selectedWindowID {
-                effects.append(
-                    loadWindowTimeline(sessionID: sessionID, windowID: windowID, range: state.selectedSegment)
-                )
+            if state.selectedWindowID != nil, let query = state.frameQuery {
+                effects.append(loadFramePage(query: query, after: nil, appending: false))
+                effects.append(loadCadence(selection: .query(query)))
             }
         }
 
@@ -548,6 +626,7 @@ struct ViewerFeature: Reducer {
         state.windowTimelineEntries = []
         state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
+        state.clearFramePage()
 
         guard let sessionID else { return .none }
         state.isLoading = true
@@ -567,7 +646,7 @@ struct ViewerFeature: Reducer {
         state.sessionTimeline = nil
         state.flatTimelineEntries = []
         state.isLoading = true
-        return loadFlatTimeline(bundleIdentifier: bundleIdentifier)
+        return beginFrameQuery(.init(scope: .app(bundleIdentifier: bundleIdentifier)), state: &state)
     }
 
     /// Clearing the window selection returns to the session's timeline graph (already
@@ -578,6 +657,7 @@ struct ViewerFeature: Reducer {
         state.windowTimelineEntries = []
         state.clearScreenshotSelection()
         state.isShowingFlatGallery = false
+        state.clearFramePage()
         return .none
     }
 
@@ -592,7 +672,10 @@ struct ViewerFeature: Reducer {
         state.isShowingFlatGallery = false
         state.isLoading = true
         guard let sessionID = state.selectedSessionID else { return .none }
-        return loadWindowTimeline(sessionID: sessionID, windowID: windowID, range: nil)
+        return beginFrameQuery(
+            .init(scope: .window(sessionID: sessionID, windowID: windowID)),
+            state: &state
+        )
     }
 
     private func selectWindowSegment(
@@ -607,7 +690,26 @@ struct ViewerFeature: Reducer {
         state.isShowingFlatGallery = false
         state.isLoading = true
         guard let sessionID = state.selectedSessionID else { return .none }
-        return loadWindowTimeline(sessionID: sessionID, windowID: windowID, range: segment)
+        return beginFrameQuery(
+            .init(
+                scope: .window(sessionID: sessionID, windowID: windowID),
+                capturedAt: segment.startedAt ... segment.endedAt
+            ),
+            state: &state
+        )
+    }
+
+    private func beginFrameQuery(_ query: FrameQuery, state: inout State) -> Effect<Action> {
+        state.frameQuery = query
+        state.nextFrameCursor = nil
+        state.frameTotalCount = 0
+        state.averageScreenshotInterval = nil
+        state.cadenceSelection = .query(query)
+        state.isLoadingMoreFrames = false
+        return .merge(
+            loadFramePage(query: query, after: nil, appending: false),
+            loadCadence(selection: .query(query))
+        )
     }
 
     private func deleteSession(
@@ -620,17 +722,11 @@ struct ViewerFeature: Reducer {
         }
 
         state.isLoading = true
-        let fileStorage = fileStorage
-        let persistence = persistence
+        let maintenance = maintenance
+        let environment = maintenanceEnvironment
         return .run { send in
             do {
-                // Remove the exact stored files first (root-agnostic, so it still works if the
-                // capture location changed since these frames were written), then clean up the
-                // now-empty session directory under the current root and delete the record.
-                let paths = try await persistence.screenshotPathsForSession(session.id)
-                _ = try? await fileStorage.removeFiles(paths.map { URL(filePath: $0) })
-                try? await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
-                try await persistence.deleteSession(session.id)
+                _ = try await maintenance.deleteSessions([session.id], environment)
                 await send(.sessionDeleted(session.id))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
@@ -638,118 +734,12 @@ struct ViewerFeature: Reducer {
         }
     }
 
-    /// Compacts every closed session's standalone frames into HEVC window videos, repointing the
-    /// database and deleting the originals only after each video is written and verified. Failures
-    /// on one window are isolated (its partial video is removed) so the pass is safe to retry.
-    /// Reports frame-level progress so the UI can show a determinate bar.
-    private func compactClosedSessions() -> Effect<Action> {
-        let persistence = persistence
-        let compactor = frameVideoCompactor
-        let extractor = videoFrameExtractor
-        let fileStorage = fileStorage
-        let quality = Defaults[.compactionQuality]
-
-        return .run { send in
-            // First pass: collect every window that needs compacting so we know the total frame
-            // count up front (the denominator for the progress bar).
-            var windows: [WindowCompactionPlan] = []
-            do {
-                let sessions = try await persistence.endedSessionsOldestFirst()
-                for session in sessions {
-                    guard let plan = try? await persistence.compactionPlanForSession(session.id) else {
-                        continue
-                    }
-                    windows.append(contentsOf: plan.windows)
-                }
-            } catch {
-                await send(.loadingFailed(error.localizedDescription))
-                return
-            }
-
-            let totalFrames = windows.reduce(0) { $0 + $1.frames.count }
-            guard totalFrames > 0 else {
-                await send(.compactionFinished(.empty))
-                return
-            }
-            // Throttle progress so a long pass emits at most ~a few hundred updates.
-            let reportStride = max(1, totalFrames / 300)
-
-            // The encode work runs on a child task and pushes frame counts into a stream; the
-            // effect consumes the stream and forwards determinate progress to the reducer.
-            let (progressStream, progressContinuation) = AsyncStream<Int>.makeStream()
-
-            let worker = Task { () -> StorageCompactionResult in
-                var result = StorageCompactionResult.empty
-                var processedFrames = 0
-                for window in windows {
-                    let base = processedFrames
-                    let lastReported = LockIsolated(base)
-                    do {
-                        let videoBytes = try await compactor.compact(window, quality) { framesInWindow in
-                            let done = base + framesInWindow
-                            if done - lastReported.value >= reportStride {
-                                lastReported.setValue(done)
-                                progressContinuation.yield(done)
-                            }
-                        }
-                        // Verify the last frame is decodable at its index before we trust the
-                        // video enough to delete the originals.
-                        _ = try await extractor.image(window.outputURL, max(0, window.frames.count - 1))
-                        try await persistence.applyCompaction(
-                            window.windowID,
-                            window.outputURL.path(percentEncoded: false),
-                            window.frames.map(\.id),
-                            videoBytes
-                        )
-                        let reclaimed = try await fileStorage.removeFiles(window.frames.map(\.sourceURL))
-                        result.compactedWindowCount += 1
-                        result.framesCompacted += window.frames.count
-                        result.bytesBefore += reclaimed
-                        result.bytesAfter += videoBytes
-                    } catch {
-                        // Leave this window uncompacted and remove any partial video so it is not
-                        // left behind as an orphan.
-                        _ = try? await fileStorage.removeFiles([window.outputURL])
-                    }
-                    processedFrames = base + window.frames.count
-                    progressContinuation.yield(processedFrames)
-                }
-                progressContinuation.finish()
-                return result
-            }
-
-            await send(.compactionProgressed(CompactionProgress(processedFrames: 0, totalFrames: totalFrames)))
-            for await done in progressStream {
-                await send(.compactionProgressed(CompactionProgress(processedFrames: done, totalFrames: totalFrames)))
-            }
-            await send(.compactionFinished(worker.value))
-        }
-    }
-
     private func runIntegritySweep() -> Effect<Action> {
-        let fileStorage = fileStorage
-        let persistence = persistence
+        let maintenance = maintenance
+        let environment = maintenanceEnvironment
         return .run { send in
             do {
-                let index = try await persistence.screenshotFileIndex()
-                let recordedPaths = Set(index.map(\.path))
-
-                // Orphan files: files under our capture root(s) that no record references.
-                let files = try await fileStorage.captureFileURLs()
-                let orphanFiles = files.filter { !recordedPaths.contains($0.path(percentEncoded: false)) }
-
-                // Missing records: records whose file no longer exists (checked by absolute path).
-                let existing = await fileStorage.filterExistingPaths(index.map(\.path))
-                let missingIDs = index.filter { !existing.contains($0.path) }.map(\.id)
-
-                try await persistence.deleteScreenshots(missingIDs)
-                let reclaimed = try await fileStorage.removeFiles(orphanFiles)
-
-                await send(.integritySweepFinished(StorageIntegrityResult(
-                    removedRecordCount: missingIDs.count,
-                    removedFileCount: orphanFiles.count,
-                    reclaimedBytes: reclaimed
-                )))
+                try await send(.integritySweepFinished(await maintenance.integritySweep(environment)))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
@@ -757,23 +747,13 @@ struct ViewerFeature: Reducer {
     }
 
     private func enforceRetention(_ policy: RetentionPolicy) -> Effect<Action> {
-        let fileStorage = fileStorage
-        let persistence = persistence
+        let maintenance = maintenance
+        let environment = maintenanceEnvironment
         let now = date.now
         return .run { send in
             do {
-                let sessions = try await persistence.endedSessionsOldestFirst()
-                let ids = policy.sessionIDsToPrune(endedSessionsOldestFirst: sessions, now: now)
-                let byID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-
-                for id in ids {
-                    guard let session = byID[id] else { continue }
-                    let paths = try await persistence.screenshotPathsForSession(id)
-                    _ = try? await fileStorage.removeFiles(paths.map { URL(filePath: $0) })
-                    try? await fileStorage.deleteSessionCaptures(session.bundleIdentifier, id)
-                    try await persistence.deleteSession(id)
-                }
-                await send(.retentionEnforced(deletedSessionCount: ids.count))
+                let count = try await maintenance.enforceRetention(policy, now, environment)
+                await send(.retentionEnforced(deletedSessionCount: count))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
@@ -781,18 +761,47 @@ struct ViewerFeature: Reducer {
     }
 
     private func bulkDelete(before cutoff: Date, bundleIdentifier: String?) -> Effect<Action> {
-        let fileStorage = fileStorage
-        let persistence = persistence
+        let maintenance = maintenance
+        let environment = maintenanceEnvironment
         return .run { send in
             do {
-                let sessions = try await persistence.sessionsStartedBefore(cutoff, bundleIdentifier)
-                for session in sessions {
-                    let paths = try await persistence.screenshotPathsForSession(session.id)
-                    _ = try? await fileStorage.removeFiles(paths.map { URL(filePath: $0) })
-                    try? await fileStorage.deleteSessionCaptures(session.bundleIdentifier, session.id)
-                    try await persistence.deleteSession(session.id)
-                }
-                await send(.bulkDeleteFinished(deletedSessionCount: sessions.count))
+                let count = try await maintenance.deleteBefore(cutoff, bundleIdentifier, environment)
+                await send(.bulkDeleteFinished(deletedSessionCount: count))
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+            }
+        }
+    }
+
+    private var maintenanceEnvironment: MaintenanceEnvironment {
+        MaintenanceEnvironment(
+            persistence: persistence,
+            fileStorage: fileStorage,
+            storageCoordinator: storageCoordinator
+        )
+    }
+
+    private func loadFramePage(
+        query: FrameQuery,
+        after cursor: FrameCursor?,
+        appending: Bool
+    ) -> Effect<Action> {
+        .run { send in
+            do {
+                let page = try await persistence.framePage(query, cursor, 240)
+                await send(.framePageLoaded(query: query, page: page, appending: appending))
+            } catch {
+                await send(.loadingFailed(error.localizedDescription))
+            }
+        }
+    }
+
+    private func loadCadence(selection: FrameSelection) -> Effect<Action> {
+        let loader = FramePageLoader(persistence: persistence)
+        return .run { send in
+            do {
+                let average = try await loader.averageInterval(for: selection)
+                await send(.cadenceLoaded(selection: selection, average: average))
             } catch {
                 await send(.loadingFailed(error.localizedDescription))
             }
@@ -842,32 +851,6 @@ struct ViewerFeature: Reducer {
             }
         }
     }
-
-    private func loadWindowTimeline(sessionID: UUID, windowID: UUID, range: WindowTitleSegment?) -> Effect<Action> {
-        .run { send in
-            do {
-                let entries = try await persistence.timelineForWindow(sessionID, windowID)
-                // A selected title segment narrows the grid to that segment's time range.
-                let filtered = range.map { segment in
-                    entries.filter { $0.occurredAt >= segment.startedAt && $0.occurredAt <= segment.endedAt }
-                } ?? entries
-                await send(.timelineEntriesLoaded(filtered))
-            } catch {
-                await send(.loadingFailed(error.localizedDescription))
-            }
-        }
-    }
-
-    private func loadFlatTimeline(bundleIdentifier: String) -> Effect<Action> {
-        .run { send in
-            do {
-                let entries = try await persistence.timelineForApp(bundleIdentifier)
-                await send(.flatTimelineEntriesLoaded(entries))
-            } catch {
-                await send(.loadingFailed(error.localizedDescription))
-            }
-        }
-    }
 }
 
 extension ViewerFeature.State {
@@ -908,6 +891,16 @@ extension ViewerFeature.State {
         sessionTimeline = nil
         windowTimelineEntries = []
         flatTimelineEntries = []
+        clearFramePage()
+    }
+
+    mutating func clearFramePage() {
+        frameQuery = nil
+        nextFrameCursor = nil
+        frameTotalCount = 0
+        isLoadingMoreFrames = false
+        averageScreenshotInterval = nil
+        cadenceSelection = nil
     }
 
     /// Applies one persisted capture without re-querying and copying the full library. This path
@@ -917,6 +910,9 @@ extension ViewerFeature.State {
         _ record: ScreenshotRecord,
         bundleIdentifier: String
     ) {
+        let visibleEntries = isShowingFlatGallery ? flatTimelineEntries : windowTimelineEntries
+        let wasVisible = visibleEntries.contains { $0.id == record.id }
+        let matchesCurrentQuery = frameQuery?.matches(record, bundleIdentifier: bundleIdentifier) == true
         if let index = apps.firstIndex(where: { $0.bundleIdentifier == bundleIdentifier }) {
             let previousLastCapture = apps[index].lastCapturedAt
             apps[index].screenshotCount += 1
@@ -962,6 +958,9 @@ extension ViewerFeature.State {
             }
             sessionTimeline = timeline
         }
+        if matchesCurrentQuery, !wasVisible {
+            frameTotalCount += 1
+        }
     }
 
     mutating func recordCaptureUnavailable(_ record: CaptureUnavailableRecord) {
@@ -985,8 +984,16 @@ extension ViewerFeature.State {
         _ entry: CaptureTimelineEntry,
         to entries: inout [CaptureTimelineEntry]
     ) {
-        guard entries.last?.id != entry.id else { return }
+        guard !entries.contains(where: { $0.id == entry.id }) else { return }
         entries.append(entry)
+    }
+
+    static func appendUnique(
+        _ newEntries: [CaptureTimelineEntry],
+        to entries: inout [CaptureTimelineEntry]
+    ) {
+        var existingIDs = Set(entries.map(\.id))
+        entries.append(contentsOf: newEntries.filter { existingIDs.insert($0.id).inserted })
     }
 
     private static func upsert(
@@ -1016,37 +1023,4 @@ extension ViewerFeature.State {
         }
         return nil
     }
-}
-
-/// Applies an export's trim range and optional near-duplicate filter to the ordered frames.
-/// Missing legacy hashes are resolved from source pixels only when filtering is enabled.
-private nonisolated func applyExportSelection(
-    _ options: ExportOptions,
-    to frames: [ExportFrame],
-    resolveMissingHash: @Sendable (ExportFrame) async throws -> UInt64
-) async throws -> [ExportFrame] {
-    var result = frames
-
-    if let range = options.trimRange {
-        let lower = max(0, range.lowerBound)
-        let upper = min(frames.count - 1, range.upperBound)
-        result = lower <= upper ? Array(frames[lower ... upper]) : []
-    }
-
-    if options.skipSimilarFrames {
-        var hashes: [UInt64?] = []
-        hashes.reserveCapacity(result.count)
-        for frame in result {
-            if frame.perceptualHash == 0 {
-                // A freshly computed zero is a valid dHash, unlike zero in legacy persistence.
-                try hashes.append(await resolveMissingHash(frame))
-            } else {
-                hashes.append(frame.perceptualHash)
-            }
-        }
-        let keep = ExportFrameFilter.keptIndices(hashes: hashes)
-        result = keep.map { result[$0] }
-    }
-
-    return result
 }

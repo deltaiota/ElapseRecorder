@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-nonisolated struct CapturableWindow: Equatable, Identifiable {
+nonisolated struct CapturableWindow: Equatable, Identifiable, @unchecked Sendable {
     var id: Int {
         systemWindowID
     }

@@ -18,6 +18,9 @@ nonisolated struct ScreenshotRecord: Equatable, Identifiable {
     /// Pixels are decoded from `videoURL` at `videoFrameIndex`. `fileURL` may no longer exist.
     var videoURL: URL? = nil
     var videoFrameIndex: Int? = nil
+    /// Exact rational presentation coordinate for V2 video segments.
+    var videoPTSValue: Int64? = nil
+    var videoPTSTimescale: Int32? = nil
 
     /// True when this frame's pixels are stored in a compacted video rather than a standalone file.
     var isCompacted: Bool {

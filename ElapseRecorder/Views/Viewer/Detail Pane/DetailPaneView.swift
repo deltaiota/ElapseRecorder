@@ -169,7 +169,8 @@ struct DetailPaneView: View {
             jumpToLatestTrigger: jumpToLatestTrigger,
             isQuickLookOpen: store.quickLookURL != nil,
             openQuickLook: { store.send(.quickLookRequested($0)) },
-            revealScreenshot: { store.send(.revealScreenshotInFinder($0)) }
+            revealScreenshot: { store.send(.revealScreenshotInFinder($0)) },
+            loadMore: { store.send(.loadMoreFramesRequested) }
         )
     }
 
@@ -178,10 +179,11 @@ struct DetailPaneView: View {
         ScreenshotGridBottomBar(
             gridItemSize: $gridItemSize,
             onJumpToLatest: { jumpToLatestTrigger += 1 },
-            isExportDisabled: exportScopeFrames.isEmpty || store.isExporting,
-            averageInterval: averageScreenshotInterval,
+            isExportDisabled: exportSelection == nil || store.isExporting,
+            averageInterval: store.averageScreenshotInterval,
             onExport: {
-                store.send(.exportTimelapseRequested(frames: exportScopeFrames))
+                guard let selection = exportSelection else { return }
+                store.send(.exportSelectionRequested(selection))
             }
         )
     }
@@ -205,37 +207,25 @@ struct DetailPaneView: View {
         return currentScreenshotURLs.contains(current) ? currentScreenshotURLs : [current]
     }
 
-    /// Screenshot scope shared by export and cadence display: a multi-selection when present,
-    /// otherwise every screenshot currently shown. Capture timestamps survive compaction.
-    private var screenshotScopeRecords: [ScreenshotRecord] {
-        let entries = store.isShowingFlatGallery ? store.flatTimelineEntries : store.windowTimelineEntries
-        let selection = store.selectedScreenshotIDs
-        let useSelection = selection.count >= 2
-
-        return entries.compactMap { entry in
-            guard case let .screenshot(record) = entry else { return nil }
-            return !useSelection || selection.contains(record.id) ? record : nil
+    /// A multi-selection exports exactly the visible selected ids in chronological order.
+    /// Otherwise export and cadence retain the complete immutable query, not its loaded page.
+    private var exportSelection: FrameSelection? {
+        let selected = store.selectedScreenshotIDs
+        if selected.count >= 2 {
+            let orderedIDs = currentEntries.compactMap { entry -> UUID? in
+                guard case let .screenshot(record) = entry, selected.contains(record.id) else { return nil }
+                return record.id
+            }
+            if orderedIDs.count >= 2 {
+                return .ids(orderedIDs)
+            }
         }
+        guard store.frameTotalCount > 0, let query = store.frameQuery else { return nil }
+        return .query(query)
     }
 
-    private var averageScreenshotInterval: TimeInterval? {
-        ScreenshotInterval.average(records: screenshotScopeRecords)
-    }
-
-    /// What a timelapse export covers, always in chronological order. Each frame carries its
-    /// original capture time independently of whether its pixels live in an image or video.
-    private var exportScopeFrames: [ExportFrame] {
-        screenshotScopeRecords.map { record in
-            ExportFrame(
-                url: record.fileURL,
-                pixelWidth: record.pixelWidth,
-                pixelHeight: record.pixelHeight,
-                capturedAt: record.capturedAt,
-                perceptualHash: record.perceptualHash,
-                videoURL: record.videoURL,
-                videoFrameIndex: record.videoFrameIndex
-            )
-        }
+    private var currentEntries: [CaptureTimelineEntry] {
+        store.isShowingFlatGallery ? store.flatTimelineEntries : store.windowTimelineEntries
     }
 }
 

@@ -848,22 +848,6 @@
         }
       }
     },
-    "Auto-Compact on Session Close" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Auto-Compact on Session Close"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "会话结束时自动压缩"
-          }
-        }
-      }
-    },
     "Average interval" : {
       "localizations" : {
         "en" : {

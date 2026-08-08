@@ -12,8 +12,9 @@
 		28C18B6C2FE415A900A31D68 /* SFSafeSymbols in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B6B2FE415A900A31D68 /* SFSafeSymbols */; };
 		28C18B6F2FE4162E00A31D68 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B6E2FE4162E00A31D68 /* ComposableArchitecture */; };
 		28C18B722FE4166300A31D68 /* Chronicle in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B712FE4166300A31D68 /* Chronicle */; };
-		5B67E6DD465045499F5A8A6D /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = B8AC3149851946BF8D6006B2 /* LaunchAtLogin */; };
 		28C18B732FE416A100A31D68 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 28C18B752FE416A100A31D68 /* Sparkle */; };
+		5B67E6DD465045499F5A8A6D /* LaunchAtLogin in Frameworks */ = {isa = PBXBuildFile; productRef = B8AC3149851946BF8D6006B2 /* LaunchAtLogin */; };
+		A72DB00130A1000100000001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = A72DB00330A1000100000001 /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +70,7 @@
 				28C18B722FE4166300A31D68 /* Chronicle in Frameworks */,
 				5B67E6DD465045499F5A8A6D /* LaunchAtLogin in Frameworks */,
 				28C18B732FE416A100A31D68 /* Sparkle in Frameworks */,
+				A72DB00130A1000100000001 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,6 +138,7 @@
 				28C18B712FE4166300A31D68 /* Chronicle */,
 				B8AC3149851946BF8D6006B2 /* LaunchAtLogin */,
 				28C18B752FE416A100A31D68 /* Sparkle */,
+				A72DB00330A1000100000001 /* GRDB */,
 			);
 			productName = ElapseRecorder;
 			productReference = 28C18B342FE4149900A31D68 /* ElapseRecorder.app */;
@@ -228,6 +231,7 @@
 				28C18B702FE4166300A31D68 /* XCRemoteSwiftPackageReference "LogOutLoud" */,
 				16F52C3FBCD44D4A81C4382C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */,
 				28C18B742FE416A100A31D68 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				A72DB00230A1000100000001 /* XCRemoteSwiftPackageReference "GRDB" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 28C18B352FE4149900A31D68 /* Products */;
@@ -432,7 +436,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 7XRF3J9RS4;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -449,7 +453,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Configuration/ElapseRecorder-Info.plist;
+				INFOPLIST_FILE = "Configuration/ElapseRecorder-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Elapse Recorder";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -457,17 +461,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.12.1;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
+				SPARKLE_PUBLIC_ED_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				SPARKLE_PUBLIC_ED_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 			};
 			name = Debug;
 		};
@@ -478,7 +482,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 7XRF3J9RS4;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -495,7 +499,7 @@
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Configuration/ElapseRecorder-Info.plist;
+				INFOPLIST_FILE = "Configuration/ElapseRecorder-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Elapse Recorder";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -503,17 +507,17 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.12.1;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorder;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
+				SPARKLE_PUBLIC_ED_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				SPARKLE_PUBLIC_ED_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 			};
 			name = Release;
 		};
@@ -522,11 +526,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 7XRF3J9RS4;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.7;
-				MARKETING_VERSION = 1.12.1;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorderTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -543,11 +547,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 7XRF3J9RS4;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 15.7;
-				MARKETING_VERSION = 1.12.1;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorderTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -563,10 +567,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 7XRF3J9RS4;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.12.1;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorderUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -582,10 +586,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				DEVELOPMENT_TEAM = 7XRF3J9RS4;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.12.1;
+				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorderUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -695,6 +699,14 @@
 				minimumVersion = 2.9.4;
 			};
 		};
+		A72DB00230A1000100000001 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = exactVersion;
+				version = 7.11.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -723,15 +735,20 @@
 			package = 28C18B702FE4166300A31D68 /* XCRemoteSwiftPackageReference "LogOutLoud" */;
 			productName = Chronicle;
 		};
-		B8AC3149851946BF8D6006B2 /* LaunchAtLogin */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 16F52C3FBCD44D4A81C4382C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */;
-			productName = LaunchAtLogin;
-		};
 		28C18B752FE416A100A31D68 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 28C18B742FE416A100A31D68 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		A72DB00330A1000100000001 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A72DB00230A1000100000001 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+		B8AC3149851946BF8D6006B2 /* LaunchAtLogin */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 16F52C3FBCD44D4A81C4382C /* XCRemoteSwiftPackageReference "LaunchAtLogin-Modern" */;
+			productName = LaunchAtLogin;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

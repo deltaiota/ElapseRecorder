@@ -27,16 +27,26 @@ final class ViewerFeatureTests: XCTestCase {
             }
             $0.timelapseExportClient.export = { request in
                 AsyncThrowingStream { continuation in
-                    XCTAssertEqual(request.frames, frames)
-                    XCTAssertEqual(request.destinationURL, destination)
-                    XCTAssertEqual(request.codec, .hevc)
-                    XCTAssertEqual(request.container, .mov)
-                    XCTAssertEqual(request.framesPerSecond, 24)
-                    XCTAssertEqual(request.interpolationFrames, 3)
-                    XCTAssertEqual(request.outputFrameCount, totalFrames)
-                    continuation.yield(TimelapseExportProgress(emittedFrames: 2, totalFrames: totalFrames))
-                    continuation.yield(TimelapseExportProgress(emittedFrames: 5, totalFrames: totalFrames))
-                    continuation.finish()
+                    Task {
+                        do {
+                            var actualFrames: [ExportFrame] = []
+                            for try await frame in request.source.stream() {
+                                actualFrames.append(frame)
+                            }
+                            XCTAssertEqual(actualFrames, frames)
+                            XCTAssertEqual(request.destinationURL, destination)
+                            XCTAssertEqual(request.codec, .hevc)
+                            XCTAssertEqual(request.container, .mov)
+                            XCTAssertEqual(request.framesPerSecond, 24)
+                            XCTAssertEqual(request.interpolationFrames, 3)
+                            XCTAssertEqual(request.outputFrameCount, totalFrames)
+                            continuation.yield(TimelapseExportProgress(emittedFrames: 2, totalFrames: totalFrames))
+                            continuation.yield(TimelapseExportProgress(emittedFrames: 5, totalFrames: totalFrames))
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    }
                 }
             }
             $0.fileRevealClient.reveal = { url in revealed.setValue(url) }
@@ -66,107 +76,6 @@ final class ViewerFeatureTests: XCTestCase {
         XCTAssertEqual(revealed.value, destination)
     }
 
-    @MainActor
-    func testCompactStorageEncodesVerifiesRepointsAndDeletesOriginals() async {
-        let sessionID = UUID()
-        let windowID = UUID()
-        let frames = (0 ..< 4).map { index in
-            CompactableFrame(
-                id: UUID(),
-                sourceURL: URL(filePath: "/tmp/w/\(index).heic"),
-                pixelWidth: 100,
-                pixelHeight: 100,
-                capturedAt: Date(timeIntervalSince1970: Double(index))
-            )
-        }
-        let plan = SessionCompactionPlan(
-            sessionID: sessionID,
-            windows: [
-                WindowCompactionPlan(
-                    windowID: windowID,
-                    displayNumber: 1,
-                    outputURL: URL(filePath: "/tmp/w/window-1.mov"),
-                    canvasWidth: 100,
-                    canvasHeight: 100,
-                    frames: frames
-                ),
-            ]
-        )
-        let summary = CaptureSessionSummary(
-            id: sessionID,
-            bundleIdentifier: "com.example.App",
-            displayName: "App",
-            startedAt: Date(timeIntervalSince1970: 0),
-            endedAt: Date(timeIntervalSince1970: 100),
-            windowCount: 1,
-            screenshotCount: 4
-        )
-
-        let appliedVideoPath = LockIsolated<String?>(nil)
-        let appliedRecordIDs = LockIsolated<[UUID]>([])
-        let removedURLs = LockIsolated<[URL]>([])
-        let verifiedIndex = LockIsolated<Int?>(nil)
-
-        let store = TestStore(initialState: ViewerFeature.State()) {
-            ViewerFeature()
-        } withDependencies: {
-            $0.persistenceClient.endedSessionsOldestFirst = { [summary] }
-            $0.persistenceClient.compactionPlanForSession = { $0 == sessionID ? plan : nil }
-            $0.persistenceClient.apps = { [] }
-            $0.frameVideoCompactorClient.compact = { _, _, _ in 1000 }
-            $0.videoFrameExtractorClient.image = { _, index in
-                verifiedIndex.setValue(index)
-                return Self.makeImage()
-            }
-            $0.persistenceClient.applyCompaction = { window, videoPath, ids, _ in
-                XCTAssertEqual(window, windowID)
-                appliedVideoPath.setValue(videoPath)
-                appliedRecordIDs.setValue(ids)
-            }
-            $0.fileStorageClient.removeFiles = { urls in
-                removedURLs.setValue(urls)
-                return 4000
-            }
-        }
-        store.exhaustivity = .off
-
-        await store.send(.compactStorageButtonTapped) {
-            $0.isCompacting = true
-        }
-        await store.receive(\.compactionFinished) {
-            $0.isCompacting = false
-            $0.compactionResult = StorageCompactionResult(
-                compactedWindowCount: 1,
-                framesCompacted: 4,
-                bytesBefore: 4000,
-                bytesAfter: 1000
-            )
-        }
-
-        XCTAssertEqual(appliedVideoPath.value, "/tmp/w/window-1.mov")
-        XCTAssertEqual(appliedRecordIDs.value, frames.map(\.id))
-        XCTAssertEqual(removedURLs.value, frames.map(\.sourceURL))
-        XCTAssertEqual(verifiedIndex.value, 3) // last frame verified
-    }
-
-    @MainActor
-    func testCompactStorageWithNothingToCompactReportsEmpty() async {
-        let store = TestStore(initialState: ViewerFeature.State()) {
-            ViewerFeature()
-        } withDependencies: {
-            $0.persistenceClient.endedSessionsOldestFirst = { [] }
-            $0.fileStorageClient.removeFiles = { _ in 0 }
-        }
-
-        await store.send(.compactStorageButtonTapped) {
-            $0.isCompacting = true
-        }
-        await store.receive(\.compactionFinished) {
-            $0.isCompacting = false
-            $0.compactionResult = .empty
-        }
-    }
-
     private static func makeImage() -> CGImage {
         let context = CGContext(
             data: nil,
@@ -178,37 +87,6 @@ final class ViewerFeatureTests: XCTestCase {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )!
         return context.makeImage()!
-    }
-
-    @MainActor
-    func testAutoCompactOnSessionCloseSkippedWhenToggleDisabled() async {
-        let store = TestStore(initialState: ViewerFeature.State()) {
-            ViewerFeature()
-        } withDependencies: {
-            $0.capturePreferencesClient.autoCompactOnSessionClose = { false }
-        }
-
-        // Toggle off: the automatic request is a no-op (no encoding, no state change).
-        await store.send(.autoCompactOnSessionCloseRequested)
-    }
-
-    @MainActor
-    func testAutoCompactOnSessionCloseRunsWhenToggleEnabled() async {
-        let store = TestStore(initialState: ViewerFeature.State()) {
-            ViewerFeature()
-        } withDependencies: {
-            $0.capturePreferencesClient.autoCompactOnSessionClose = { true }
-            $0.persistenceClient.endedSessionsOldestFirst = { [] }
-            $0.fileStorageClient.removeFiles = { _ in 0 }
-        }
-
-        await store.send(.autoCompactOnSessionCloseRequested) {
-            $0.isCompacting = true
-        }
-        await store.receive(\.compactionFinished) {
-            $0.isCompacting = false
-            $0.compactionResult = .empty
-        }
     }
 
     @MainActor
@@ -276,10 +154,7 @@ final class ViewerFeatureTests: XCTestCase {
 
     @MainActor
     func testIntegritySweepPrunesMissingRecordsAndOrphanFiles() async throws {
-        let keepPath = "/captures/keep.heic"
-        let missingPath = "/captures/missing.heic"
         let orphanURL = URL(filePath: "/captures/orphan.heic")
-        let keptID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1"))
         let missingID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000A2"))
 
         let deletedRecordIDs = LockIsolated<[UUID]>([])
@@ -288,20 +163,16 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
-            $0.persistenceClient.screenshotFileIndex = {
-                [
-                    ScreenshotFileReference(id: keptID, path: keepPath, sizeBytes: 10),
-                    ScreenshotFileReference(id: missingID, path: missingPath, sizeBytes: 20),
-                ]
+            $0.maintenanceServiceClient.integritySweep = { _ in
+                deletedRecordIDs.setValue([missingID])
+                removedFileURLs.setValue([orphanURL])
+                return StorageIntegrityResult(
+                    removedRecordCount: 1,
+                    removedFileCount: 1,
+                    reclaimedBytes: 20
+                )
             }
-            $0.persistenceClient.deleteScreenshots = { ids in deletedRecordIDs.setValue(ids) }
             $0.persistenceClient.apps = { [] }
-            $0.fileStorageClient.captureFileURLs = { [URL(filePath: keepPath), orphanURL] }
-            $0.fileStorageClient.filterExistingPaths = { paths in Set(paths.filter { $0 == keepPath }) }
-            $0.fileStorageClient.removeFiles = { urls in
-                removedFileURLs.setValue(urls)
-                return 20
-            }
         }
         store.exhaustivity = .off
 
@@ -322,31 +193,23 @@ final class ViewerFeatureTests: XCTestCase {
     @MainActor
     func testBulkDeleteRemovesMatchingSessionsFilesAndRecords() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-0000000000B1"))
-        let session = CaptureSessionSummary(
-            id: sessionID,
-            bundleIdentifier: "com.example.App",
-            displayName: "App",
-            startedAt: Date(timeIntervalSince1970: 100),
-            endedAt: Date(timeIntervalSince1970: 200),
-            windowCount: 1,
-            screenshotCount: 3,
-            sizeBytes: 30
-        )
         let deletedSessionIDs = LockIsolated<[UUID]>([])
         let removedFileURLs = LockIsolated<[URL]>([])
 
         let store = TestStore(initialState: ViewerFeature.State()) {
             ViewerFeature()
         } withDependencies: {
-            $0.persistenceClient.sessionsStartedBefore = { _, _ in [session] }
-            $0.persistenceClient.screenshotPathsForSession = { _ in ["/captures/1.heic", "/captures/2.heic"] }
-            $0.persistenceClient.deleteSession = { id in deletedSessionIDs.withValue { $0.append(id) } }
-            $0.persistenceClient.apps = { [] }
-            $0.fileStorageClient.deleteSessionCaptures = { _, _ in }
-            $0.fileStorageClient.removeFiles = { urls in
-                removedFileURLs.withValue { $0.append(contentsOf: urls) }
-                return 30
+            $0.maintenanceServiceClient.deleteBefore = { cutoff, bundleIdentifier, _ in
+                XCTAssertEqual(cutoff, Date(timeIntervalSince1970: 500))
+                XCTAssertNil(bundleIdentifier)
+                deletedSessionIDs.setValue([sessionID])
+                removedFileURLs.setValue([
+                    URL(filePath: "/captures/1.heic"),
+                    URL(filePath: "/captures/2.heic"),
+                ])
+                return 1
             }
+            $0.persistenceClient.apps = { [] }
         }
         store.exhaustivity = .off
 
@@ -387,12 +250,19 @@ final class ViewerFeatureTests: XCTestCase {
             $0.capturePreferencesClient.retentionPolicy = {
                 RetentionPolicy(maxAge: nil, maxTotalBytes: nil, maxScreenshotCount: 8)
             }
-            $0.persistenceClient.endedSessionsOldestFirst = { sessions }
-            $0.persistenceClient.screenshotPathsForSession = { _ in [] }
-            $0.persistenceClient.deleteSession = { id in deleted.withValue { $0.append(id) } }
+            $0.maintenanceServiceClient.enforceRetention = { policy, now, _ in
+                let ids = policy.sessionIDsToPrune(
+                    snapshot: RetentionSnapshot(
+                        endedSessionsOldestFirst: sessions,
+                        activeSizeBytes: 0,
+                        activeFrameCount: 0
+                    ),
+                    now: now
+                )
+                deleted.setValue(ids)
+                return ids.count
+            }
             $0.persistenceClient.apps = { [] }
-            $0.fileStorageClient.deleteSessionCaptures = { _, _ in }
-            $0.fileStorageClient.removeFiles = { _ in 0 }
         }
         store.exhaustivity = .off
 
@@ -551,8 +421,21 @@ final class ViewerFeatureTests: XCTestCase {
                 ExportSelection(destinationURL: URL(filePath: "/tmp/out.mp4"), options: options)
             }
             $0.timelapseExportClient.export = { request in
-                encodedFrames.setValue(request.frames)
-                return AsyncThrowingStream { $0.finish() }
+                AsyncThrowingStream { continuation in
+                    Task {
+                        do {
+                            var streamedFrames: [ExportFrame] = []
+                            for try await frame in request.source.stream() {
+                                streamedFrames.append(frame)
+                            }
+                            let collectedFrames = streamedFrames
+                            encodedFrames.setValue(collectedFrames)
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    }
+                }
             }
             $0.fileRevealClient.reveal = { _ in }
         }
@@ -565,7 +448,7 @@ final class ViewerFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testExportResolvesLegacyCompactedHashesBeforeSkippingSimilarFrames() async {
+    func testExportResolvesSegmentHashesBeforeSkippingSimilarFrames() async {
         let videoURL = URL(filePath: "/tmp/compacted.mov")
         let frames = (0 ..< 5).map { (index: Int) in
             ExportFrame(
@@ -574,7 +457,9 @@ final class ViewerFeatureTests: XCTestCase {
                 pixelHeight: 100,
                 perceptualHash: 0,
                 videoURL: videoURL,
-                videoFrameIndex: index
+                videoFrameIndex: index,
+                videoPTSValue: Int64(index),
+                videoPTSTimescale: 30
             )
         }
         let options = ExportOptions(
@@ -596,8 +481,21 @@ final class ViewerFeatureTests: XCTestCase {
                 hashes.withValue { $0.removeFirst() }
             }
             $0.timelapseExportClient.export = { request in
-                encodedFrames.setValue(request.frames)
-                return AsyncThrowingStream { $0.finish() }
+                AsyncThrowingStream { continuation in
+                    Task {
+                        do {
+                            var streamedFrames: [ExportFrame] = []
+                            for try await frame in request.source.stream() {
+                                streamedFrames.append(frame)
+                            }
+                            let collectedFrames = streamedFrames
+                            encodedFrames.setValue(collectedFrames)
+                            continuation.finish()
+                        } catch {
+                            continuation.finish(throwing: error)
+                        }
+                    }
+                }
             }
             $0.fileRevealClient.reveal = { _ in }
         }
@@ -709,6 +607,66 @@ final class ViewerFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveFrameUpdatesPagedCountAndLaterPageDoesNotDuplicate() async throws {
+        let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000680"))
+        let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000681"))
+        let existing = try ScreenshotRecord(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000682")),
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: Date(timeIntervalSince1970: 1),
+            fileURL: URL(filePath: "/tmp/existing.heic"),
+            fileSizeBytes: 10
+        )
+        let live = try ScreenshotRecord(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000683")),
+            windowID: windowID,
+            sessionID: sessionID,
+            capturedAt: Date(timeIntervalSince1970: 2),
+            fileURL: URL(filePath: "/tmp/live.heic"),
+            fileSizeBytes: 10
+        )
+        let query = FrameQuery(scope: .window(sessionID: sessionID, windowID: windowID))
+        var state = ViewerFeature.State()
+        state.selectedBundleIdentifier = "com.example.App"
+        state.selectedSessionID = sessionID
+        state.sessions = [CaptureSessionSummary(
+            id: sessionID,
+            bundleIdentifier: "com.example.App",
+            displayName: "App",
+            startedAt: Date(timeIntervalSince1970: 0),
+            endedAt: nil,
+            windowCount: 1,
+            screenshotCount: 1
+        )]
+        state.windows = [WindowCaptureSummary(
+            id: windowID,
+            displayNumber: 1,
+            label: nil,
+            firstSeenAt: Date(timeIntervalSince1970: 0),
+            lastSeenAt: Date(timeIntervalSince1970: 1),
+            screenshotCount: 1
+        )]
+        state.selectedWindowID = windowID
+        state.frameQuery = query
+        state.windowTimelineEntries = [.screenshot(existing)]
+        state.frameTotalCount = 1
+
+        let store = TestStore(initialState: state) { ViewerFeature() }
+        store.exhaustivity = .off
+        await store.send(.captureScreenshotRecorded(live, bundleIdentifier: "com.example.App"))
+        XCTAssertEqual(store.state.frameTotalCount, 2)
+        XCTAssertEqual(store.state.windowTimelineEntries.map(\.id), [existing.id, live.id])
+
+        await store.send(.framePageLoaded(
+            query: query,
+            page: FramePage(frames: [live], nextCursor: nil, totalCount: 2),
+            appending: true
+        ))
+        XCTAssertEqual(store.state.windowTimelineEntries.map(\.id), [existing.id, live.id])
+    }
+
+    @MainActor
     func testSelectingWindowThenReturningToTimeline() async throws {
         let sessionID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000604"))
         let windowID = try XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000605"))
@@ -726,20 +684,17 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
-            $0.persistenceClient.timelineForWindow = { _, _ in [.screenshot(windowScreenshot)] }
+            $0.persistenceClient.framePage = { query, _, _ in
+                XCTAssertEqual(query, FrameQuery(scope: .window(sessionID: sessionID, windowID: windowID)))
+                return FramePage(frames: [windowScreenshot], nextCursor: nil, totalCount: 1)
+            }
         }
+        store.exhaustivity = .off
 
-        // Selecting a window (e.g. tapping its lane) loads that window's screenshots.
-        await store.send(.windowPickerSelectionChanged(.window(id: windowID))) {
-            $0.selectedWindowID = windowID
-            $0.windowTimelineEntries = []
-            $0.isShowingFlatGallery = false
-            $0.isLoading = true
-        }
-        await store.receive(.timelineEntriesLoaded([.screenshot(windowScreenshot)])) {
-            $0.windowTimelineEntries = [.screenshot(windowScreenshot)]
-            $0.isLoading = false
-        }
+        await store.send(.windowPickerSelectionChanged(.window(id: windowID)))
+        await store.skipReceivedActions()
+        XCTAssertEqual(store.state.windowTimelineEntries, [.screenshot(windowScreenshot)])
+        XCTAssertEqual(store.state.frameTotalCount, 1)
         XCTAssertFalse(store.state.isShowingTimelineGraph)
 
         // Clearing the window selection returns to the timeline graph without loading a grid.
@@ -783,23 +738,23 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
-            $0.persistenceClient.timelineForWindow = { _, _ in
-                [.screenshot(inRange), .screenshot(outOfRange)]
+            $0.persistenceClient.framePage = { query, _, _ in
+                XCTAssertEqual(
+                    query,
+                    FrameQuery(
+                        scope: .window(sessionID: sessionID, windowID: windowID),
+                        capturedAt: segment.startedAt ... segment.endedAt
+                    )
+                )
+                return FramePage(frames: [inRange], nextCursor: nil, totalCount: 1)
             }
         }
+        store.exhaustivity = .off
 
-        await store.send(.windowSegmentSelected(windowID: windowID, segment: segment)) {
-            $0.selectedWindowID = windowID
-            $0.selectedSegment = segment
-            $0.windowTimelineEntries = []
-            $0.isShowingFlatGallery = false
-            $0.isLoading = true
-        }
-        // Only the screenshot inside the segment's [150, 200] range survives the filter.
-        await store.receive(.timelineEntriesLoaded([.screenshot(inRange)])) {
-            $0.windowTimelineEntries = [.screenshot(inRange)]
-            $0.isLoading = false
-        }
+        await store.send(.windowSegmentSelected(windowID: windowID, segment: segment))
+        await store.skipReceivedActions()
+        XCTAssertEqual(store.state.windowTimelineEntries, [.screenshot(inRange)])
+        XCTAssertFalse(store.state.windowTimelineEntries.contains(.screenshot(outOfRange)))
     }
 
     @MainActor
@@ -868,18 +823,14 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
-            $0.fileStorageClient.deleteSessionCaptures = { bundleIdentifier, sessionID in
-                deletedFileSessions.withValue { $0.append((bundleIdentifier, sessionID)) }
-            }
-            $0.persistenceClient.deleteSession = { sessionID in
-                deletedMetadataSessions.withValue { $0.append(sessionID) }
+            $0.maintenanceServiceClient.deleteSessions = { ids, _ in
+                deletedFileSessions.setValue([(session.bundleIdentifier, session.id)])
+                deletedMetadataSessions.setValue(ids)
+                return ids.count
             }
             $0.persistenceClient.apps = { [] }
             $0.persistenceClient.sessions = { _ in [] }
             $0.persistenceClient.windows = { _ in [] }
-            $0.persistenceClient.timelineForApp = { _ in [] }
-            $0.persistenceClient.timelineForSession = { _ in [] }
-            $0.persistenceClient.timelineForWindow = { _, _ in [] }
         }
         store.exhaustivity = .off
 
@@ -931,18 +882,14 @@ final class ViewerFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ViewerFeature()
         } withDependencies: {
-            $0.fileStorageClient.deleteSessionCaptures = { bundleIdentifier, sessionID in
-                deletedFileSessions.withValue { $0.append((bundleIdentifier, sessionID)) }
-            }
-            $0.persistenceClient.deleteSession = { sessionID in
-                deletedMetadataSessions.withValue { $0.append(sessionID) }
+            $0.maintenanceServiceClient.deleteSessions = { ids, _ in
+                deletedFileSessions.setValue([(deletedSession.bundleIdentifier, deletedSession.id)])
+                deletedMetadataSessions.setValue(ids)
+                return ids.count
             }
             $0.persistenceClient.apps = { [] }
             $0.persistenceClient.sessions = { _ in [] }
             $0.persistenceClient.windows = { _ in [] }
-            $0.persistenceClient.timelineForApp = { _ in [] }
-            $0.persistenceClient.timelineForSession = { _ in [] }
-            $0.persistenceClient.timelineForWindow = { _, _ in [] }
         }
         store.exhaustivity = .off
 

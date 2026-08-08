@@ -10,9 +10,9 @@ Elapse Recorder lives in the menu bar, watches for the apps you care about, and 
 - **Per-window screenshots** — On every tick it enumerates *all* capturable windows of the target app (via ScreenCaptureKit) and captures each one separately, skipping minimized, off-screen, or zero-size windows.
 - **Sessions & stable window numbering** — Each continuous run of an app is one *session*. Windows get friendly, stable per-session numbers (Window 1, Window 2, …) so you can answer "what did I do last time I opened this app?"
 - **Flexible scheduling** — Per-app capture intervals plus Auto and Manual capture modes, controlled from the menu bar.
-- **Efficient storage** — Screenshots are saved as HEIC by default (PNG supported) to keep footprint small while staying clear, with queryable SwiftData metadata for sessions, windows, and screenshots.
-- **Native viewer** — Browse by app → session → window, scan a per-window **timeline graph**, view a flat per-app gallery, and open frames in Quick Look.
-- **Timelapse video export** — Export any selection of screenshots to **H.264 or HEVC** (`.mp4` / `.mov`) with an adjustable frame rate and optional **crossfade interpolation** between frames. The export panel shows a live estimate of the resulting video length.
+- **Durable, efficient storage** — Captures enter a crash-recoverable HEIC/PNG spool, then HEIC frames are automatically sealed into verified HEVC segments. Metadata lives in indexed GRDB/SQLite; upgrades import the previous SwiftData library once.
+- **Native viewer** — Browse by app → session → window, scan a per-window **timeline graph**, view a flat per-app gallery, and open standalone or video-backed frames in Quick Look.
+- **Timelapse video export** — Stream any selection of standalone or segment-backed frames to **H.264 or HEVC** (`.mp4` / `.mov`) at source resolution, with adjustable frame rate and optional crossfade interpolation. The export panel shows a live duration estimate.
 - **Localized** — Available in English and Simplified Chinese (简体中文).
 
 ## Requirements
@@ -41,11 +41,12 @@ Or just open `ElapseRecorder.xcodeproj` in Xcode and run.
 
 ## Architecture
 
-Elapse Recorder is built with **SwiftUI** and **The Composable Architecture (TCA)**, with **SwiftData** for persistence. Live system APIs — ScreenCaptureKit, NSWorkspace events, the filesystem, AVFoundation encoding — are wrapped behind TCA dependency clients so features stay testable.
+Elapse Recorder is built with **SwiftUI** and **The Composable Architecture (TCA)**. The backend uses **GRDB/SQLite** for indexed metadata, a durable image spool, and verified AVFoundation HEVC segments. Live system APIs — ScreenCaptureKit, NSWorkspace events, the filesystem, and media encoding — stay behind dependency clients.
 
+- `Backend/` — recording service, monotonic scheduler, GRDB database, storage coordinator, recovery, maintenance, and streaming library
 - `Domain/` — value types and capture/window-filtering rules
-- `Dependencies/` — dependency clients and their live implementations
-- `Persistence/` — SwiftData models and the persistence client
+- `Dependencies/` — TCA dependency clients and live system implementations
+- `Persistence/` — GRDB persistence operations and database models
 - `Features/` — TCA reducers
 - `Views/` — SwiftUI views
 

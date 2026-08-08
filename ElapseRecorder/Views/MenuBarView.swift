@@ -48,12 +48,11 @@ struct MenuBarView: View {
             LaunchAtLogin.Toggle {
                 Text("Launch at Login")
             }
-
+            
             CheckForUpdatesButton(updater: updater)
+        }
 
-            Text("Version \(shortVersion) (\(buildVersion))")
-                .foregroundStyle(.secondary)
-
+        Section("Version \(shortVersion) (\(buildVersion))") {
             AboutMenuButton()
 
             Button("Quit") {

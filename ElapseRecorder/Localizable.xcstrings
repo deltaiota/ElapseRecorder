@@ -169,6 +169,9 @@
         }
       }
     },
+    "About Elapse Recorder" : {
+
+    },
     "Add %@ to Whitelist" : {
       "localizations" : {
         "en" : {
@@ -197,6 +200,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已添加"
+          }
+        }
+      }
+    },
+    "Advanced" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级"
           }
         }
       }
@@ -1359,6 +1378,22 @@
         }
       }
     },
+    "crossfade frames" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "crossfade frames"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个交叉淡化帧"
+          }
+        }
+      }
+    },
     "Custom" : {
       "localizations" : {
         "en" : {
@@ -1760,6 +1795,7 @@
       }
     },
     "ExportOptionsAccessory.modelInterpolationFramesCrossfadeFrames" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -1805,166 +1841,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "格式"
-          }
-        }
-      }
-    },
-    "Higher Quality" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Higher Quality"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更高质量"
-          }
-        }
-      }
-    },
-    "Larger videos, crisper frames" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Larger videos, crisper frames"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频更大，画面更清晰"
-          }
-        }
-      }
-    },
-    "Nothing to compact." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nothing to compact."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有可压缩的内容。"
-          }
-        }
-      }
-    },
-    "Only finished sessions are compacted; the session currently being recorded is left untouched." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only finished sessions are compacted; the session currently being recorded is left untouched."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仅压缩已完成的会话；正在录制的当前会话不受影响。"
-          }
-        }
-      }
-    },
-    "Preparing…" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Preparing…"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "准备中…"
-          }
-        }
-      }
-    },
-    "Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "将已完成会话的截图替换为每个窗口一个近乎无损的 HEVC 视频，通常可缩小约 10 倍。帧仍可浏览和导出。"
-          }
-        }
-      }
-    },
-    "Smaller" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Smaller"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "更小"
-          }
-        }
-      }
-    },
-    "Video Compaction" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Video Compaction"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频压缩"
-          }
-        }
-      }
-    },
-    "Video Quality" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Video Quality"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "视频质量"
-          }
-        }
-      }
-    },
-    "crossfade frames" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "crossfade frames"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "个交叉淡化帧"
           }
         }
       }
@@ -2129,6 +2005,22 @@
         }
       }
     },
+    "Higher Quality" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Higher Quality"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更高质量"
+          }
+        }
+      }
+    },
     "If granting permission failed, open System Settings > Privacy & Security > Screen & System Audio Recording (click to open), remove Elapse Recorder and add it back, then reopen the app." : {
       "localizations" : {
         "en" : {
@@ -2253,6 +2145,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更大的缩略图"
+          }
+        }
+      }
+    },
+    "Larger videos, crisper frames" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Larger videos, crisper frames"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频更大，画面更清晰"
           }
         }
       }
@@ -2673,6 +2581,22 @@
         }
       }
     },
+    "Nothing to compact." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing to compact."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有可压缩的内容。"
+          }
+        }
+      }
+    },
     "of %lld" : {
       "localizations" : {
         "en" : {
@@ -2705,6 +2629,22 @@
         }
       }
     },
+    "Only finished sessions are compacted; the session currently being recorded is left untouched." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only finished sessions are compacted; the session currently being recorded is left untouched."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅压缩已完成的会话；正在录制的当前会话不受影响。"
+          }
+        }
+      }
+    },
     "Pause" : {
       "localizations" : {
         "en" : {
@@ -2717,6 +2657,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暂停"
+          }
+        }
+      }
+    },
+    "Preparing…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "准备中…"
           }
         }
       }
@@ -2829,6 +2785,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已移除%1$lld条记录和%2$lld个文件 · 回收%3$@。"
+          }
+        }
+      }
+    },
+    "Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将已完成会话的截图替换为每个窗口一个近乎无损的 HEVC 视频，通常可缩小约 10 倍。帧仍可浏览和导出。"
           }
         }
       }
@@ -3203,6 +3175,7 @@
       }
     },
     "Selected App" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3326,6 +3299,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "跳过近似重复的帧"
+          }
+        }
+      }
+    },
+    "Smaller" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smaller"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更小"
           }
         }
       }
@@ -3683,6 +3672,38 @@
         }
       }
     },
+    "Video Compaction" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video Compaction"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频压缩"
+          }
+        }
+      }
+    },
+    "Video Quality" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Video Quality"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "视频质量"
+          }
+        }
+      }
+    },
     "Whitelist" : {
       "localizations" : {
         "en" : {
@@ -3792,23 +3813,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "放大"
-          }
-        }
-      }
-    },
-    "Advanced" : {
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Advanced"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "高级"
           }
         }
       }

@@ -14,49 +14,21 @@ nonisolated struct RecordingServiceClient {
 }
 
 extension RecordingServiceClient: DependencyKey {
-    static let liveValue = live(
-        persistence: .liveValue,
-        storage: .liveValue,
+    static let liveValue = live(dependencies: RecordingService.Dependencies(
         workspace: .liveValue,
         permission: .liveValue,
         screenCapture: .liveValue,
+        persistence: .liveValue,
+        storage: .liveValue,
         date: .liveValue,
         ids: .liveValue,
         perceptualHash: .liveValue,
         preferences: .liveValue,
         logger: .liveValue
-    )
+    ))
 
-    nonisolated static func live(
-        persistence: PersistenceClient,
-        storage: StorageCoordinatorClient,
-        workspace: WorkspaceClient,
-        permission: CapturePermissionClient,
-        screenCapture: ScreenCaptureClient,
-        date: DateClient,
-        ids: IDGeneratorClient,
-        perceptualHash: PerceptualHashClient,
-        preferences: CapturePreferencesClient,
-        logger: LoggingClient,
-        clock: RecordingServiceClock = .continuous(),
-        maximumConcurrentFrameAcquisitions: Int = 3
-    ) -> Self {
-        let service = RecordingService(
-            dependencies: RecordingService.Dependencies(
-                workspace: workspace,
-                permission: permission,
-                screenCapture: screenCapture,
-                persistence: persistence,
-                storage: storage,
-                date: date,
-                ids: ids,
-                perceptualHash: perceptualHash,
-                preferences: preferences,
-                logger: logger,
-                clock: clock,
-                maximumConcurrentFrameAcquisitions: maximumConcurrentFrameAcquisitions
-            )
-        )
+    nonisolated static func live(dependencies: RecordingService.Dependencies) -> Self {
+        let service = RecordingService(dependencies: dependencies)
         return Self(
             start: { await service.start() },
             applyWhitelist: { await service.applyWhitelist($0) },

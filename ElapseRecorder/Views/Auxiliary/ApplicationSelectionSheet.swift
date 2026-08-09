@@ -18,7 +18,7 @@ struct ApplicationSelectionSheet: View {
     @State private var searchText = ""
     @State private var isImportingApplications = false
     @State private var importError: String?
-    @State private var refreshRunningApplicationsButtonAnimationTrigger: Int = 0
+    @State private var refreshAnimationTrigger = 0
 
     var body: some View {
         NavigationStack {
@@ -43,10 +43,10 @@ struct ApplicationSelectionSheet: View {
 
                                 Button {
                                     refreshRunningApplications()
-                                    refreshRunningApplicationsButtonAnimationTrigger += 1
+                                    refreshAnimationTrigger += 1
                                 } label: {
                                     Image(systemSymbol: .arrowCounterclockwise)
-                                        .symbolEffect(.rotate, options: .speed(8), value: refreshRunningApplicationsButtonAnimationTrigger)
+                                        .symbolEffect(.rotate, options: .speed(8), value: refreshAnimationTrigger)
                                 }
                                 .buttonStyle(.plain)
                             }

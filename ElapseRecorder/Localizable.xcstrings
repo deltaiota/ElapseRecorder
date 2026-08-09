@@ -2357,7 +2357,7 @@
         }
       }
     },
-    "MenuBarView.capturingStoreCaptureEngineActiveSessionsCountApps" : {
+    "MenuBarView.capturingCountApps" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2677,18 +2677,18 @@
         }
       }
     },
-    "Quit" : {
+    "Quit Elapse Recorder" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Quit"
+            "value" : "Quit Elapse Recorder"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "退出"
+            "value" : "退出Elapse Recorder"
           }
         }
       }

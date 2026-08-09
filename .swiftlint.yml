@@ -1,0 +1,23 @@
+# SwiftFormat is the source of truth for whitespace and layout.
+disabled_rules:
+  - inclusive_language
+  - implicit_optional_initialization
+  - line_length
+  - nesting
+  - opening_brace
+  - trailing_comma
+
+  # Structural hotspots were split into focused files. These raw-size rules now mostly flag
+  # cohesive SwiftUI bodies and behavior-heavy integration tests without identifying defects.
+  - file_length
+  - function_body_length
+  - type_body_length
+  # Reducer/event switches are intentionally exhaustive; case count is not path complexity.
+  - cyclomatic_complexity
+identifier_name:
+  min_length: 2
+  excluded:
+    - db
+    - id
+    - x
+    - y

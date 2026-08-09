@@ -244,7 +244,7 @@ final class StorageCoordinatorTests: XCTestCase {
                 )
             }
         )
-        return StorageCoordinatorClient.live(
+        return StorageCoordinatorClient.live(environment: StorageCoordinator.Environment(
             configuration: configuration,
             persistence: persistence,
             fileStorage: files,
@@ -253,7 +253,7 @@ final class StorageCoordinatorTests: XCTestCase {
             segmentQuality: { 0.65 },
             now: { Date(timeIntervalSince1970: 100) },
             makeID: { UUID() }
-        )
+        ))
     }
 
     private static func configuration(

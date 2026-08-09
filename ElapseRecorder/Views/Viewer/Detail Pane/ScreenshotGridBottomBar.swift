@@ -9,9 +9,9 @@ struct ScreenshotGridBottomBar: View {
     var averageInterval: TimeInterval?
     var onExport: () -> Void
 
-    @State private var gridItemSizeSmallerButtonAnimationTrigger: Int = 0
-    @State private var gridItemSizeLargerButtonAnimationTrigger: Int = 0
-    @State private var jumpToLatestButtonAnimationTrigger: Int = 0
+    @State private var shrinkAnimationTrigger = 0
+    @State private var growAnimationTrigger = 0
+    @State private var latestAnimationTrigger = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,11 +21,11 @@ struct ScreenshotGridBottomBar: View {
                 HStack(spacing: 6) {
                     Button {
                         gridItemSize = gridItemSize.steppedDown()
-                        gridItemSizeSmallerButtonAnimationTrigger += 1
+                        shrinkAnimationTrigger += 1
                     } label: {
                         Image(systemSymbol: .photo)
                             .imageScale(.small)
-                            .symbolEffect(.bounce, value: gridItemSizeSmallerButtonAnimationTrigger)
+                            .symbolEffect(.bounce, value: shrinkAnimationTrigger)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -44,11 +44,11 @@ struct ScreenshotGridBottomBar: View {
 
                     Button {
                         gridItemSize = gridItemSize.steppedUp()
-                        gridItemSizeLargerButtonAnimationTrigger += 1
+                        growAnimationTrigger += 1
                     } label: {
                         Image(systemSymbol: .photo)
                             .imageScale(.large)
-                            .symbolEffect(.bounce, value: gridItemSizeLargerButtonAnimationTrigger)
+                            .symbolEffect(.bounce, value: growAnimationTrigger)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -67,11 +67,11 @@ struct ScreenshotGridBottomBar: View {
 
                 Button {
                     onJumpToLatest()
-                    jumpToLatestButtonAnimationTrigger += 1
+                    latestAnimationTrigger += 1
                 } label: {
                     Label("Jump to Latest", systemSymbol: .arrowDownToLine)
                         .labelStyle(.iconOnly)
-                        .symbolEffect(.wiggle.byLayer, value: jumpToLatestButtonAnimationTrigger)
+                        .symbolEffect(.wiggle.byLayer, value: latestAnimationTrigger)
                 }
                 .buttonStyle(.borderless)
                 .help("Jump to latest")

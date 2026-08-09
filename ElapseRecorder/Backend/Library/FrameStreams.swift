@@ -170,15 +170,14 @@ nonisolated enum ExportFrameStreams {
 
         let candidateCount = options.skipSimilarFrames ? resolvedHashes.count : source.count
         var previousHash: UInt64?
-        var selectedCount = 0
-        for index in 0 ..< candidateCount {
+        let selectedCount = (0 ..< candidateCount).reduce(into: 0) { count, index in
             if shouldKeep(
                 index: index,
                 options: options,
                 hashes: resolvedHashes,
                 previousHash: &previousHash
             ) {
-                selectedCount += 1
+                count += 1
             }
         }
         let immutableHashes = resolvedHashes

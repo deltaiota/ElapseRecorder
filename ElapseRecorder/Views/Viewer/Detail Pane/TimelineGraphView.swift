@@ -250,6 +250,12 @@ struct TimelineMetrics: Equatable {
 
 /// The non-interactive layer of the timeline. Isolated and `Equatable` so it is not
 /// re-drawn while the user scrolls (only the sticky tags move on scroll).
+private struct TimelineLineInterval {
+    var start: Date
+    var end: Date
+    var isUnavailable: Bool
+}
+
 private struct TimelineCanvas: View, Equatable {
     var timeline: SessionTimeline
     var selectedSegmentID: UUID?
@@ -285,7 +291,7 @@ private struct TimelineCanvas: View, Equatable {
             var path = Path()
             path.move(to: CGPoint(x: x, y: metrics.y(interval.start)))
             path.addLine(to: CGPoint(x: x, y: metrics.y(interval.end)))
-            if interval.unavailable {
+            if interval.isUnavailable {
                 context.stroke(
                     path,
                     with: .color(color.opacity(0.55)),
@@ -324,7 +330,7 @@ private struct TimelineCanvas: View, Equatable {
     }
 
     /// Break the lane into solid (captured) and dotted (unavailable) intervals.
-    private func lineIntervals(_ lane: WindowLane) -> [(start: Date, end: Date, unavailable: Bool)] {
+    private func lineIntervals(_ lane: WindowLane) -> [TimelineLineInterval] {
         let born = lane.bornAt
         let died = max(lane.bornAt, lane.diedAt)
         guard born < died else { return [] }
@@ -340,12 +346,17 @@ private struct TimelineCanvas: View, Equatable {
         }
 
         let sorted = bounds.sorted()
-        return (0 ..< sorted.count - 1).map { i in
-            let start = sorted[i]
-            let end = sorted[i + 1]
-            let mid = start.addingTimeInterval(end.timeIntervalSince(start) / 2)
-            let unavailable = timeline.unavailableSpans.contains { $0.startedAt <= mid && mid < $0.endedAt }
-            return (start, end, unavailable)
+        return (0 ..< sorted.count - 1).map { index in
+            let start = sorted[index]
+            let end = sorted[index + 1]
+            let midpoint = start.addingTimeInterval(end.timeIntervalSince(start) / 2)
+            return TimelineLineInterval(
+                start: start,
+                end: end,
+                isUnavailable: timeline.unavailableSpans.contains {
+                    $0.startedAt <= midpoint && midpoint < $0.endedAt
+                }
+            )
         }
     }
 }

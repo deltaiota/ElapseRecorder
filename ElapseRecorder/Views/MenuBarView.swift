@@ -52,7 +52,7 @@ struct MenuBarView: View {
         Section("Version \(shortVersion) (\(buildVersion))") {
             AboutMenuButton()
 
-            Button("Quit") {
+            Button(#tk("Quit Elapse Recorder")) {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q")

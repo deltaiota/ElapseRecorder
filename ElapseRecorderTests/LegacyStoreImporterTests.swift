@@ -24,8 +24,7 @@ final class LegacyStoreImporterTests: XCTestCase {
         let capturedAt = Date(timeIntervalSince1970: 1005)
         let endedAt = Date(timeIntervalSince1970: 1010)
 
-        try makeLegacyStore(
-            at: legacyURL,
+        let fixture = LegacyFixture(
             sessionID: sessionID,
             windowID: windowID,
             frameID: frameID,
@@ -36,6 +35,7 @@ final class LegacyStoreImporterTests: XCTestCase {
             capturedAt: capturedAt,
             endedAt: endedAt
         )
+        try makeLegacyStore(at: legacyURL, fixture: fixture)
 
         let database = try ElapseDatabase(url: databaseURL)
         try LegacyStoreImporter.importIfNeeded(from: legacyURL, into: database)
@@ -58,18 +58,19 @@ final class LegacyStoreImporterTests: XCTestCase {
         XCTAssertEqual(timeline.unavailableSpans.count, 1)
     }
 
-    private func makeLegacyStore(
-        at url: URL,
-        sessionID: UUID,
-        windowID: UUID,
-        frameID: UUID,
-        titleID: UUID,
-        unavailableID: UUID,
-        videoURL: URL,
-        startedAt: Date,
-        capturedAt: Date,
-        endedAt: Date
-    ) throws {
+    private struct LegacyFixture {
+        var sessionID: UUID
+        var windowID: UUID
+        var frameID: UUID
+        var titleID: UUID
+        var unavailableID: UUID
+        var videoURL: URL
+        var startedAt: Date
+        var capturedAt: Date
+        var endedAt: Date
+    }
+
+    private func makeLegacyStore(at url: URL, fixture: LegacyFixture) throws {
         let queue = try DatabaseQueue(path: url.path(percentEncoded: false))
         try queue.write { database in
             try database.execute(sql: """
@@ -97,34 +98,34 @@ final class LegacyStoreImporterTests: XCTestCase {
             try database.execute(
                 sql: "INSERT INTO ZCAPTURESESSIONMODEL VALUES (1, ?, ?, ?, ?, ?, ?)",
                 arguments: [
-                    uuidData(sessionID), "com.example.Legacy", "Legacy", 42,
-                    startedAt.timeIntervalSinceReferenceDate, endedAt.timeIntervalSinceReferenceDate,
+                    uuidData(fixture.sessionID), "com.example.Legacy", "Legacy", 42,
+                    fixture.startedAt.timeIntervalSinceReferenceDate, fixture.endedAt.timeIntervalSinceReferenceDate,
                 ]
             )
             try database.execute(
                 sql: "INSERT INTO ZMONITOREDWINDOWMODEL VALUES (1, ?, 1, 7, 1, ?, ?, ?)",
                 arguments: [
-                    uuidData(windowID), startedAt.timeIntervalSinceReferenceDate,
-                    endedAt.timeIntervalSinceReferenceDate, "Legacy Document",
+                    uuidData(fixture.windowID), fixture.startedAt.timeIntervalSinceReferenceDate,
+                    fixture.endedAt.timeIntervalSinceReferenceDate, "Legacy Document",
                 ]
             )
             try database.execute(
                 sql: "INSERT INTO ZSCREENSHOTRECORDMODEL VALUES (1, ?, 1, 1, ?, ?, 99, 1920, 1080, 123, ?, 7)",
                 arguments: [
-                    uuidData(frameID), capturedAt.timeIntervalSinceReferenceDate,
+                    uuidData(fixture.frameID), fixture.capturedAt.timeIntervalSinceReferenceDate,
                     directoryURL(url).appending(path: "deleted.heic").path,
-                    videoURL.path(percentEncoded: false),
+                    fixture.videoURL.path(percentEncoded: false),
                 ]
             )
             try database.execute(
                 sql: "INSERT INTO ZWINDOWTITLEOBSERVATIONMODEL VALUES (1, ?, 1, ?, ?)",
-                arguments: [uuidData(titleID), capturedAt.timeIntervalSinceReferenceDate, "Legacy Document"]
+                arguments: [uuidData(fixture.titleID), fixture.capturedAt.timeIntervalSinceReferenceDate, "Legacy Document"]
             )
             try database.execute(
                 sql: "INSERT INTO ZCAPTUREUNAVAILABLERECORDMODEL VALUES (1, ?, 1, ?, ?, ?)",
                 arguments: [
-                    uuidData(unavailableID), capturedAt.timeIntervalSinceReferenceDate,
-                    endedAt.timeIntervalSinceReferenceDate, "windowMinimized",
+                    uuidData(fixture.unavailableID), fixture.capturedAt.timeIntervalSinceReferenceDate,
+                    fixture.endedAt.timeIntervalSinceReferenceDate, "windowMinimized",
                 ]
             )
         }

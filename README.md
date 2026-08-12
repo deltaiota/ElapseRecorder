@@ -43,11 +43,9 @@ After choosing the applications and monitoring rules you care about, no further 
 
 ## Install & Run
 
-> [!NOTE]
->
-> Elapse Recorder is not published yet, so no prebuilt application is currently available. Build and run it locally with Xcode using the instructions below.
->
-> After the repository and application are published, this section will point to the official release download. Do not download builds redistributed elsewhere.
+1. Download the latest ZIP from the [GitHub Releases](https://github.com/deltaiota/ElapseRecorder/releases/latest) page.
+2. Extract `Elapse Recorder.app` and move it to `/Applications`.
+3. On first launch, right-click the app and choose **Open.** If macOS still blocks it, approve Elapse Recorder under System Settings → Privacy & Security and open it again.
 
 ## Building
 

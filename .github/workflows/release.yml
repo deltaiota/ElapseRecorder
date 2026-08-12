@@ -193,7 +193,8 @@ jobs:
             build/updates
           test -s build/updates/appcast.xml
           xmllint --noout build/updates/appcast.xml
-          grep -q 'sparkle:edSignature=' build/updates/appcast.xml
+          grep -q '<!-- sparkle-signatures:' build/updates/appcast.xml
+          grep -q '^edSignature:' build/updates/appcast.xml
 
       - name: Publish release and appcast
         shell: bash

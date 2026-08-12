@@ -22,9 +22,9 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-15
-    # macOS 15 defaults to Xcode 16.4 (Swift 6.1), while Defaults 9.0.8 requires
-    # Swift tools 6.2. Pin the same Xcode generation used for local release builds.
+    # Defaults 9.0.8 requires Swift tools 6.2, and Icon Composer's asset compiler
+    # requires the macOS 26 runtime. Pin the matching hosted image and Xcode.
+    runs-on: macos-26
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       SPARKLE_PUBLIC_ED_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}

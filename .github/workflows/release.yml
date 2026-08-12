@@ -150,13 +150,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          notes_file="ReleaseNotes/${APP_VERSION}.md"
+          if [[ -f "$notes_file" ]]; then
+            notes_args=(--notes-file "$notes_file")
+          else
+            notes_args=(--generate-notes)
+          fi
+
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "$UPDATE_ARCHIVE" --clobber
+            if [[ -f "$notes_file" ]]; then
+              gh release edit "$GITHUB_REF_NAME" --notes-file "$notes_file"
+            fi
           else
             gh release create "$GITHUB_REF_NAME" "$UPDATE_ARCHIVE" \
               --draft \
-              --generate-notes \
-              --title "ElapseRecorder ${APP_VERSION}"
+              --title "ElapseRecorder ${APP_VERSION}" \
+              "${notes_args[@]}"
+          fi
+          if [[ -f "$notes_file" ]]; then
+            gh release upload "$GITHUB_REF_NAME" "$notes_file" --clobber
           fi
           gh release view "$GITHUB_REF_NAME" --json body --jq .body \
             > "build/updates/ElapseRecorder-${APP_VERSION}.md"

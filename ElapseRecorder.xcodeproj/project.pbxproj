@@ -35,14 +35,32 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		28C18B342FE4149900A31D68 /* ElapseRecorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ElapseRecorder.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		28C18B342FE4149900A31D68 /* Elapse Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Elapse Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		28C18B432FE4149A00A31D68 /* ElapseRecorderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ElapseRecorderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		28C18B4D2FE4149A00A31D68 /* ElapseRecorderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ElapseRecorderUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		28DA364D302C46660039A2D4 /* Exceptions for "ElapseRecorder" folder in "ElapseRecorder" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Icon/Elapse Recorder-iOS-ClearDark-1024x1024@1x.png",
+				"Icon/Elapse Recorder-iOS-ClearLight-1024x1024@1x.png",
+				"Icon/Elapse Recorder-iOS-Dark-1024x1024@1x.png",
+				"Icon/Elapse Recorder-iOS-Default-1024x1024@1x.png",
+				"Icon/Elapse Recorder-iOS-TintedDark-1024x1024@1x.png",
+				"Icon/Elapse Recorder-iOS-TintedLight-1024x1024@1x.png",
+			);
+			target = 28C18B332FE4149900A31D68 /* ElapseRecorder */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		28C18B362FE4149900A31D68 /* ElapseRecorder */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				28DA364D302C46660039A2D4 /* Exceptions for "ElapseRecorder" folder in "ElapseRecorder" target */,
+			);
 			path = ElapseRecorder;
 			sourceTree = "<group>";
 		};
@@ -104,7 +122,7 @@
 		28C18B352FE4149900A31D68 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				28C18B342FE4149900A31D68 /* ElapseRecorder.app */,
+				28C18B342FE4149900A31D68 /* Elapse Recorder.app */,
 				28C18B432FE4149A00A31D68 /* ElapseRecorderTests.xctest */,
 				28C18B4D2FE4149A00A31D68 /* ElapseRecorderUITests.xctest */,
 			);
@@ -141,7 +159,7 @@
 				A72DB00330A1000100000001 /* GRDB */,
 			);
 			productName = ElapseRecorder;
-			productReference = 28C18B342FE4149900A31D68 /* ElapseRecorder.app */;
+			productReference = 28C18B342FE4149900A31D68 /* Elapse Recorder.app */;
 			productType = "com.apple.product-type.application";
 		};
 		28C18B422FE4149A00A31D68 /* ElapseRecorderTests */ = {
@@ -452,9 +470,11 @@
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				EXECUTABLE_NAME = ElapseRecorder;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Configuration/ElapseRecorder-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Elapse Recorder";
+				INFOPLIST_KEY_CFBundleName = "Elapse Recorder";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -463,9 +483,10 @@
 				);
 				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorder;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Elapse Recorder";
+				PRODUCT_MODULE_NAME = ElapseRecorder;
 				REGISTER_APP_GROUPS = YES;
-				SPARKLE_PUBLIC_ED_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+				SPARKLE_PUBLIC_ED_KEY = "S+TC96lzi5VqlfmFzAY1Y84qSAugvUg18zxskdj0aw4=";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -498,9 +519,11 @@
 				ENABLE_RESOURCE_ACCESS_PRINTING = NO;
 				ENABLE_RESOURCE_ACCESS_USB = NO;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				EXECUTABLE_NAME = ElapseRecorder;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Configuration/ElapseRecorder-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Elapse Recorder";
+				INFOPLIST_KEY_CFBundleName = "Elapse Recorder";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -509,9 +532,10 @@
 				);
 				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorder;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = "Elapse Recorder";
+				PRODUCT_MODULE_NAME = ElapseRecorder;
 				REGISTER_APP_GROUPS = YES;
-				SPARKLE_PUBLIC_ED_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+				SPARKLE_PUBLIC_ED_KEY = "S+TC96lzi5VqlfmFzAY1Y84qSAugvUg18zxskdj0aw4=";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -538,7 +562,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ElapseRecorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ElapseRecorder";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Elapse Recorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ElapseRecorder";
 			};
 			name = Debug;
 		};
@@ -559,7 +583,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ElapseRecorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ElapseRecorder";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Elapse Recorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ElapseRecorder";
 			};
 			name = Release;
 		};

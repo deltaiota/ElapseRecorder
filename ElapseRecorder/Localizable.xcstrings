@@ -21,6 +21,7 @@
       }
     },
     "%lld / %lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -785,6 +786,7 @@
       }
     },
     "Around 11× smaller, near-lossless" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -801,6 +803,7 @@
       }
     },
     "Around 20× smaller, slight detail loss" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1235,6 +1238,7 @@
       }
     },
     "Compact Closed Sessions" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1251,6 +1255,7 @@
       }
     },
     "Compact Now" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1267,6 +1272,7 @@
       }
     },
     "Compacted %lld frames into %lld videos · saved %@." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1283,6 +1289,7 @@
       }
     },
     "Compacting…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1299,6 +1306,7 @@
       }
     },
     "Compaction" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1315,6 +1323,7 @@
       }
     },
     "Compaction Quality" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1990,6 +1999,7 @@
       }
     },
     "Higher Quality" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2134,6 +2144,7 @@
       }
     },
     "Larger videos, crisper frames" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2453,6 +2464,22 @@
         }
       }
     },
+    "MenuBarView.quitElapseRecorder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quit Elapse Recorder"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "退出Elapse Recorder"
+          }
+        }
+      }
+    },
     "MenuBarView.totalStoreViewerAppsReduce001ScreenshotCountScreenshots" : {
       "localizations" : {
         "en" : {
@@ -2566,6 +2593,7 @@
       }
     },
     "Nothing to compact." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2614,6 +2642,7 @@
       }
     },
     "Only finished sessions are compacted; the session currently being recorded is left untouched." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2646,6 +2675,7 @@
       }
     },
     "Preparing…" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2673,22 +2703,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "快速查看"
-          }
-        }
-      }
-    },
-    "MenuBarView.quitElapseRecorder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Quit Elapse Recorder"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "退出Elapse Recorder"
           }
         }
       }
@@ -2774,6 +2788,7 @@
       }
     },
     "Replace stored frames of finished sessions with one near-lossless HEVC video per window — typically about 10× smaller. Frames stay browsable and exportable." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3288,6 +3303,7 @@
       }
     },
     "Smaller" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3657,6 +3673,7 @@
       }
     },
     "Video Compaction" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3673,6 +3690,7 @@
       }
     },
     "Video Quality" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

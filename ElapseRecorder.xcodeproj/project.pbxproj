@@ -50,6 +50,7 @@
 				"Icon/Elapse Recorder-iOS-Default-1024x1024@1x.png",
 				"Icon/Elapse Recorder-iOS-TintedDark-1024x1024@1x.png",
 				"Icon/Elapse Recorder-iOS-TintedLight-1024x1024@1x.png",
+				"Icon/Elapse Recorder.icon",
 			);
 			target = 28C18B332FE4149900A31D68 /* ElapseRecorder */;
 		};
@@ -483,8 +484,8 @@
 				);
 				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorder;
-				PRODUCT_NAME = "Elapse Recorder";
 				PRODUCT_MODULE_NAME = ElapseRecorder;
+				PRODUCT_NAME = "Elapse Recorder";
 				REGISTER_APP_GROUPS = YES;
 				SPARKLE_PUBLIC_ED_KEY = "S+TC96lzi5VqlfmFzAY1Y84qSAugvUg18zxskdj0aw4=";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -532,8 +533,8 @@
 				);
 				MARKETING_VERSION = 1.13.0;
 				PRODUCT_BUNDLE_IDENTIFIER = d.iota.ElapseRecorder;
-				PRODUCT_NAME = "Elapse Recorder";
 				PRODUCT_MODULE_NAME = ElapseRecorder;
+				PRODUCT_NAME = "Elapse Recorder";
 				REGISTER_APP_GROUPS = YES;
 				SPARKLE_PUBLIC_ED_KEY = "S+TC96lzi5VqlfmFzAY1Y84qSAugvUg18zxskdj0aw4=";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

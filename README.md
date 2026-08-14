@@ -47,6 +47,10 @@ After choosing the applications and monitoring rules you care about, no further 
 2. Extract `Elapse Recorder.app` and move it to `/Applications`.
 3. On first launch, right-click the app and choose **Open.** If macOS still blocks it, approve Elapse Recorder under System Settings → Privacy & Security and open it again.
 
+> [!NOTE]
+>
+> Official releases are signed with a free Apple Development certificate and authenticated by Sparkle EdDSA, but they are not notarized. macOS may still require first-launch approval through Finder or Privacy & Security.
+
 ## Building
 
 ```sh

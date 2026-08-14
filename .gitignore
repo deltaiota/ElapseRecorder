@@ -18,3 +18,7 @@ build/
 .swiftpm/
 .build/
 .github/copilot-instructions.md
+
+# Signing key exports
+*.p12
+*.sparkle.private-key

@@ -85,7 +85,7 @@ extension RecordingService {
         )
         let screenCapture = dependencies.screenCapture
         let application = run.application
-        Task {
+        Task(priority: .background) {
             do {
                 let windows = try await screenCapture.windows(application)
                 self.windowsLoaded(windows, token: token)
@@ -181,7 +181,7 @@ extension RecordingService {
 
         runsBySessionID[token.handle.sessionID] = run
         emit(.sessionUpdated(run.snapshot))
-        Task { await acquireFrames(jobs, token: token) }
+        Task(priority: .background) { await acquireFrames(jobs, token: token) }
     }
 
     func windowsLoadFailed(token: CycleToken, message: String) {
@@ -202,7 +202,7 @@ extension RecordingService {
         let workerCount = min(maximumConcurrency, jobs.count)
         await withTaskGroup(of: Void.self) { group in
             for workerIndex in 0 ..< workerCount {
-                group.addTask {
+                group.addTask(priority: .background) {
                     var jobIndex = workerIndex
                     while jobIndex < jobs.count {
                         let job = jobs[jobIndex]

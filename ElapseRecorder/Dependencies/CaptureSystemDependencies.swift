@@ -175,6 +175,52 @@ extension CapturePermissionClient: DependencyKey {
     )
 }
 
+nonisolated struct PresentedWindowGeometry: Equatable, Sendable {
+    var systemWindowID: Int
+    var size: CGSize
+}
+
+/// Avoids synchronous Accessibility IPC into the captured application on every capture tick.
+/// A fresh inspection is only needed when the app's presented window set or geometry changes.
+final nonisolated class AccessibilityWindowGeometryCache: @unchecked Sendable {
+    private struct Snapshot {
+        var presentedWindows: [PresentedWindowGeometry]
+        var realSizes: [CGSize]
+
+        func matches(_ windows: [PresentedWindowGeometry]) -> Bool {
+            guard presentedWindows.count == windows.count else { return false }
+            return zip(presentedWindows, windows).allSatisfy { cached, current in
+                cached.systemWindowID == current.systemWindowID
+                    && abs(cached.size.width - current.size.width) <= 2
+                    && abs(cached.size.height - current.size.height) <= 2
+            }
+        }
+    }
+
+    private let snapshots = LockIsolated<[pid_t: Snapshot]>([:])
+
+    func realWindowSizes(
+        pid: pid_t,
+        presentedWindows: [PresentedWindowGeometry],
+        fetch: @Sendable () -> [CGSize]?
+    ) -> [CGSize]? {
+        let normalizedWindows = presentedWindows.sorted {
+            $0.systemWindowID < $1.systemWindowID
+        }
+        if let snapshot = snapshots.withValue({ $0[pid] }),
+           snapshot.matches(normalizedWindows)
+        {
+            return snapshot.realSizes
+        }
+
+        guard let realSizes = fetch() else { return nil }
+        snapshots.withValue {
+            $0[pid] = Snapshot(presentedWindows: normalizedWindows, realSizes: realSizes)
+        }
+        return realSizes
+    }
+}
+
 /// Retains the `SCWindow` snapshot produced by enumeration long enough for the immediately
 /// following screenshot. Re-enumerating all shareable desktop content for every individual
 /// window doubled the expensive ScreenCaptureKit discovery work in each cycle.
@@ -197,7 +243,7 @@ private final nonisolated class ScreenCaptureWindowCache: @unchecked Sendable {
 extension ScreenCaptureClient: DependencyKey {
     static let liveValue: Self = {
         let windowCache = ScreenCaptureWindowCache()
-
+        let accessibilityGeometryCache = AccessibilityWindowGeometryCache()
         return Self(
             windows: { application in
                 // Enumerate the windows ScreenCaptureKit considers on-screen. The domain
@@ -205,17 +251,35 @@ extension ScreenCaptureClient: DependencyKey {
                 // (isOnScreen == false) and Stage Manager-stowed windows (flagged below).
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
-                // A stowed window stays on-screen but is presented as a small strip thumbnail,
-                // so no ScreenCaptureKit/CoreGraphics property reveals it. Accessibility still
-                // reports each window's real size, so a presented frame that matches none of the
-                // app's real Accessibility sizes is a stowed proxy. When Accessibility isn't
-                // granted, axSizes is nil and capture proceeds (graceful degradation).
-                let axSizes = AccessibilityWindowInspector.realWindowSizes(pid: application.processIdentifier)
                 let applicationWindows = content.windows.filter { window in
                     window.owningApplication?.bundleIdentifier == application.bundleIdentifier
                         && window.owningApplication?.processID == application.processIdentifier
                 }
                 windowCache.store(applicationWindows)
+
+                // Accessibility calls are synchronous IPC into the target process. Repeating
+                // them every tick can stall latency-sensitive apps such as drawing software,
+                // so reuse the real sizes while ScreenCaptureKit reports stable geometry.
+                let axSizes: [CGSize]?
+                if applicationWindows.isEmpty {
+                    axSizes = nil
+                } else {
+                    let presentedWindows = applicationWindows.map {
+                        PresentedWindowGeometry(
+                            systemWindowID: Int($0.windowID),
+                            size: $0.frame.size
+                        )
+                    }
+                    axSizes = accessibilityGeometryCache.realWindowSizes(
+                        pid: application.processIdentifier,
+                        presentedWindows: presentedWindows,
+                        fetch: {
+                            AccessibilityWindowInspector.realWindowSizes(
+                                pid: application.processIdentifier
+                            )
+                        }
+                    )
+                }
 
                 return applicationWindows.map { window in
                     var capturable = CapturableWindow(window: window)

@@ -87,9 +87,12 @@ class CaptureEngineFeatureTestCase: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) async throws {
-        for _ in 0 ..< 2000 {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while clock.now < deadline {
             if await predicate() { return }
-            await Task.yield()
+            // Task.yield can immediately resume this test without scheduling background capture.
+            try await clock.sleep(for: .milliseconds(1))
         }
         XCTFail("Condition was not reached", file: file, line: line)
     }
@@ -212,7 +215,9 @@ final class CaptureGate: @unchecked Sendable {
     }
 
     func resumeNext(returning image: CapturedImage) async {
-        for _ in 0 ..< 2000 {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(5))
+        while clock.now < deadline, !Task.isCancelled {
             if let continuation = lock.withLock({ () -> CheckedContinuation<CapturedImage, Error>? in
                 guard !continuations.isEmpty else { return nil }
                 activeCount -= 1
@@ -221,7 +226,7 @@ final class CaptureGate: @unchecked Sendable {
                 continuation.resume(returning: image)
                 return
             }
-            await Task.yield()
+            try? await clock.sleep(for: .milliseconds(1))
         }
         XCTFail("Timed out waiting for an active capture continuation")
     }

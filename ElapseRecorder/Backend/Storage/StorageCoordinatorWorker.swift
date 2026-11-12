@@ -6,7 +6,7 @@ extension StorageCoordinator {
     func startSegmentWorkerIfNeeded() {
         guard maintenanceLease == nil, !isSegmentWorkerRunning else { return }
         isSegmentWorkerRunning = true
-        Task { await self.runSegmentJobs() }
+        Task(priority: .background) { await self.runSegmentJobs() }
     }
 
     func runSegmentJobs() async {
@@ -33,7 +33,7 @@ extension StorageCoordinator {
     func scheduleSegmentRetry() {
         guard !isSegmentRetryScheduled else { return }
         isSegmentRetryScheduled = true
-        Task { [weak self] in
+        Task(priority: .background) { [weak self] in
             try? await Task.sleep(for: .seconds(1))
             await self?.restartSegmentWorkerAfterDelay()
         }

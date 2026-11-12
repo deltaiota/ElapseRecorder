@@ -82,9 +82,10 @@ final class ViewerFeatureMaintenanceTests: XCTestCase {
     @MainActor
     func testRetentionPrunesOldestByCountLimitOnly() async {
         // Three ended sessions, 5 screenshots each = 15 total; cap at 8 → delete the two oldest.
-        let sessions = (0 ..< 3).map { index in
-            CaptureSessionSummary(
-                id: UUID(uuidString: "00000000-0000-0000-0000-00000000C\(index)0\(index)")!,
+        let sessions: [CaptureSessionSummary] = (0 ..< 3).map { index -> CaptureSessionSummary in
+            let id = UUID(uuidString: "00000000-0000-0000-0000-00000000C\(index)0\(index)")!
+            return CaptureSessionSummary(
+                id: id,
                 bundleIdentifier: "com.example.App",
                 displayName: "App",
                 startedAt: Date(timeIntervalSince1970: TimeInterval(100 + index * 100)),

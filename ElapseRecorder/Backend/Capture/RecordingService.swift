@@ -68,6 +68,7 @@ actor RecordingService {
         var preferences: CapturePreferencesClient
         var logger: LoggingClient
         var clock: RecordingServiceClock
+        /// Live capture defaults to serial to avoid bursty WindowServer work competing with foreground input.
         var maximumConcurrentFrameAcquisitions: Int
 
         init(
@@ -82,7 +83,7 @@ actor RecordingService {
             preferences: CapturePreferencesClient,
             logger: LoggingClient,
             clock: RecordingServiceClock = .continuous(),
-            maximumConcurrentFrameAcquisitions: Int = 3
+            maximumConcurrentFrameAcquisitions: Int = 1
         ) {
             self.workspace = workspace
             self.permission = permission

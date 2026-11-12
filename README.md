@@ -29,7 +29,7 @@ After choosing the applications and monitoring rules you care about, no further 
 ## Features
 
 - **Whitelist-driven capture:** Add selected applications to a whitelist. Elapse Recorder starts capturing while a target application is running and stops after it quits. Applications already running when Elapse Recorder starts are detected immediately.
-- **Per-window screenshots:** Every capture uses ScreenCaptureKit to enumerate all capturable windows belonging to the target application and records each separately. Minimized, off-screen, and zero-size windows are skipped.
+- **Per-window screenshots:** Every capture uses ScreenCaptureKit to enumerate all capturable windows belonging to the target application and records each separately. Minimized, off-screen, and zero-size windows are skipped. Unchanged Stage Manager geometry is cached, and capture/storage work uses background priority to reduce interference with foreground input.
 - **Sessions and stable window numbering:** One continuous application run forms a _session._ Windows receive stable numbers within that session, and window-title changes are recorded.
 - **Flexible scheduling:** Configure a capture interval for each application and choose automatic or manual capture mode.
 - **Durable, efficient storage:** Captures first enter a HEIC/PNG spool. Elapse Recorder then automatically packages HEIC frames into verified HEVC video segments. Metadata is stored in an indexed database.

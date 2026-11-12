@@ -137,7 +137,7 @@ actor StorageCoordinator {
         queue.append(frame)
         if !isDrainingQueue {
             isDrainingQueue = true
-            Task { await self.drainQueue() }
+            Task(priority: .background) { await self.drainQueue() }
         }
         return .accepted(frameID: frame.id)
     }

@@ -48,6 +48,9 @@ extension WorkspaceClient: DependencyKey {
                     center.removeObserver(activated)
                 }
             }
+        },
+        frontmostApplication: {
+            NSWorkspace.shared.frontmostApplication.flatMap(RunningApplication.init(application:))
         }
     )
 }
@@ -244,6 +247,7 @@ extension ScreenCaptureClient: DependencyKey {
     static let liveValue: Self = {
         let windowCache = ScreenCaptureWindowCache()
         let accessibilityGeometryCache = AccessibilityWindowGeometryCache()
+        let capturePool = PersistentWindowCapturePool()
         return Self(
             windows: { application in
                 // Enumerate the windows ScreenCaptureKit considers on-screen. The domain
@@ -256,6 +260,10 @@ extension ScreenCaptureClient: DependencyKey {
                         && window.owningApplication?.processID == application.processIdentifier
                 }
                 windowCache.store(applicationWindows)
+                await capturePool.synchronize(
+                    processIdentifier: application.processIdentifier,
+                    windowIDs: Set(applicationWindows.map { Int($0.windowID) })
+                )
 
                 // Accessibility calls are synchronous IPC into the target process. Repeating
                 // them every tick can stall latency-sensitive apps such as drawing software,
@@ -292,7 +300,7 @@ extension ScreenCaptureClient: DependencyKey {
                     return capturable
                 }
             },
-            capture: { windowID in
+            capture: { windowID, minimumFrameInterval in
                 let window: SCWindow
                 if let cached = windowCache.window(id: windowID) {
                     window = cached
@@ -313,7 +321,6 @@ extension ScreenCaptureClient: DependencyKey {
                 }
 
                 let filter = SCContentFilter(desktopIndependentWindow: window)
-                let configuration = SCStreamConfiguration()
                 let info = SCShareableContent.info(for: filter)
                 let scale = CGFloat(info.pointPixelScale)
                 let nativeWidth = max(1, Int((info.contentRect.width * scale).rounded(.up)))
@@ -323,15 +330,17 @@ extension ScreenCaptureClient: DependencyKey {
                     height: nativeHeight,
                     maxDimension: Defaults[.captureMaxDimension]
                 )
-                configuration.width = size.width
-                configuration.height = size.height
-                configuration.showsCursor = false
-
-                let image = try await SCScreenshotManager.captureImage(
-                    contentFilter: filter,
-                    configuration: configuration
+                return try await capturePool.capture(
+                    window: window,
+                    settings: PersistentWindowCaptureSettings(
+                        width: size.width,
+                        height: size.height,
+                        minimumFrameInterval: minimumFrameInterval
+                    )
                 )
-                return CapturedImage(cgImage: image)
+            },
+            release: { processIdentifier in
+                await capturePool.release(processIdentifier: processIdentifier)
             }
         )
     }()

@@ -7,6 +7,7 @@ nonisolated struct StorageCoordinatorClient {
     var enqueue: @Sendable (_ frame: CapturedFrameEnvelope) async -> StorageEnqueueResult
     var flushSession: @Sendable (_ handle: RecordingSessionHandle) async throws -> Void
     var recover: @Sendable () async -> Void
+    var setCompactionSuspended: @Sendable (_ suspended: Bool) async -> Void
     var beginMaintenance: @Sendable () async -> StorageMaintenanceLease
     var endMaintenance: @Sendable (_ lease: StorageMaintenanceLease) async throws -> Void
 }
@@ -30,6 +31,7 @@ extension StorageCoordinatorClient: DependencyKey {
         enqueue: { frame in .accepted(frameID: frame.id) },
         flushSession: { _ in },
         recover: {},
+        setCompactionSuspended: { _ in },
         beginMaintenance: { StorageMaintenanceLease(id: UUID()) },
         endMaintenance: { _ in }
     )
@@ -41,6 +43,7 @@ extension StorageCoordinatorClient: DependencyKey {
             enqueue: { await coordinator.enqueue($0) },
             flushSession: { try await coordinator.flushSession($0) },
             recover: { await coordinator.recover() },
+            setCompactionSuspended: { await coordinator.setCompactionSuspended($0) },
             beginMaintenance: { await coordinator.beginMaintenance() },
             endMaintenance: { try await coordinator.endMaintenance($0) }
         )
@@ -90,7 +93,10 @@ actor StorageCoordinator {
     var spoolBytes = 0
     var knownSpoolBytes: [URL: Int] = [:]
     var isSegmentWorkerRunning = false
+    var segmentWorkerTask: Task<Void, Never>?
+    var restartSegmentWorkerWhenStopped = false
     var isSegmentRetryScheduled = false
+    var isCompactionSuspended = false
     var failedJobsBySession: [UUID: Set<UUID>] = [:]
     var sealFailureIDsByWindow: [WindowKey: Set<UUID>] = [:]
     var sealRetryScheduled = Set<WindowKey>()
@@ -165,12 +171,7 @@ actor StorageCoordinator {
                 }
             }
         }
-        startSegmentWorkerIfNeeded()
-        while isSegmentWorkerRunning {
-            await Task.yield()
-        }
-        let jobsFailed = failedJobsBySession[handle.sessionID]?.isEmpty == false
-        guard !creationFailed, !jobsFailed else {
+        guard !creationFailed else {
             throw StorageCoordinatorError.sessionFlushFailed(handle.sessionID)
         }
     }

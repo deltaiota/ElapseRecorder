@@ -10,7 +10,7 @@ extension RecordingService {
         let workspace = dependencies.workspace
         workspaceTask = Task {
             for await event in workspace.events() {
-                self.receiveWorkspaceEvent(event)
+                await self.receiveWorkspaceEvent(event)
             }
         }
 
@@ -25,7 +25,10 @@ extension RecordingService {
                 self.receiveStorageEvent(event)
             }
         }
-        await dependencies.storage.recover()
+        let frontmostApplication = await dependencies.workspace.frontmostApplication()
+        frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
+        await storage.setCompactionSuspended(shouldSuspendCompaction)
+        await storage.recover()
 
         do {
             let count = try await dependencies.persistence.closeOpenSessions(dependencies.date.now())
@@ -45,7 +48,7 @@ extension RecordingService {
         pendingWorkspaceEvents.removeAll(keepingCapacity: true)
         isBootstrapping = false
         for event in bufferedEvents {
-            handleWorkspaceEvent(event)
+            await handleWorkspaceEvent(event)
         }
         reconcileAutomaticSessions()
         attemptAllPendingManualStarts()
@@ -71,15 +74,15 @@ extension RecordingService {
         }
     }
 
-    func receiveWorkspaceEvent(_ event: WorkspaceEvent) {
+    func receiveWorkspaceEvent(_ event: WorkspaceEvent) async {
         if isBootstrapping {
             pendingWorkspaceEvents.append(event)
             return
         }
-        handleWorkspaceEvent(event)
+        await handleWorkspaceEvent(event)
     }
 
-    func handleWorkspaceEvent(_ event: WorkspaceEvent) {
+    func handleWorkspaceEvent(_ event: WorkspaceEvent) async {
         emit(.workspaceEvent(event))
         switch event {
         case let .launched(application):
@@ -92,6 +95,10 @@ extension RecordingService {
         case let .terminated(application):
             if runningApplications[application.bundleIdentifier]?.processIdentifier == application.processIdentifier {
                 runningApplications[application.bundleIdentifier] = nil
+                if frontmostBundleIdentifier == application.bundleIdentifier {
+                    frontmostBundleIdentifier = nil
+                    await synchronizeCompactionSuspension()
+                }
                 emit(.runningApplicationsChanged(sortedRunningApplications))
             }
             if let sessionID = currentSessionByBundleIdentifier[application.bundleIdentifier],
@@ -102,6 +109,8 @@ extension RecordingService {
 
         case let .activated(application):
             registerRunningApplication(application)
+            frontmostBundleIdentifier = application.bundleIdentifier
+            await synchronizeCompactionSuspension()
         }
     }
 

@@ -144,9 +144,11 @@ extension RecordingService {
         let storage = dependencies.storage
         let persistence = dependencies.persistence
         let handle = run.handle
+        let screenCapture = dependencies.screenCapture
         let endedAt = dependencies.date.now()
         Task {
             do {
+                await screenCapture.release(handle.processIdentifier)
                 try await storage.flushSession(handle)
                 try await persistence.closeSession(handle.sessionID, endedAt)
                 self.sessionCloseCompleted(handle, endedAt: endedAt)

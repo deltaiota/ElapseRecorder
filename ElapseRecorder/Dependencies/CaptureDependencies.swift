@@ -59,6 +59,7 @@ nonisolated struct WhitelistConfigurationClient {
 nonisolated struct WorkspaceClient {
     var runningApplications: @Sendable () async -> [RunningApplication]
     var events: @Sendable () -> AsyncStream<WorkspaceEvent>
+    var frontmostApplication: @Sendable () async -> RunningApplication?
 }
 
 nonisolated struct CapturePermissionClient {
@@ -68,7 +69,8 @@ nonisolated struct CapturePermissionClient {
 
 nonisolated struct ScreenCaptureClient {
     var windows: @Sendable (_ application: RunningApplication) async throws -> [CapturableWindow]
-    var capture: @Sendable (_ windowID: Int) async throws -> CapturedImage
+    var capture: @Sendable (_ windowID: Int, _ minimumFrameInterval: TimeInterval) async throws -> CapturedImage
+    var release: @Sendable (_ processIdentifier: pid_t) async -> Void
 }
 
 nonisolated struct ImageEncodingClient {
@@ -142,6 +144,7 @@ nonisolated struct PersistenceClient {
         _ retryAt: Date,
         _ finalByteCount: Int
     ) async throws -> Void
+    var requeueSegmentJob: @Sendable (_ jobID: UUID, _ workerID: UUID) async throws -> Void
     var recoverSegmentJobs: @Sendable (_ now: Date) async throws -> [SegmentRecoveryItem]
     var pendingSegmentCleanups: @Sendable () async throws -> [SegmentCleanupManifest]
     var completeSegmentCleanup: @Sendable (_ jobID: UUID) async throws -> Void

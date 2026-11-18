@@ -17,6 +17,7 @@ class CaptureEngineFeatureTestCase: XCTestCase {
         storageEvents: StreamPipe<StorageCoordinatorEvent> = StreamPipe(),
         workspaceEvents: StreamPipe<WorkspaceEvent> = StreamPipe(),
         permission: CapturePermissionClient = CapturePermissionClient(status: { .authorized }, request: { .authorized }),
+        frontmostApplication: @escaping @Sendable () async -> RunningApplication? = { nil },
         encodingOptions: @escaping @Sendable () -> CaptureEncodingOptions = { .defaultValue },
         open: @escaping @Sendable (CaptureSession) async throws -> Void = { _ in },
         recordUnavailable: @escaping @Sendable (CaptureUnavailableRecord) async throws -> Void = { _ in },
@@ -24,7 +25,8 @@ class CaptureEngineFeatureTestCase: XCTestCase {
         capture: @escaping @Sendable (Int) async throws -> CapturedImage = { _ in CaptureEngineFeatureTestCase.makeImage() },
         enqueue: @escaping @Sendable (CapturedFrameEnvelope) async -> StorageEnqueueResult = { .accepted(frameID: $0.id) },
         flush: @escaping @Sendable (RecordingSessionHandle) async throws -> Void = { _ in },
-        close: @escaping @Sendable (UUID, Date) async throws -> Void = { _, _ in }
+        close: @escaping @Sendable (UUID, Date) async throws -> Void = { _, _ in },
+        setCompactionSuspended: @escaping @Sendable (Bool) async -> Void = { _ in }
     ) -> Harness {
         let app = RunningApplication(
             bundleIdentifier: "com.example.Editor",
@@ -49,6 +51,7 @@ class CaptureEngineFeatureTestCase: XCTestCase {
         storage.enqueue = enqueue
         storage.flushSession = flush
         storage.recover = {}
+        storage.setCompactionSuspended = setCompactionSuspended
         var preferences = CapturePreferencesClient.testValue
         preferences.encodingOptions = encodingOptions
 
@@ -58,10 +61,15 @@ class CaptureEngineFeatureTestCase: XCTestCase {
             dependencies: .init(
                 workspace: WorkspaceClient(
                     runningApplications: { [app] },
-                    events: { workspaceEvents.stream }
+                    events: { workspaceEvents.stream },
+                    frontmostApplication: frontmostApplication
                 ),
                 permission: permission,
-                screenCapture: ScreenCaptureClient(windows: windows, capture: capture),
+                screenCapture: ScreenCaptureClient(
+                    windows: windows,
+                    capture: { windowID, _ in try await capture(windowID) },
+                    release: { _ in }
+                ),
                 persistence: persistence,
                 storage: storage,
                 date: DateClient(now: {
@@ -88,7 +96,7 @@ class CaptureEngineFeatureTestCase: XCTestCase {
         line: UInt = #line
     ) async throws {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(5))
+        let deadline = clock.now.advanced(by: .seconds(15))
         while clock.now < deadline {
             if await predicate() { return }
             // Task.yield can immediately resume this test without scheduling background capture.

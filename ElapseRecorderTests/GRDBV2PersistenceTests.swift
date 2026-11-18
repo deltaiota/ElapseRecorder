@@ -136,10 +136,14 @@ final class GRDBV2PersistenceTests: XCTestCase {
             createdAt: Date(timeIntervalSince1970: 30)
         )
         try await client.createSegmentJob(manifest)
-        let workerID = UUID()
+        var workerID = UUID()
         let leased = try await client.leaseSegmentJob(workerID, Date(timeIntervalSince1970: 31), 60)
-        let lease = try XCTUnwrap(leased)
-        XCTAssertEqual(lease.manifest, manifest)
+        XCTAssertEqual(try XCTUnwrap(leased).manifest, manifest)
+
+        try await client.requeueSegmentJob(jobID, workerID)
+        workerID = UUID()
+        let reLeased = try await client.leaseSegmentJob(workerID, Date(timeIntervalSince1970: 32), 60)
+        XCTAssertEqual(try XCTUnwrap(reLeased).manifest, manifest)
 
         let commit = SegmentJobCommit(
             jobID: jobID,

@@ -29,10 +29,10 @@ After choosing the applications and monitoring rules you care about, no further 
 ## Features
 
 - **Whitelist-driven capture:** Add selected applications to a whitelist. Elapse Recorder starts capturing while a target application is running and stops after it quits. Applications already running when Elapse Recorder starts are detected immediately.
-- **Per-window screenshots:** Every capture uses ScreenCaptureKit to enumerate all capturable windows belonging to the target application and records each separately. Minimized, off-screen, and zero-size windows are skipped. Unchanged Stage Manager geometry is cached, and capture/storage work uses background priority to reduce interference with foreground input.
+- **Per-window screenshots:** ScreenCaptureKit enumerates the target application's capturable windows and records each separately. Persistent per-window streams avoid rebuilding capture sessions on every interval. Minimized, off-screen, and zero-size windows are skipped.
 - **Sessions and stable window numbering:** One continuous application run forms a _session._ Windows receive stable numbers within that session, and window-title changes are recorded.
 - **Flexible scheduling:** Configure a capture interval for each application and choose automatic or manual capture mode.
-- **Durable, efficient storage:** Captures first enter a HEIC/PNG spool. Elapse Recorder then automatically packages HEIC frames into verified HEVC video segments. Metadata is stored in an indexed database.
+- **Durable, efficient storage:** Captures first enter a HEIC/PNG spool. HEIC frames are packaged into verified HEVC video segments, but this compaction pauses while a monitored application is frontmost so codec work does not compete with foreground input. Metadata is stored in an indexed database.
 - **Library:** Browse captures by application → session → window, inspect per-window **timeline graphs** or a flat application gallery, and open standalone images or video-backed frames with Quick Look.
 - **Timelapse video export:** Stream any combination of standalone and video-backed frames into source-resolution **H.264 or HEVC video** (`.mp4` / `.mov`), with configurable frame rate and optional crossfade interpolation between adjacent frames.
 

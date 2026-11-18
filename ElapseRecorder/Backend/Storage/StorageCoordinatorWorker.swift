@@ -3,15 +3,35 @@ import CoreGraphics
 import Foundation
 
 extension StorageCoordinator {
+    func setCompactionSuspended(_ suspended: Bool) {
+        guard isCompactionSuspended != suspended else { return }
+        isCompactionSuspended = suspended
+        if suspended {
+            restartSegmentWorkerWhenStopped = false
+            segmentWorkerTask?.cancel()
+        } else if isSegmentWorkerRunning {
+            restartSegmentWorkerWhenStopped = segmentWorkerTask?.isCancelled == true
+        } else {
+            startSegmentWorkerIfNeeded()
+        }
+    }
+
     func startSegmentWorkerIfNeeded() {
-        guard maintenanceLease == nil, !isSegmentWorkerRunning else { return }
+        guard maintenanceLease == nil, !isCompactionSuspended, !isSegmentWorkerRunning else { return }
         isSegmentWorkerRunning = true
-        Task(priority: .background) { await self.runSegmentJobs() }
+        segmentWorkerTask = Task(priority: .background) { await self.runSegmentJobs() }
     }
 
     func runSegmentJobs() async {
-        defer { isSegmentWorkerRunning = false }
-        while maintenanceLease == nil {
+        defer {
+            isSegmentWorkerRunning = false
+            segmentWorkerTask = nil
+            if restartSegmentWorkerWhenStopped, !isCompactionSuspended {
+                restartSegmentWorkerWhenStopped = false
+                startSegmentWorkerIfNeeded()
+            }
+        }
+        while maintenanceLease == nil, !isCompactionSuspended, !Task.isCancelled {
             let lease: SegmentJobLease
             do {
                 guard let next = try await persistence.leaseSegmentJob(workerID, now(), configuration.leaseDuration) else {
@@ -21,6 +41,8 @@ extension StorageCoordinator {
                     return
                 }
                 lease = next
+            } catch is CancellationError {
+                return
             } catch {
                 degrade(.recoveryFailed(message: String(describing: error)))
                 scheduleSegmentRetry()
@@ -50,6 +72,7 @@ extension StorageCoordinator {
     func process(_ lease: SegmentJobLease) async {
         let manifest = lease.manifest
         do {
+            try Task.checkCancellation()
             let verification: SegmentWriteVerification
             if await fileStorage.fileExists(manifest.finalURL) {
                 do {
@@ -94,6 +117,12 @@ extension StorageCoordinator {
                 frameIDs: manifest.frames.map(\.frameID),
                 url: manifest.finalURL
             ))
+        } catch is CancellationError {
+            do {
+                try await persistence.requeueSegmentJob(manifest.jobID, lease.workerID)
+            } catch {
+                degrade(.recoveryFailed(message: String(describing: error)))
+            }
         } catch {
             failedJobsBySession[manifest.sessionID, default: []].insert(manifest.jobID)
             // A valid published final is preserved for idempotent adoption; invalid finals were removed above.

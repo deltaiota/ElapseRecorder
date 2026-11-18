@@ -5,6 +5,38 @@ import Foundation
 import XCTest
 
 final class CaptureEngineFeatureLifecycleTests: CaptureEngineFeatureTestCase {
+    func testFrontmostWhitelistedAppSuspendsCompactionUntilAnotherAppActivates() async throws {
+        let clock = TestClock<Duration>()
+        let workspaceEvents = StreamPipe<WorkspaceEvent>()
+        let suspensionStates = Locked<[Bool]>([])
+        let frontmost = RunningApplication(
+            bundleIdentifier: "com.example.Editor",
+            displayName: "Editor",
+            processIdentifier: 101
+        )
+        let harness = makeHarness(
+            clock: clock,
+            workspaceEvents: workspaceEvents,
+            frontmostApplication: { frontmost },
+            windows: { _ in [] },
+            setCompactionSuspended: { suspended in
+                suspensionStates.withValue { $0.append(suspended) }
+            }
+        )
+
+        _ = await harness.service.start()
+        try await eventually { suspensionStates.value.last == true }
+        await harness.service.applyWhitelist([harness.config])
+        XCTAssertEqual(suspensionStates.value.last, true)
+
+        workspaceEvents.yield(.activated(RunningApplication(
+            bundleIdentifier: "com.example.Other",
+            displayName: "Other",
+            processIdentifier: 202
+        )))
+        try await eventually { suspensionStates.value.last == false }
+    }
+
     func testAutoWhitelistStartsAndTerminationClosesSession() async throws {
         let clock = TestClock<Duration>()
         let workspaceEvents = StreamPipe<WorkspaceEvent>()

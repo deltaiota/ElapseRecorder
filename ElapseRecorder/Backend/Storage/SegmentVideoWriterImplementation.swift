@@ -29,9 +29,11 @@ nonisolated enum SegmentVideoWriterImplementation {
         }
         context.input.markAsFinished()
         await context.writer.finishWriting()
+        try Task.checkCancellation()
         guard context.writer.status == .completed else {
             throw context.writer.error ?? StorageCoordinatorError.segmentWriterUnavailable
         }
+        try Task.checkCancellation()
         let verification = try await verify(manifest: manifest, url: outputURL)
         completed = true
         return verification
@@ -200,6 +202,7 @@ nonisolated enum SegmentVideoWriterImplementation {
 
     private static func verifyDimensions(track: AVAssetTrack, manifest: SegmentJobManifest) async throws {
         let naturalSize = try await track.load(.naturalSize)
+        try Task.checkCancellation()
         guard Int(abs(naturalSize.width)) == manifest.canvasWidth,
               Int(abs(naturalSize.height)) == manifest.canvasHeight
         else {
@@ -228,6 +231,7 @@ nonisolated enum SegmentVideoWriterImplementation {
         }
         var sampleCount = 0
         while let sample = output.copyNextSampleBuffer() {
+            try Task.checkCancellation()
             guard sampleCount < manifest.frames.count else {
                 throw StorageCoordinatorError.segmentVerificationFailed("Encoded more samples than requested")
             }
@@ -253,6 +257,7 @@ nonisolated enum SegmentVideoWriterImplementation {
         if manifest.frames.count > 2 { indices.append(manifest.frames.count / 2) }
         if manifest.frames.count > 1 { indices.append(manifest.frames.count - 1) }
         for index in indices {
+            try Task.checkCancellation()
             try await verifyBoundaryFrame(
                 asset: asset,
                 at: mediaTime(manifest.frames[index]),

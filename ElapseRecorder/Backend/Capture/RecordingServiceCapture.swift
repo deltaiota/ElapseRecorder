@@ -181,7 +181,10 @@ extension RecordingService {
 
         runsBySessionID[token.handle.sessionID] = run
         emit(.sessionUpdated(run.snapshot))
-        Task(priority: .background) { await acquireFrames(jobs, token: token) }
+        let minimumFrameInterval = max(1, run.config.captureInterval)
+        Task(priority: .background) {
+            await acquireFrames(jobs, token: token, minimumFrameInterval: minimumFrameInterval)
+        }
     }
 
     func windowsLoadFailed(token: CycleToken, message: String) {
@@ -190,7 +193,7 @@ extension RecordingService {
         finishCycle(token)
     }
 
-    func acquireFrames(_ jobs: [CaptureJob], token: CycleToken) async {
+    func acquireFrames(_ jobs: [CaptureJob], token: CycleToken, minimumFrameInterval: TimeInterval) async {
         let maximumConcurrency = dependencies.maximumConcurrentFrameAcquisitions
         let screenCapture = dependencies.screenCapture
         let persistence = dependencies.persistence
@@ -209,7 +212,10 @@ extension RecordingService {
                         do {
                             try await persistence.upsertWindow(job.monitoredWindow)
                             let requestStartedAt = date.now()
-                            let image = try await screenCapture.capture(job.metadata.systemWindowID)
+                            let image = try await screenCapture.capture(
+                                job.metadata.systemWindowID,
+                                minimumFrameInterval
+                            )
                             let completedAt = date.now()
                             let envelope = CapturedFrameEnvelope(
                                 id: ids.uuid(),

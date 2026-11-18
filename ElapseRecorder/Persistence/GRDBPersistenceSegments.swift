@@ -274,6 +274,40 @@ nonisolated extension GRDBPersistenceStore {
         }
     }
 
+    func requeueSegmentJob(jobID: UUID, workerID: UUID) async throws {
+        try await database.pool.write { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: "SELECT state, lease_worker_id, asset_id FROM segment_jobs WHERE id = ?",
+                arguments: [jobID.databaseID]
+            ) else { throw PersistenceStoreError.segmentJobNotFound(jobID) }
+            let state: String = row["state"]
+            guard state == SegmentJobState.leased.rawValue || state == SegmentJobState.published.rawValue else {
+                throw PersistenceStoreError.segmentJobNotLeased(jobID)
+            }
+            guard row["lease_worker_id"] as String? == workerID.databaseID else {
+                throw PersistenceStoreError.segmentLeaseOwnedByAnotherWorker(jobID)
+            }
+            try db.execute(
+                sql: """
+                UPDATE segment_jobs
+                SET state = 'queued', failure_message = NULL, retry_at = NULL,
+                    lease_worker_id = NULL, lease_expires_at = NULL
+                WHERE id = ?
+                """,
+                arguments: [jobID.databaseID]
+            )
+            try db.execute(
+                sql: """
+                UPDATE media_assets
+                SET state = 'writing', failure_message = NULL
+                WHERE id = ? AND state <> 'ready'
+                """,
+                arguments: [row["asset_id"] as String]
+            )
+        }
+    }
+
     func recoverSegmentJobs(now _: Date) async throws -> [SegmentRecoveryItem] {
         try await database.pool.write { db in
             try db.execute(

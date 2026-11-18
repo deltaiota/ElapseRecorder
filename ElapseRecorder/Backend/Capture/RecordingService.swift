@@ -170,6 +170,7 @@ actor RecordingService {
     var permissionRequestGeneration: UInt64 = 0
     var refreshGeneration: UInt64 = 0
     var whitelist: [String: WhitelistedAppConfig] = [:]
+    var hasAppliedWhitelist = false
     var runningApplications: [String: RunningApplication] = [:]
     var generationByBundleIdentifier: [String: UInt64] = [:]
     var currentSessionByBundleIdentifier: [String: UUID] = [:]
@@ -177,6 +178,7 @@ actor RecordingService {
     var userPausedBundleIdentifiers: Set<String> = []
     var activeStorageDegradation: StorageDegradation?
     var pendingManualStarts: Set<String> = []
+    var frontmostBundleIdentifier: String?
     var pendingWorkspaceEvents: [WorkspaceEvent] = []
     var workspaceTask: Task<Void, Never>?
     var storageEventTask: Task<Void, Never>?
@@ -222,7 +224,8 @@ actor RecordingService {
         return stream
     }
 
-    func applyWhitelist(_ configs: [WhitelistedAppConfig]) {
+    func applyWhitelist(_ configs: [WhitelistedAppConfig]) async {
+        hasAppliedWhitelist = true
         whitelist = Dictionary(
             configs.map { ($0.bundleIdentifier, $0) },
             uniquingKeysWith: { _, latest in latest }
@@ -255,6 +258,17 @@ actor RecordingService {
         userPausedBundleIdentifiers.formIntersection(whitelist.keys)
 
         reconcileAutomaticSessions()
+        await synchronizeCompactionSuspension()
+    }
+
+    var shouldSuspendCompaction: Bool {
+        guard hasAppliedWhitelist else { return true }
+        guard let frontmostBundleIdentifier else { return false }
+        return whitelist[frontmostBundleIdentifier]?.isEnabled == true
+    }
+
+    func synchronizeCompactionSuspension() async {
+        await dependencies.storage.setCompactionSuspended(shouldSuspendCompaction)
     }
 
     func startCapture(bundleIdentifier: String) {

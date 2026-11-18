@@ -119,6 +119,9 @@ nonisolated extension PersistenceClient {
             return []
         },
         failSegmentJob: { _, _, _, _, _ in reportIssue("PersistenceClient.failSegmentJob is unimplemented") },
+        requeueSegmentJob: { _, _ in
+            reportIssue("PersistenceClient.requeueSegmentJob is unimplemented")
+        },
         recoverSegmentJobs: { _ in
             reportIssue("PersistenceClient.recoverSegmentJobs is unimplemented")
             return []

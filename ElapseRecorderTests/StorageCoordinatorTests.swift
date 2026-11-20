@@ -31,6 +31,43 @@ final class StorageCoordinatorTests: XCTestCase {
         _ = try await nextCommittedFrame(&events)
     }
 
+    func testStorageResumesAfterCaptureRootBecomesWritable() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let root = directory.appending(path: "captures", directoryHint: .notDirectory)
+        let original = Data("not a directory".utf8)
+        try original.write(to: root)
+        let client = makeClient(directory: root, repository: StorageRepositoryDouble())
+        let frame = envelope(id: UUID(), sessionID: UUID())
+        let degraded = expectation(description: "Capture paused after spool write failure")
+        let resumed = expectation(description: "Capture resumed after a successful write probe")
+        let events = await client.events()
+        let observer = Task {
+            for await event in events {
+                switch event {
+                case let .storageDegraded(.spoolWriteFailed(frameID, _)) where frameID == frame.id:
+                    degraded.fulfill()
+                case .storageResumed:
+                    resumed.fulfill()
+                    return
+                default:
+                    continue
+                }
+            }
+        }
+        defer { observer.cancel() }
+
+        _ = await client.enqueue(frame)
+        await fulfillment(of: [degraded], timeout: 5)
+        XCTAssertThrowsError(try FileStorageClient.probeWritable(in: root))
+        XCTAssertEqual(try Data(contentsOf: root), original)
+        try FileManager.default.removeItem(at: root)
+
+        await fulfillment(of: [resumed], timeout: 5)
+        let healthDirectory = root.appending(path: ".health", directoryHint: .isDirectory)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: healthDirectory.path), [])
+    }
+
     func testFlushSealsShortSessionAndDefersSpoolCleanupUntilRecovery() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -290,7 +327,7 @@ final class StorageCoordinatorTests: XCTestCase {
             )
         }
         files.availableCapacity = { Int64.max }
-        files.probeWritable = {}
+        files.probeWritable = { try FileStorageClient.probeWritable(in: directory) }
 
         let defaultWriter = SegmentVideoWriterClient(
             writeAndVerify: { manifest, _ in

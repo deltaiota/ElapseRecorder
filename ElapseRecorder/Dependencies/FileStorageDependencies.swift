@@ -8,6 +8,7 @@ import Defaults
 import Foundation
 import ImageIO
 import ScreenCaptureKit
+import System
 import UniformTypeIdentifiers
 
 extension FileStorageClient: DependencyKey {
@@ -86,12 +87,7 @@ extension FileStorageClient: DependencyKey {
                 ?? 0
         },
         probeWritable: {
-            let directory = try FileStoragePaths.captureRoot()
-                .appending(path: ".health", directoryHint: .isDirectory)
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let url = directory.appending(path: "\(UUID().uuidString).probe", directoryHint: .notDirectory)
-            defer { try? FileManager.default.removeItem(at: url) }
-            try Data([0]).write(to: url, options: [.atomic, .withoutOverwriting])
+            try FileStorageClient.probeWritable(in: FileStoragePaths.captureRoot())
         },
         captureFileURLs: {
             FileStoragePaths.allCaptureFileURLs()
@@ -130,6 +126,22 @@ extension FileStorageClient: DependencyKey {
             return reclaimed
         }
     )
+
+    nonisolated static func probeWritable(in root: URL) throws {
+        let directory = root.appending(path: ".health", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appending(path: "\(UUID().uuidString).probe", directoryHint: .notDirectory)
+        // Create exclusively before installing cleanup, so a failed write leaves no partial probe
+        // and a name collision never removes someone else's file.
+        let file = try FileDescriptor.open(
+            FilePath(url.path(percentEncoded: false)), .writeOnly,
+            options: [.create, .exclusiveCreate, .closeOnExec], permissions: .ownerReadWrite
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+        try file.closeAfter {
+            _ = try withUnsafeBytes(of: UInt8(0)) { try file.writeAll($0) }
+        }
+    }
 
     static let testValue = Self(
         captureRoot: {

@@ -1,11 +1,14 @@
 @preconcurrency import AVFoundation
 import CoreGraphics
+import CoreImage
 import CoreMedia
 import CoreVideo
 import Foundation
-import ImageIO
 
 nonisolated enum SegmentVideoWriterImplementation {
+    private static let renderer = CIContext(options: [.cacheIntermediates: false])
+    private static let black = CIImage(color: .black)
+
     static func writeAndVerify(
         manifest: SegmentJobManifest,
         quality: Double
@@ -23,9 +26,11 @@ nonisolated enum SegmentVideoWriterImplementation {
         defer {
             if !completed { try? FileManager.default.removeItem(at: outputURL) }
         }
+        var budget = StorageCPUBudget()
         let context = try makeWriterContext(manifest: manifest, quality: quality)
         for frame in manifest.frames {
             try await append(frame, manifest: manifest, context: context)
+            try await budget.pace()
         }
         context.input.markAsFinished()
         await context.writer.finishWriting()
@@ -70,7 +75,7 @@ nonisolated enum SegmentVideoWriterImplementation {
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
                 kCVPixelBufferWidthKey as String: manifest.canvasWidth,
                 kCVPixelBufferHeightKey as String: manifest.canvasHeight,
-                kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:] as [String: Any],
             ]
         )
         guard writer.canAdd(input) else { throw StorageCoordinatorError.segmentWriterUnavailable }
@@ -93,11 +98,16 @@ nonisolated enum SegmentVideoWriterImplementation {
         context: WriterContext
     ) async throws {
         try Task.checkCancellation()
-        let image = try loadImage(frame.spoolURL)
-        guard image.width <= manifest.canvasWidth, image.height <= manifest.canvasHeight else {
+        guard let image = CIImage(contentsOf: frame.spoolURL) else {
+            throw StorageCoordinatorError.spoolSourceUnreadable(frame.spoolURL)
+        }
+        let size = image.extent.size
+        guard size.width > 0, size.height > 0,
+              size.width <= CGFloat(manifest.canvasWidth), size.height <= CGFloat(manifest.canvasHeight)
+        else {
             context.writer.cancelWriting()
             throw StorageCoordinatorError.segmentVerificationFailed(
-                "Frame \(frame.frameID) dimensions \(image.width)x\(image.height) exceed segment \(manifest.canvasWidth)x\(manifest.canvasHeight)"
+                "Frame \(frame.frameID) dimensions \(size) exceed segment \(manifest.canvasWidth)x\(manifest.canvasHeight)"
             )
         }
         guard let pool = context.adaptor.pixelBufferPool else {
@@ -121,7 +131,7 @@ nonisolated enum SegmentVideoWriterImplementation {
     private static func makePixelBuffer(
         pool: CVPixelBufferPool,
         manifest: SegmentJobManifest,
-        image: CGImage,
+        image: CIImage,
         colorSpace: CGColorSpace
     ) throws -> CVPixelBuffer {
         var pixelBuffer: CVPixelBuffer?
@@ -133,20 +143,13 @@ nonisolated enum SegmentVideoWriterImplementation {
             kCVImageBufferTransferFunctionKey: kCVImageBufferTransferFunction_ITU_R_709_2,
             kCVImageBufferYCbCrMatrixKey: kCVImageBufferYCbCrMatrix_ITU_R_709_2,
         ] as CFDictionary, .shouldPropagate)
-        CVPixelBufferLockBaseAddress(pixelBuffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
-        guard let drawingContext = CGContext(
-            data: CVPixelBufferGetBaseAddress(pixelBuffer),
-            width: manifest.canvasWidth,
-            height: manifest.canvasHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { throw StorageCoordinatorError.segmentWriterUnavailable }
-        drawingContext.setFillColor(CGColor(gray: 0, alpha: 1))
-        drawingContext.fill(CGRect(x: 0, y: 0, width: manifest.canvasWidth, height: manifest.canvasHeight))
-        drawingContext.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let destination = CIRenderDestination(pixelBuffer: pixelBuffer)
+        destination.colorSpace = colorSpace
+        destination.isFlipped = true // Video buffers store the top row first.
+        let canvas = CGRect(x: 0, y: 0, width: manifest.canvasWidth, height: manifest.canvasHeight)
+        let padded = image.composited(over: black).cropped(to: canvas)
+        let render = try renderer.startTask(toRender: padded, to: destination)
+        _ = try render.waitUntilCompleted()
         return pixelBuffer
     }
 
@@ -178,7 +181,7 @@ nonisolated enum SegmentVideoWriterImplementation {
         let asset = AVURLAsset(url: url)
         let track = try await loadOnlyVideoTrack(asset)
         try await verifyDimensions(track: track, manifest: manifest)
-        let sampleCount = try verifySamples(asset: asset, track: track, manifest: manifest)
+        let sampleCount = try await verifySamples(asset: asset, track: track, manifest: manifest)
         try await verifyBoundaryFrames(asset: asset, manifest: manifest)
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size > 0 else {
@@ -216,16 +219,18 @@ nonisolated enum SegmentVideoWriterImplementation {
         asset: AVURLAsset,
         track: AVAssetTrack,
         manifest: SegmentJobManifest
-    ) throws -> Int {
+    ) async throws -> Int {
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(
             track: track,
-            outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+            outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
         )
+        output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else {
             throw StorageCoordinatorError.segmentVerificationFailed("Unable to inspect encoded samples")
         }
         reader.add(output)
+        var budget = StorageCPUBudget()
         guard reader.startReading() else {
             throw reader.error ?? StorageCoordinatorError.segmentVerificationFailed("Unable to start sample verification")
         }
@@ -243,6 +248,7 @@ nonisolated enum SegmentVideoWriterImplementation {
                 )
             }
             sampleCount += 1
+            try await budget.pace()
         }
         guard reader.status == .completed, sampleCount == manifest.frames.count else {
             throw reader.error ?? StorageCoordinatorError.segmentVerificationFailed(
@@ -284,19 +290,6 @@ nonisolated enum SegmentVideoWriterImplementation {
         else {
             throw StorageCoordinatorError.segmentVerificationFailed("Boundary frame verification failed at \(time)")
         }
-    }
-
-    private static func loadImage(_ url: URL) throws -> CGImage {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let image = CGImageSourceCreateImageAtIndex(
-                  source,
-                  0,
-                  [kCGImageSourceShouldCacheImmediately: true] as CFDictionary
-              )
-        else {
-            throw StorageCoordinatorError.spoolSourceUnreadable(url)
-        }
-        return image
     }
 
     private static func mediaTime(_ frame: SegmentFrameInput) -> CMTime {

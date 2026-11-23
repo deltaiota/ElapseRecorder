@@ -97,16 +97,34 @@ extension StorageCoordinator {
     }
 
     func retrySealAfterDelay(_ key: WindowKey) async {
-        sealRetryScheduled.remove(key)
         while maintenanceLease != nil {
-            await Task.yield()
+            let observedGeneration = stateGeneration
+            await waitForStateTransition(after: observedGeneration)
         }
+        sealRetryScheduled.remove(key)
         guard accumulators[key]?.isEmpty == false || deferredFrames[key]?.isEmpty == false else { return }
+        activeSealRetryCount += 1
+        signalStateTransition()
+        defer {
+            activeSealRetryCount -= 1
+            signalStateTransition()
+        }
         _ = await attemptSeal(key)
     }
 
     func sealAccumulator(_ key: WindowKey) async throws {
+        while sealingWindows.contains(key) {
+            let observedGeneration = stateGeneration
+            await waitForStateTransition(after: observedGeneration)
+        }
         guard let frames = accumulators[key], !frames.isEmpty else { return }
+        sealingWindows.insert(key)
+        signalStateTransition()
+        defer {
+            sealingWindows.remove(key)
+            signalStateTransition()
+        }
+
         let first = frames[0]
         let jobID = makeID()
         let assetID = makeID()
@@ -137,7 +155,11 @@ extension StorageCoordinator {
             createdAt: now()
         )
         try await persistence.createSegmentJob(manifest)
-        accumulators[key] = nil
+        if accumulators[key]?.count == frames.count {
+            accumulators[key] = nil
+        } else {
+            accumulators[key]?.removeFirst(frames.count)
+        }
         startSegmentWorkerIfNeeded()
     }
 

@@ -118,36 +118,34 @@ extension PerceptualHashClient: DependencyKey {
     private nonisolated static func differenceHash(_ image: CGImage) -> UInt64 {
         let width = 9
         let height = 8
-        var pixels = [UInt8](repeating: 0, count: width * height)
+        let bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        // Reduce in the capture's color space first. Drawing a Retina image straight into
+        // a gray context makes Core Graphics convert millions of pixels to sample just 72.
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpaceCreateDeviceRGB()
+        guard let thumbnail = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return 0 }
+        thumbnail.interpolationQuality = .low
+        thumbnail.draw(image, in: bounds)
+        guard let smallImage = thumbnail.makeImage() else { return 0 }
 
-        guard let context = CGContext(
-            data: &pixels,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width,
-            space: CGColorSpaceCreateDeviceGray(),
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else {
-            return 0
-        }
+        return withUnsafeTemporaryAllocation(of: UInt8.self, capacity: width * height) { pixels in
+            pixels.initialize(repeating: 0)
+            guard let gray = CGContext(
+                data: pixels.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return 0 }
+            gray.draw(smallImage, in: bounds)
 
-        context.interpolationQuality = .low
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-
-        var hash: UInt64 = 0
-        var bit: UInt64 = 0
-        for row in 0 ..< height {
-            for column in 0 ..< (width - 1) {
-                let left = pixels[row * width + column]
-                let right = pixels[row * width + column + 1]
-                if left > right {
-                    hash |= (1 << bit)
+            var hash: UInt64 = 0
+            for row in 0 ..< height {
+                for column in 0 ..< width - 1 where pixels[row * width + column] > pixels[row * width + column + 1] {
+                    hash |= 1 << (row * (width - 1) + column)
                 }
-                bit += 1
             }
+            return hash
         }
-        return hash
     }
 }
 

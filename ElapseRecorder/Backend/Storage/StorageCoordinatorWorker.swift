@@ -17,8 +17,11 @@ extension StorageCoordinator {
     }
 
     func startSegmentWorkerIfNeeded() {
-        guard maintenanceLease == nil, !isCompactionSuspended, !isSegmentWorkerRunning else { return }
+        guard maintenanceLease == nil, !isRecoveryRunning,
+              !isCompactionSuspended, !isSegmentWorkerRunning
+        else { return }
         isSegmentWorkerRunning = true
+        signalStateTransition()
         segmentWorkerTask = Task(priority: .background) { await self.runSegmentJobs() }
     }
 
@@ -30,8 +33,11 @@ extension StorageCoordinator {
                 restartSegmentWorkerWhenStopped = false
                 startSegmentWorkerIfNeeded()
             }
+            signalStateTransition()
         }
-        while maintenanceLease == nil, !isCompactionSuspended, !Task.isCancelled {
+        while maintenanceLease == nil, !isRecoveryRunning,
+              !isCompactionSuspended, !Task.isCancelled
+        {
             let lease: SegmentJobLease
             do {
                 guard let next = try await persistence.leaseSegmentJob(workerID, now(), configuration.leaseDuration) else {
@@ -62,10 +68,11 @@ extension StorageCoordinator {
     }
 
     func restartSegmentWorkerAfterDelay() async {
-        isSegmentRetryScheduled = false
         while isSegmentWorkerRunning {
-            await Task.yield()
+            let observedGeneration = stateGeneration
+            await waitForStateTransition(after: observedGeneration)
         }
+        isSegmentRetryScheduled = false
         startSegmentWorkerIfNeeded()
     }
 
@@ -77,6 +84,8 @@ extension StorageCoordinator {
             if await fileStorage.fileExists(manifest.finalURL) {
                 do {
                     verification = try await segmentWriter.verifyPublished(manifest)
+                } catch is CancellationError {
+                    throw CancellationError()
                 } catch {
                     // This job is not committed, so a final that fails exact verification is not authoritative.
                     _ = try await fileStorage.removeFilesStrict([manifest.finalURL])
@@ -148,9 +157,11 @@ extension StorageCoordinator {
     }
 
     func recoverCommittedSpoolCleanup() async throws {
+        var budget = StorageCPUBudget()
         for cleanup in try await persistence.pendingSegmentCleanups() {
             _ = try await fileStorage.removeFilesStrict(cleanup.spoolURLs)
             try await persistence.completeSegmentCleanup(cleanup.jobID)
+            try await budget.pace()
         }
     }
 

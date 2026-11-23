@@ -178,6 +178,9 @@ nonisolated extension GRDBPersistenceStore {
 
     func spoolByteCount() async throws -> Int {
         try await database.pool.read { db in
+            // Segment commit reassigns each frame from its spool asset to the video asset atomically.
+            // The indexed asset identity therefore counts durable, uncommitted HEIC spool data while
+            // excluding committed assets that remain only until cleanup, without scanning spool paths.
             try Int.fetchOne(
                 db,
                 sql: """
@@ -186,13 +189,8 @@ nonisolated extension GRDBPersistenceStore {
                 JOIN sessions s ON s.id = a.session_id
                 WHERE s.state <> 'tombstoned' AND a.kind = 'spoolImage' AND a.state = 'ready'
                   AND EXISTS (
-                      SELECT 1 FROM frames f WHERE f.spool_path = a.path AND f.image_format = 'heic'
-                  )
-                  AND NOT EXISTS (
                       SELECT 1 FROM frames f
-                      JOIN segment_job_frames jf ON jf.frame_id = f.id
-                      JOIN segment_jobs j ON j.id = jf.job_id AND j.state = 'committed'
-                      WHERE f.spool_path = a.path
+                      WHERE f.asset_id = a.id AND f.image_format = 'heic'
                   )
                 """
             ) ?? 0

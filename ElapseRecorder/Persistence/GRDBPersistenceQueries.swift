@@ -16,11 +16,12 @@ nonisolated extension GRDBPersistenceStore {
                     )
                 ), session_stats AS (
                     SELECT s.id, s.bundle_identifier, s.display_name, s.started_at, s.ended_at,
-                           MAX(f.captured_at) AS last_frame,
-                           COUNT(f.id) AS frame_count
-                    FROM visible_sessions s LEFT JOIN frames f ON f.session_id = s.id
-                        AND EXISTS (SELECT 1 FROM media_assets fa WHERE fa.id = f.asset_id AND fa.state = 'ready')
-                    GROUP BY s.id
+                           (SELECT f.captured_at FROM frames f
+                            JOIN media_assets a ON a.id = f.asset_id AND a.state = 'ready'
+                            WHERE f.session_id = s.id ORDER BY f.captured_at DESC, f.id DESC LIMIT 1) AS last_frame,
+                           (SELECT COUNT(*) FROM media_assets a JOIN frames f ON f.asset_id = a.id
+                            WHERE a.session_id = s.id AND a.state = 'ready') AS frame_count
+                    FROM visible_sessions s
                 ), asset_stats AS (
                     SELECT s.bundle_identifier, COALESCE(SUM(a.byte_count), 0) AS size_bytes
                     FROM visible_sessions s LEFT JOIN media_assets a ON a.session_id = s.id

@@ -47,6 +47,18 @@ final class BackendV2IntegrationTests: XCTestCase {
         XCTAssertEqual(first.height, 200)
         XCTAssertEqual(last.width, 320)
         XCTAssertEqual(last.height, 200)
+        // The encoded image must retain the red top and blue bottom of the source.
+        var halves = [UInt8](repeating: 0, count: 8)
+        halves.withUnsafeMutableBytes { bytes in
+            let context = CGContext(
+                data: bytes.baseAddress, width: 1, height: 2, bitsPerComponent: 8, bytesPerRow: 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
+            )!
+            context.draw(first, in: CGRect(x: 0, y: 0, width: 1, height: 2))
+        }
+        XCTAssertGreaterThan(Int(halves[0]) - Int(halves[2]), 100)
+        XCTAssertGreaterThan(Int(halves[6]) - Int(halves[4]), 100)
 
         try await harness.storage.flushSession(harness.handle)
         try await harness.persistence.closeSession(harness.handle.sessionID, Date(timeIntervalSince1970: 103))
@@ -173,6 +185,8 @@ final class BackendV2IntegrationTests: XCTestCase {
             alpha: 1
         ))
         context.fill(CGRect(x: 0, y: 0, width: 320, height: 200))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 100, width: 320, height: 100))
         return context.makeImage()!
     }
 }

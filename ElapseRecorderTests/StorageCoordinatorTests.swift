@@ -218,12 +218,46 @@ final class StorageCoordinatorTests: XCTestCase {
         let client = makeClient(directory: directory, repository: repository)
 
         await client.recover()
+        try await waitUntil { await repository.commits().count == 1 }
         await client.recover()
 
         let commitCount = await repository.commits().count
         XCTAssertEqual(commitCount, 1)
         XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.finalURL.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: spoolURL.path))
+    }
+
+    func testRecoveryReturnsBeforeRecoveredSegmentEncodingCompletes() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = StorageRepositoryDouble()
+        let writerProbe = BlockingSegmentWriterProbe()
+        let writer = SegmentVideoWriterClient(
+            writeAndVerify: { manifest, _ in try await writerProbe.write(manifest) },
+            verifyPublished: { manifest in Self.verification(for: manifest) }
+        )
+        let client = makeClient(
+            directory: directory,
+            repository: repository,
+            configuration: Self.configuration(maximumFrames: 100),
+            segmentWriter: writer
+        )
+        var events = await client.events().makeAsyncIterator()
+        let frame = envelope(id: UUID(), sessionID: UUID())
+        _ = await client.enqueue(frame)
+        _ = try await nextCommittedFrame(&events)
+
+        let recoveryReturned = expectation(description: "Recovery returns before encoding the backlog")
+        let recovery = Task {
+            await client.recover()
+            recoveryReturned.fulfill()
+        }
+        try await waitUntil { await writerProbe.attemptCount == 1 }
+        await fulfillment(of: [recoveryReturned], timeout: 0.5)
+
+        await writerProbe.allowCompletion()
+        await recovery.value
+        _ = try await nextCommittedSegment(&events)
     }
 
     func testForegroundSuspensionDefersSegmentEncodingUntilResumed() async throws {
@@ -290,12 +324,178 @@ final class StorageCoordinatorTests: XCTestCase {
         XCTAssertEqual(attemptCount, 2)
     }
 
+    func testVerificationCancellationPreservesPublishedFinalAndSpool() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = StorageRepositoryDouble()
+        let verificationProbe = CancellableVerificationProbe()
+        let writer = SegmentVideoWriterClient(
+            writeAndVerify: { manifest, _ in
+                try Data("movie".utf8).write(to: manifest.partialURL)
+                return Self.verification(for: manifest)
+            },
+            verifyPublished: { manifest in try await verificationProbe.verify(manifest) }
+        )
+        let client = makeClient(
+            directory: directory,
+            repository: repository,
+            configuration: Self.configuration(maximumFrames: 1),
+            segmentWriter: writer
+        )
+        await client.setCompactionSuspended(true)
+        var events = await client.events().makeAsyncIterator()
+        let frame = envelope(id: UUID(), sessionID: UUID())
+
+        _ = await client.enqueue(frame)
+        let stored = try await nextCommittedFrame(&events)
+        let recoveredManifest = await repository.firstManifest
+        let manifest = try XCTUnwrap(recoveredManifest)
+        try Data("movie".utf8).write(to: manifest.finalURL)
+
+        await client.setCompactionSuspended(false)
+        try await waitUntil { await verificationProbe.attemptCount == 1 }
+        await client.setCompactionSuspended(true)
+        try await waitUntil {
+            let cancellationCount = await verificationProbe.cancellationCount
+            let hasActiveLease = await repository.hasActiveLease
+            return cancellationCount == 1 && !hasActiveLease
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: manifest.finalURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stored.spoolURL.path))
+
+        await verificationProbe.allowCompletion()
+        await client.setCompactionSuspended(false)
+        let committedURL = try await nextCommittedSegment(&events)
+        let attemptCount = await verificationProbe.attemptCount
+        XCTAssertEqual(committedURL, manifest.finalURL)
+        XCTAssertEqual(attemptCount, 2)
+    }
+
+    func testHealthProbesCoalesceWhileProbeIsInFlight() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = StorageRepositoryDouble()
+        let encodingProbe = FailingImageEncoderProbe()
+        let healthProbe = HealthProbeGate()
+        let client = makeClient(
+            directory: directory,
+            repository: repository,
+            imageEncoder: ImageEncodingClient { _, _ in
+                try await encodingProbe.encode()
+            },
+            probeWritable: { await healthProbe.probe() }
+        )
+        let resumed = expectation(description: "Storage resumes after the coalesced probe")
+        let events = await client.events()
+        let observer = Task {
+            for await event in events {
+                if event == .storageResumed {
+                    resumed.fulfill()
+                    return
+                }
+            }
+        }
+        defer { observer.cancel() }
+
+        _ = await client.enqueue(envelope(id: UUID(), sessionID: UUID()))
+        try await waitUntil { await healthProbe.callCount == 1 }
+        _ = await client.enqueue(envelope(id: UUID(), sessionID: UUID()))
+        try await waitUntil { await encodingProbe.callCount == 2 }
+
+        try await Task.sleep(for: .milliseconds(1_500))
+        let blockedCallCount = await healthProbe.callCount
+        let blockedMaximum = await healthProbe.maximumConcurrentCount
+        XCTAssertEqual(blockedCallCount, 1)
+        XCTAssertEqual(blockedMaximum, 1)
+
+        await healthProbe.open()
+        await fulfillment(of: [resumed], timeout: 5)
+        let completedCallCount = await healthProbe.callCount
+        let completedMaximum = await healthProbe.maximumConcurrentCount
+        XCTAssertEqual(completedCallCount, 2)
+        XCTAssertEqual(completedMaximum, 1)
+    }
+
+    func testConcurrentRecoveryCoalescesAndMaintenanceWaitsForCompletion() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recoveryGate = SuspensionGate()
+        let repository = StorageRepositoryDouble(recoveryGate: recoveryGate)
+        let client = makeClient(directory: directory, repository: repository)
+        let firstRecovery = Task { await client.recover() }
+        try await waitUntil { await repository.recoveryCallCount == 1 }
+
+        let secondRecovery = Task { await client.recover() }
+        let leaseProbe = MaintenanceLeaseProbe()
+        let maintenance = Task {
+            let lease = await client.beginMaintenance()
+            await leaseProbe.store(lease)
+            return lease
+        }
+        try await Task.sleep(for: .milliseconds(50))
+
+        let blockedRecoveryCallCount = await repository.recoveryCallCount
+        let blockedLease = await leaseProbe.lease
+        XCTAssertEqual(blockedRecoveryCallCount, 1)
+        XCTAssertNil(blockedLease)
+
+        await recoveryGate.open()
+        await firstRecovery.value
+        await secondRecovery.value
+        let lease = await maintenance.value
+        let completedRecoveryCallCount = await repository.recoveryCallCount
+        XCTAssertEqual(completedRecoveryCallCount, 1)
+        try await client.endMaintenance(lease)
+    }
+
+    func testMaintenanceWaitsForFlushManifestCreation() async throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let creationGate = SuspensionGate()
+        let repository = StorageRepositoryDouble(createGate: creationGate)
+        let client = makeClient(
+            directory: directory,
+            repository: repository,
+            configuration: Self.configuration(maximumFrames: 100)
+        )
+        await client.setCompactionSuspended(true)
+        var events = await client.events().makeAsyncIterator()
+        let frame = envelope(id: UUID(), sessionID: UUID())
+        _ = await client.enqueue(frame)
+        _ = try await nextCommittedFrame(&events)
+
+        let flush = Task { try await client.flushSession(frame.handle) }
+        try await waitUntil { await repository.createCallCount == 1 }
+        let leaseProbe = MaintenanceLeaseProbe()
+        let maintenance = Task {
+            let lease = await client.beginMaintenance()
+            await leaseProbe.store(lease)
+            return lease
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        let blockedLease = await leaseProbe.lease
+        XCTAssertNil(blockedLease)
+
+        await creationGate.open()
+        try await flush.value
+        let lease = await maintenance.value
+        let jobCount = await repository.jobCount
+        let commits = await repository.commits()
+        XCTAssertEqual(jobCount, 1)
+        XCTAssertTrue(commits.isEmpty)
+        try await client.endMaintenance(lease)
+        await client.setCompactionSuspended(false)
+        _ = try await nextCommittedSegment(&events)
+    }
+
     private func makeClient(
         directory: URL,
         repository: StorageRepositoryDouble,
         configuration: StorageCoordinatorConfiguration = StorageCoordinatorTests.configuration(),
         imageEncoder: ImageEncodingClient = ImageEncodingClient { _, _ in Data("heic".utf8) },
-        segmentWriter: SegmentVideoWriterClient? = nil
+        segmentWriter: SegmentVideoWriterClient? = nil,
+        probeWritable: (@Sendable () async throws -> Void)? = nil
     ) -> StorageCoordinatorClient {
         var persistence = PersistenceClient.unimplemented
         persistence.registerSpoolFrame = { try await repository.register($0) }
@@ -327,7 +527,7 @@ final class StorageCoordinatorTests: XCTestCase {
             )
         }
         files.availableCapacity = { Int64.max }
-        files.probeWritable = { try FileStorageClient.probeWritable(in: directory) }
+        files.probeWritable = probeWritable ?? { try FileStorageClient.probeWritable(in: directory) }
 
         let defaultWriter = SegmentVideoWriterClient(
             writeAndVerify: { manifest, _ in
@@ -483,6 +683,7 @@ final class StorageCoordinatorTests: XCTestCase {
 
 private enum StorageTestError: Error {
     case forcedCommitFailure
+    case forcedEncodingFailure
     case missingEvent
     case missingRegistration
 }
@@ -502,6 +703,42 @@ private actor SuspensionGate {
             waiter.resume()
         }
         waiters.removeAll()
+    }
+}
+
+private actor HealthProbeGate {
+    private let gate = SuspensionGate()
+    private(set) var callCount = 0
+    private(set) var maximumConcurrentCount = 0
+    private var activeCount = 0
+
+    func probe() async {
+        callCount += 1
+        activeCount += 1
+        maximumConcurrentCount = max(maximumConcurrentCount, activeCount)
+        await gate.wait()
+        activeCount -= 1
+    }
+
+    func open() async {
+        await gate.open()
+    }
+}
+
+private actor MaintenanceLeaseProbe {
+    private(set) var lease: StorageMaintenanceLease?
+
+    func store(_ lease: StorageMaintenanceLease) {
+        self.lease = lease
+    }
+}
+
+private actor FailingImageEncoderProbe {
+    private(set) var callCount = 0
+
+    func encode() throws -> Data {
+        callCount += 1
+        throw StorageTestError.forcedEncodingFailure
     }
 }
 
@@ -529,6 +766,45 @@ private actor CancellableSegmentWriterProbe {
     }
 }
 
+private actor BlockingSegmentWriterProbe {
+    private let gate = SuspensionGate()
+    private(set) var attemptCount = 0
+
+    func write(_ manifest: SegmentJobManifest) async throws -> SegmentWriteVerification {
+        attemptCount += 1
+        await gate.wait()
+        try Data("movie".utf8).write(to: manifest.partialURL)
+        return StorageCoordinatorTests.verification(for: manifest)
+    }
+
+    func allowCompletion() async {
+        await gate.open()
+    }
+}
+
+private actor CancellableVerificationProbe {
+    private(set) var attemptCount = 0
+    private(set) var cancellationCount = 0
+    private var shouldBlock = true
+
+    func verify(_ manifest: SegmentJobManifest) async throws -> SegmentWriteVerification {
+        attemptCount += 1
+        if shouldBlock {
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch is CancellationError {
+                cancellationCount += 1
+                throw CancellationError()
+            }
+        }
+        return StorageCoordinatorTests.verification(for: manifest)
+    }
+
+    func allowCompletion() {
+        shouldBlock = false
+    }
+}
+
 private actor StorageRepositoryDouble {
     private var registrations: [UUID: SpoolFrameRegistration] = [:]
     private var frames: [UUID: StoredSpoolFrame] = [:]
@@ -540,9 +816,19 @@ private actor StorageRepositoryDouble {
     private var committed: [SegmentJobCommit] = []
     private var failedJobs = Set<UUID>()
     private let commitFails: Bool
+    private let recoveryGate: SuspensionGate?
+    private let createGate: SuspensionGate?
+    private(set) var recoveryCallCount = 0
+    private(set) var createCallCount = 0
 
-    init(commitFails: Bool = false) {
+    init(
+        commitFails: Bool = false,
+        recoveryGate: SuspensionGate? = nil,
+        createGate: SuspensionGate? = nil
+    ) {
         self.commitFails = commitFails
+        self.recoveryGate = recoveryGate
+        self.createGate = createGate
     }
 
     func register(_ registration: SpoolFrameRegistration) throws {
@@ -560,8 +846,12 @@ private actor StorageRepositoryDouble {
         registrations[id] = nil
     }
 
-    func recoverFrames(limit _: Int) -> [SpoolFrameRecoveryItem] {
-        []
+    func recoverFrames(limit _: Int) async -> [SpoolFrameRecoveryItem] {
+        recoveryCallCount += 1
+        if let recoveryGate {
+            await recoveryGate.wait()
+        }
+        return []
     }
 
     func pendingFrames(limit: Int) -> [StoredSpoolFrame] {
@@ -573,7 +863,11 @@ private actor StorageRepositoryDouble {
         frames.values.reduce(0) { $0 + $1.byteCount }
     }
 
-    func create(_ manifest: SegmentJobManifest) throws {
+    func create(_ manifest: SegmentJobManifest) async throws {
+        createCallCount += 1
+        if let createGate {
+            await createGate.wait()
+        }
         jobs[manifest.jobID] = manifest
     }
 
@@ -656,6 +950,14 @@ private actor StorageRepositoryDouble {
 
     func manifest(id: UUID) -> SegmentJobManifest? {
         jobs[id]
+    }
+
+    var firstManifest: SegmentJobManifest? {
+        jobs.values.first
+    }
+
+    var jobCount: Int {
+        jobs.count
     }
 
     func commits() -> [SegmentJobCommit] {

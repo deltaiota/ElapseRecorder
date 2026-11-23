@@ -43,12 +43,14 @@ nonisolated extension GRDBPersistenceStore {
     JOIN media_assets a ON a.id = f.asset_id AND a.state = 'ready'
     """
 
+    // Start with the small set of spool assets, not every historical HEIC frame in cycle order.
+    // SQLite preserves this join order for CROSS JOIN; frames_by_asset then serves each lookup.
     static let spoolSelectSQL = """
     SELECT f.*, s.bundle_identifier,
            a.state AS asset_state, a.byte_count AS asset_byte_count
-    FROM frames f
+    FROM media_assets a
+    CROSS JOIN frames f ON f.asset_id = a.id
     JOIN sessions s ON s.id = f.session_id AND s.state <> 'tombstoned'
-    JOIN media_assets a ON a.id = f.asset_id
     """
 
     static let visibleSessionPredicate = """
@@ -136,8 +138,8 @@ nonisolated extension GRDBPersistenceStore {
     static func spoolRow(frameID: UUID, requiredState: String, db: Database) throws -> Row? {
         try Row.fetchOne(
             db,
-            sql: spoolSelectSQL + " WHERE f.id = ? AND a.state = ?",
-            arguments: [frameID.databaseID, requiredState]
+            sql: spoolSelectSQL + " WHERE a.id = ? AND f.id = ? AND a.state = ?",
+            arguments: [frameID.databaseID, frameID.databaseID, requiredState]
         )
     }
 

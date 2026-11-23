@@ -49,49 +49,87 @@ extension StorageCoordinator {
     }
 
     func scheduleHealthProbe() {
+        healthProbeGeneration &+= 1
         guard !isHealthProbeScheduled else { return }
         isHealthProbeScheduled = true
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1))
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                await self?.cancelScheduledHealthProbe()
+                return
+            }
             await self?.performHealthProbe()
         }
     }
 
-    func performHealthProbe() async {
+    func cancelScheduledHealthProbe() {
+        guard !isHealthProbeRunning else { return }
         isHealthProbeScheduled = false
-        guard maintenanceLease == nil else {
-            scheduleHealthProbe()
-            return
+        signalStateTransition()
+    }
+
+    func healthProbeDegradations() -> Set<StorageDegradation> {
+        Set(activeDegradations.filter {
+            switch $0 {
+            case .spoolWriteFailed, .metadataCommitFailed, .spoolCapacityExceeded,
+                 .insufficientFreeSpace, .recoveryFailed:
+                true
+            case .queueFull, .segmentFailed, .maintenanceInProgress:
+                false
+            }
+        })
+    }
+
+    func performHealthProbe() async {
+        defer {
+            isHealthProbeRunning = false
+            isHealthProbeScheduled = false
+            signalStateTransition()
         }
-        isHealthProbeRunning = true
-        defer { isHealthProbeRunning = false }
-        do {
-            try await fileStorage.probeWritable()
-            try await recoverSpoolJournal()
-            let persistedSpoolBytes = try await persistence.spoolByteCount()
-            let available = try await fileStorage.availableCapacity()
-            spoolBytes = persistedSpoolBytes
-            let hasSpoolHeadroom = requiredSpoolHeadroom <= configuration.maximumSpoolBytes
-                && spoolBytes <= configuration.maximumSpoolBytes - requiredSpoolHeadroom
-            let requiredDiskBytes = configuration.minimumFreeDiskBytes + requiredDiskHeadroom
-            guard hasSpoolHeadroom, available >= requiredDiskBytes else {
-                scheduleHealthProbe()
+        while true {
+            while maintenanceLease != nil || isRecoveryRunning {
+                let observedGeneration = stateGeneration
+                await waitForStateTransition(after: observedGeneration)
+            }
+
+            let degradations = healthProbeDegradations()
+            guard !degradations.isEmpty else { return }
+            let probeGeneration = healthProbeGeneration
+            isHealthProbeRunning = true
+            signalStateTransition()
+
+            var shouldRetry = true
+            do {
+                try await fileStorage.probeWritable()
+                try await recoverSpoolJournal()
+                let persistedSpoolBytes = try await persistence.spoolByteCount()
+                let available = try await fileStorage.availableCapacity()
+                spoolBytes = persistedSpoolBytes
+                let hasSpoolHeadroom = requiredSpoolHeadroom <= configuration.maximumSpoolBytes
+                    && spoolBytes <= configuration.maximumSpoolBytes - requiredSpoolHeadroom
+                let requiredDiskBytes = configuration.minimumFreeDiskBytes + requiredDiskHeadroom
+                if hasSpoolHeadroom, available >= requiredDiskBytes,
+                   probeGeneration == healthProbeGeneration
+                {
+                    requiredSpoolHeadroom = 0
+                    requiredDiskHeadroom = 0
+                    resolve { degradations.contains($0) }
+                    startSegmentWorkerIfNeeded()
+                    shouldRetry = !healthProbeDegradations().isEmpty
+                }
+            } catch {
+                shouldRetry = true
+            }
+
+            isHealthProbeRunning = false
+            signalStateTransition()
+            guard shouldRetry, !healthProbeDegradations().isEmpty else { return }
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
                 return
             }
-            requiredSpoolHeadroom = 0
-            requiredDiskHeadroom = 0
-            resolve {
-                switch $0 {
-                case .spoolWriteFailed, .metadataCommitFailed, .spoolCapacityExceeded,
-                     .insufficientFreeSpace, .recoveryFailed:
-                    true
-                case .queueFull, .segmentFailed, .maintenanceInProgress:
-                    false
-                }
-            }
-            startSegmentWorkerIfNeeded()
-        } catch {
-            scheduleHealthProbe()
         }
     }
 
@@ -101,8 +139,10 @@ extension StorageCoordinator {
             processingFrame = frame
             await persist(frame)
             processingFrame = nil
+            signalStateTransition()
         }
         isDrainingQueue = false
+        signalStateTransition()
         resolve { if case .queueFull = $0 { true } else { false } }
     }
 

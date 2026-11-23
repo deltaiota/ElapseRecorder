@@ -88,8 +88,11 @@ actor StorageCoordinator {
     var queue: [CapturedFrameEnvelope] = []
     var processingFrame: CapturedFrameEnvelope?
     var isDrainingQueue = false
+    var activeFlushCount = 0
     var accumulators: [WindowKey: [StoredSpoolFrame]] = [:]
     var deferredFrames: [WindowKey: [StoredSpoolFrame]] = [:]
+    var sealingWindows = Set<WindowKey>()
+    var activeSealRetryCount = 0
     var spoolBytes = 0
     var knownSpoolBytes: [URL: Int] = [:]
     var isSegmentWorkerRunning = false
@@ -104,9 +107,13 @@ actor StorageCoordinator {
     var activeDegradations = Set<StorageDegradation>()
     var isHealthProbeScheduled = false
     var isHealthProbeRunning = false
+    var healthProbeGeneration: UInt64 = 0
     var isRecoveryRunning = false
+    var recoveryCompletionGeneration: UInt64 = 0
     var requiredSpoolHeadroom = 0
     var requiredDiskHeadroom: Int64 = 0
+    var stateGeneration: UInt64 = 0
+    var stateWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(environment: Environment) {
         configuration = environment.configuration
@@ -118,6 +125,26 @@ actor StorageCoordinator {
         now = environment.now
         makeID = environment.makeID
         workerID = environment.makeID()
+    }
+
+    func signalStateTransition() {
+        stateGeneration &+= 1
+        let waiters = stateWaiters
+        stateWaiters.removeAll(keepingCapacity: true)
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func waitForStateTransition(after observedGeneration: UInt64) async {
+        guard stateGeneration == observedGeneration else { return }
+        await withCheckedContinuation { continuation in
+            guard stateGeneration == observedGeneration else {
+                continuation.resume()
+                return
+            }
+            stateWaiters.append(continuation)
+        }
     }
 
     func events() -> AsyncStream<StorageCoordinatorEvent> {
@@ -150,12 +177,21 @@ actor StorageCoordinator {
 
     func flushSession(_ handle: RecordingSessionHandle) async throws {
         while maintenanceLease != nil {
-            await Task.yield()
+            let observedGeneration = stateGeneration
+            await waitForStateTransition(after: observedGeneration)
         }
+        activeFlushCount += 1
+        signalStateTransition()
+        defer {
+            activeFlushCount -= 1
+            signalStateTransition()
+        }
+
         while processingFrame?.handle.sessionID == handle.sessionID
             || queue.contains(where: { $0.handle.sessionID == handle.sessionID })
         {
-            await Task.yield()
+            let observedGeneration = stateGeneration
+            await waitForStateTransition(after: observedGeneration)
         }
 
         var creationFailed = false
@@ -177,12 +213,36 @@ actor StorageCoordinator {
     }
 
     func recover() async {
-        while maintenanceLease != nil {
-            await Task.yield()
+        while true {
+            if isRecoveryRunning {
+                let observedRecoveryGeneration = recoveryCompletionGeneration
+                while recoveryCompletionGeneration == observedRecoveryGeneration {
+                    let observedStateGeneration = stateGeneration
+                    await waitForStateTransition(after: observedStateGeneration)
+                }
+                return
+            }
+            guard maintenanceLease == nil, !isHealthProbeRunning else {
+                let observedGeneration = stateGeneration
+                await waitForStateTransition(after: observedGeneration)
+                continue
+            }
+            isRecoveryRunning = true
+            segmentWorkerTask?.cancel()
+            signalStateTransition()
+            break
         }
-        isRecoveryRunning = true
-        defer { isRecoveryRunning = false }
+        defer {
+            isRecoveryRunning = false
+            recoveryCompletionGeneration &+= 1
+            signalStateTransition()
+            startSegmentWorkerIfNeeded()
+        }
         do {
+            while isSegmentWorkerRunning {
+                let observedGeneration = stateGeneration
+                await waitForStateTransition(after: observedGeneration)
+            }
             try await recoverCommittedSpoolCleanup()
             try await recoverSpoolJournal()
             spoolBytes = try await persistence.spoolByteCount()
@@ -193,10 +253,6 @@ actor StorageCoordinator {
                 var sealedAny = false
                 for key in Array(accumulators.keys) {
                     sealedAny = await attemptSeal(key) || sealedAny
-                }
-                startSegmentWorkerIfNeeded()
-                while isSegmentWorkerRunning {
-                    await Task.yield()
                 }
                 guard recoveredCount == configuration.recoveryBatchSize, sealedAny else { break }
             }
@@ -210,14 +266,18 @@ actor StorageCoordinator {
 
     func beginMaintenance() async -> StorageMaintenanceLease {
         while maintenanceLease != nil {
-            await Task.yield()
+            let observedGeneration = stateGeneration
+            await waitForStateTransition(after: observedGeneration)
         }
         let lease = StorageMaintenanceLease(id: makeID())
         maintenanceLease = lease
+        signalStateTransition()
         while isDrainingQueue || processingFrame != nil || !queue.isEmpty
+            || activeFlushCount > 0 || activeSealRetryCount > 0 || !sealingWindows.isEmpty
             || isSegmentWorkerRunning || isHealthProbeRunning || isRecoveryRunning
         {
-            await Task.yield()
+            let observedGeneration = stateGeneration
+            await waitForStateTransition(after: observedGeneration)
         }
         return lease
     }
@@ -227,6 +287,7 @@ actor StorageCoordinator {
             throw StorageCoordinatorError.maintenanceLeaseInvalid
         }
         maintenanceLease = nil
+        signalStateTransition()
         resolve { $0 == .maintenanceInProgress }
         startSegmentWorkerIfNeeded()
     }

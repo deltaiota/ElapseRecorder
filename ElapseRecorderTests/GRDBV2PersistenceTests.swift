@@ -21,7 +21,7 @@ final class GRDBV2PersistenceTests: XCTestCase {
         ]))
         XCTAssertTrue(indexes.isSuperset(of: [
             "sessions_by_app_time", "frames_by_window_time", "frames_by_session_time",
-            "frames_by_capture_time", "assets_by_session_state", "jobs_by_state_retry",
+            "frames_by_asset", "frames_by_capture_time", "assets_by_session_state", "jobs_by_state_retry",
         ]))
     }
 
@@ -43,6 +43,12 @@ final class GRDBV2PersistenceTests: XCTestCase {
             windowID: windowID,
             completedAt: Date(timeIntervalSince1970: 20)
         )
+        let failed = try registration(
+            id: XCTUnwrap(UUID(uuidString: "00000000-0000-0000-0000-000000000003")),
+            sessionID: sessionID,
+            windowID: windowID,
+            completedAt: Date(timeIntervalSince1970: 30)
+        )
 
         try await client.registerSpoolFrame(first)
         let initialRecovery = try await client.recoverSpoolFrames(10)
@@ -59,8 +65,12 @@ final class GRDBV2PersistenceTests: XCTestCase {
         XCTAssertEqual(storedFirst.byteCount, 101)
         try await client.registerSpoolFrame(second)
         _ = try await client.markSpoolFrameReady(second.id, 202)
+        try await client.registerSpoolFrame(failed)
+        try await client.failSpoolFrame(failed.id, "incomplete write")
         let readyBytes = try await client.spoolByteCount()
+        let failedRecovery = try await client.recoverSpoolFrames(10)
         XCTAssertEqual(readyBytes, 303)
+        XCTAssertEqual(failedRecovery.map(\.state), [.failed])
 
         let query = FrameQuery(scope: .session(id: sessionID))
         let firstPage = try await client.framePage(query, nil, 1)
@@ -187,12 +197,16 @@ final class GRDBV2PersistenceTests: XCTestCase {
         let frame = registration(id: UUID(), sessionID: sessionID, windowID: windowID, completedAt: Date(timeIntervalSince1970: 10))
         try await client.registerSpoolFrame(frame)
         _ = try await client.markSpoolFrameReady(frame.id, 80)
+        let visibleSpoolBytes = try await client.spoolByteCount()
+        XCTAssertEqual(visibleSpoolBytes, 80)
         try await client.closeSession(sessionID, Date(timeIntervalSince1970: 20))
 
         let snapshot = try await client.retentionSnapshot()
         XCTAssertEqual(snapshot.endedSessionsOldestFirst.map(\.id), [sessionID])
         let prepared = try await client.prepareSessionDeletion([sessionID])
         let manifest = try XCTUnwrap(prepared)
+        let tombstonedSpoolBytes = try await client.spoolByteCount()
+        XCTAssertEqual(tombstonedSpoolBytes, 0)
         XCTAssertEqual(manifest.sessions.map(\.id), [sessionID])
         XCTAssertEqual(manifest.fileURLs, [frame.spoolURL])
         let visibleSessions = try await client.sessions("com.example.Persistence")
